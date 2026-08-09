@@ -50,9 +50,17 @@ Answer BLOCKED if you can see any of, in descending order of reliability:
 Answer CLEAR if the tracks across the roadway are empty and the road is passable, \
 whether or not vehicles are present on the road.
 
-Answer UNKNOWN if you genuinely cannot tell. Darkness, headlight glare, rain, fog, a \
-frozen or corrupted image, or a view that does not show the crossing are all good \
-reasons to answer UNKNOWN.
+At night the roadway is usually still lit well enough to judge. A train reads as a long \
+horizontal mass spanning much of the frame, often with running lights along it, and it \
+hides the road markings and the far side of the intersection behind it. An empty \
+crossing at night looks the opposite: you can see the road surface, the crosswalk \
+stripes, and straight through the intersection. Individual vehicles are small and do \
+not span the frame -- do not mistake one for a train.
+
+Answer UNKNOWN if you genuinely cannot tell. Heavy glare, rain, fog, a frozen or \
+corrupted image, or a view that does not show the crossing are all good reasons. \
+Darkness alone is not automatically a reason -- judge whether you can actually see the \
+road surface.
 
 UNKNOWN is a useful answer and is strongly preferred over a guess. These judgements \
 accumulate into a public dataset about how often this crossing is blocked and for how \
