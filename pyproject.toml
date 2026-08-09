@@ -9,6 +9,7 @@ license = { text = "MIT" }
 # Pinned to 3.11: PyFlink (Phase 2) does not yet support 3.12, and the capture
 # service shares this interpreter so the Phase 0 corpus replays through the same code.
 dependencies = [
+    "anthropic>=0.40",
     "httpx>=0.27",
     "pydantic>=2.7",
     "pydantic-settings>=2.3",

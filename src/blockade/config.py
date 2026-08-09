@@ -145,6 +145,27 @@ class Settings(BaseSettings):
 
     camera_config_path: Path = DEFAULT_CAMERA_CONFIG
 
+    # --- Detection ----------------------------------------------------------
+    detector_model: str = Field(
+        default="claude-haiku-4-5",
+        description=(
+            "Vision model used to judge each frame. Haiku is chosen deliberately: at "
+            "~$0.0003/call it makes a 2-minute cadence across three crossings cost "
+            "roughly $19/month, and the task is a three-way classification rather than "
+            "a reasoning problem."
+        ),
+    )
+    detect_interval_seconds: float = Field(
+        default=120.0,
+        ge=30.0,
+        description=(
+            "How often each crossing is judged. This sets the resolution of every "
+            "duration in the dataset, but not permanently -- frames are kept, so "
+            "history can be re-derived at finer resolution later."
+        ),
+    )
+    observations_dir: Path = Path("var/observations")
+
     @property
     def has_odot_key(self) -> bool:
         return bool(self.odot_api_key)

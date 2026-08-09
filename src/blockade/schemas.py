@@ -118,6 +118,44 @@ class CrossingState(StrEnum):
     """First-class state. A camera going dark is not a clear crossing."""
 
 
+class ObservationRecord(BaseRecord):
+    """One judgement about one crossing at one instant -- the analytical record.
+
+    This is the dataset. ``sessions`` are derived from a sequence of these and can
+    be rebuilt at any time, so observations are the layer that must be right.
+
+    Distinct from ``DetectionRecord``, which describes the ONNX vehicle-count
+    approach. This one carries a state judgement rather than raw counts.
+    """
+
+    crossing_id: str
+    camera_id: str
+    captured_at: datetime = Field(description="EVENT TIME -- when the camera took the frame.")
+    observed_at: datetime = Field(description="When the judgement was made.")
+
+    state: CrossingState
+    confidence: float = Field(ge=0.0, le=1.0)
+    reason: str = Field(
+        description="One line explaining the judgement. Kept for auditing the dataset: a "
+        "statistic nobody can trace back to a frame and a reason is hard to trust."
+    )
+
+    object_key: str = Field(description="The exact frame this judgement came from.")
+    detector_version: str = Field(
+        description="Model plus prompt hash. Rows produced by different prompts are not "
+        "directly comparable, and re-runs must be distinguishable from originals."
+    )
+
+    @property
+    def is_confident(self) -> bool:
+        """Whether this observation counts toward coverage.
+
+        UNKNOWN is an honest answer, not a measurement -- a night of UNKNOWN is
+        'no data', never 'no blockages'.
+        """
+        return self.state is not CrossingState.UNKNOWN
+
+
 class CrossingStateRecord(BaseRecord):
     """``crossing.state.v1`` -- key: ``crossing_id``. Phase 2 FusionJob output."""
 
