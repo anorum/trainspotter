@@ -17,12 +17,25 @@ timestamp rather than on traffic.
 **2. These are PBOT cameras, not ODOT ones**, served through TripCheck. Attribution in the README
 should credit PBOT as well as ODOT.
 
-**3. Both 11th Ave cameras have a direct sightline to the rail corridor.**
-Device 676 and 677 are labelled "SE Milwaukie @ Gideon" and the track structure is visible in
-frame. DESIGN.md §11 left this open — "whether any camera has direct sightline to the rails; if one
-does, add a direct train-detection signal as a second opinion." It does. This is worth pursuing in
-Phase 1 as an independent second signal for `SE_11TH_MILWAUKIE`, because a signal that observes the
-train rather than the queue fails in different ways than the queue detector does.
+**3. The cameras see the tracks directly — which overturns DESIGN.md §3.**
+
+Confirmed in daylight (2026-08-09 09:33 PDT) on both `odot-676` (11th at Milwaukie N) and
+`odot-678` (12th at Clinton): the rails are plainly visible crossing the roadway, along with
+crossing-signal masts. `odot-676` shows several tracks of the rail corridor curving through frame.
+
+DESIGN.md §3 says: *"The cameras point at roadways, not necessarily at the rails. Do not try to
+detect trains. Detect the traffic queue."* In daylight that premise does not hold. The queue
+heuristic was a workaround for a limitation these cameras do not have.
+
+This matters more than it first appears. Detecting the queue is an **inference** — a line of
+stopped cars might be a train, a red light, a delivery truck, or rush hour. Detecting a train on
+the tracks is an **observation**. The first needs thresholds tuned per camera and produces
+arguable results; the second is either visible or it is not.
+
+DESIGN.md §11 asked "whether any camera has direct sightline to the rails; if one does, add a
+direct train-detection signal as a second opinion." The answer is that the direct signal should be
+the *primary* one during daylight, with the queue as the fallback — the reverse of the original
+design. Night remains open (see below).
 
 **4. The burned-in timestamp agrees with the `Last-Modified` header.**
 The header reads "Aug 08 2026 9:21 PM" and `Last-Modified` gave 04:21 UTC — the same instant. Event

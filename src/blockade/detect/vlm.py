@@ -31,20 +31,24 @@ log = logging.getLogger(__name__)
 # roadway. The prompt has to say so, or the model reads the caption as scene.
 PROMPT = """\
 You are looking at a still frame from a City of Portland traffic camera pointed at a \
-street near a Union Pacific rail line in inner SE Portland.
+street where a Union Pacific rail line crosses the road in inner SE Portland.
 
 Your job is to judge whether the roadway is currently BLOCKED by a train.
+
+The railroad tracks are usually visible in the frame, crossing the roadway. Look at the \
+tracks themselves first -- a train standing on them is the direct evidence, and is much \
+more reliable than reasoning about traffic.
 
 Ignore the image chrome: the title bar across the top (camera name and timestamp) and \
 the caption bar across the bottom are overlays, not part of the scene.
 
-Answer BLOCKED if you can see any of:
-- rail cars or a locomotive standing across the roadway
+Answer BLOCKED if you can see any of, in descending order of reliability:
+- rail cars or a locomotive standing on the tracks across the roadway
 - crossing gates lowered across the traffic lanes
 - a queue of stopped vehicles backed up toward the crossing with no movement through it
 
-Answer CLEAR if the roadway through the crossing is open and passable, whether or not \
-vehicles are present.
+Answer CLEAR if the tracks across the roadway are empty and the road is passable, \
+whether or not vehicles are present on the road.
 
 Answer UNKNOWN if you genuinely cannot tell. Darkness, headlight glare, rain, fog, a \
 frozen or corrupted image, or a view that does not show the crossing are all good \
