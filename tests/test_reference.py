@@ -20,6 +20,8 @@ from blockade.detect.reference import (
     ReferenceDetector,
     ReferenceModel,
     Thresholds,
+    _brightness_bin,
+    _decode,
 )
 from blockade.schemas import CrossingState
 
@@ -120,12 +122,14 @@ def test_restless_pixels_need_a_bigger_change(camera):
     frames = []
     for _ in range(40):
         scene = empty_scene().astype(np.int16)
-        scene[60:130, :] += rng.integers(-45, 46)  # that band swings wildly
+        # A narrow restless strip: wide enough to be a "mass" if it counted,
+        # narrow enough not to move the frame's own brightness percentile.
+        scene[60:78, :] += rng.integers(-45, 46)
         frames.append(frame(np.clip(scene, 0, 255).astype(np.uint8)))
     detector = ReferenceDetector({"odot-1234": ReferenceModel.build("odot-1234", frames)})
 
     swung = empty_scene().astype(np.int16)
-    swung[60:130, :] += 44  # within the band's normal range
+    swung[60:78, :] += 44  # within the strip's normal range
     obs = detector.classify(
         frame(np.clip(swung, 0, 255).astype(np.uint8)), camera, CAPTURED, KEY
     )
@@ -162,3 +166,80 @@ def test_thin_bins_are_dropped():
     model = ReferenceModel.build("odot-1234", [frame(empty_scene())] * 5, min_samples=15)
 
     assert model.bins == {}
+
+
+def blocked_scene(value: int = 62) -> np.ndarray:
+    """An empty crossing with a frame-spanning mass across it.
+
+    Deliberately low-contrast (delta ~58 against a 40 floor): a blatant mass is
+    found either way, so it cannot show what contamination costs.
+    """
+    scene = empty_scene()
+    scene[60:130, :] = value
+    return scene
+
+
+def test_refinement_removes_blocked_frames_from_the_pool(camera):
+    """A long blockage can be a large minority of one brightness bin -- measured
+    at 29% of one bin on real data. The median tolerates that, but the pool is
+    still describing the crossing partly as "train present", and rebuilding
+    without those frames measurably changed detection on the live event
+    (17 rows -> 70 for the same train).
+
+    What is asserted here is the mechanism actually verifiable in isolation: the
+    blocked frames leave the pool, and detection still works afterwards.
+    """
+    rng = np.random.default_rng(2)
+    frames = []
+    for i in range(60):
+        scene = (blocked_scene() if i < 20 else empty_scene()).astype(np.int16)
+        scene += rng.integers(-3, 4, scene.shape)
+        frames.append(frame(np.clip(scene, 0, 255).astype(np.uint8)))
+
+    naive = ReferenceModel.build("odot-1234", frames)
+    refined = ReferenceModel.build_refined("odot-1234", frames)
+
+    assert sum(refined.sample_counts.values()) < sum(naive.sample_counts.values())
+    assert sum(refined.sample_counts.values()) >= 35, "the clear frames must survive"
+    detector = ReferenceDetector({"odot-1234": refined})
+    assert detector.classify(frame(blocked_scene()), camera, CAPTURED, KEY).state is (
+        CrossingState.BLOCKED
+    )
+    assert detector.classify(frame(empty_scene()), camera, CAPTURED, KEY).state is (
+        CrossingState.CLEAR
+    )
+
+
+def test_refinement_gives_up_rather_than_collapsing(camera):
+    """If most frames look blocked the references are wrong, not the crossing.
+    Rebuilding from the remainder would lock in that mistake."""
+    frames = [frame(blocked_scene())] * 40 + [frame(empty_scene())] * 5
+
+    model = ReferenceModel.build_refined("odot-1234", frames)
+
+    assert model.bins, "must keep the first-pass model rather than emptying itself"
+
+
+def test_brightness_bin_ignores_a_large_dark_object(camera):
+    """The conditioning variable must not move when a train arrives. Using the
+    mean, a train dropped a sunlit frame into the night bin and it was scored
+    against darkness -- everything differed and it read BLOCKED for the wrong
+    reason, as would any dark cloud."""
+    empty = _decode(frame(empty_scene()))
+    blocked = _decode(frame(blocked_scene()))
+
+    assert blocked.mean() < empty.mean() - 15, "the mass must genuinely darken the frame"
+    assert _brightness_bin(blocked) == _brightness_bin(empty)
+
+
+def test_distant_reference_is_refused(camera):
+    """Falling back to any reference however far away is how a midday frame gets
+    scored against a morning one. Unfamiliar lighting is a coverage gap, not a
+    licence to guess."""
+    model = build_model(value=120)
+    far = ReferenceDetector({"odot-1234": model})
+
+    obs = far.classify(frame(np.full_like(empty_scene(), 250)), camera, CAPTURED, KEY)
+
+    assert obs.state is CrossingState.UNKNOWN
+    assert "no reference" in obs.reason

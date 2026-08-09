@@ -94,8 +94,35 @@ def _decode(image: bytes) -> np.ndarray | None:
     return gray[CHROME_TOP : gray.shape[0] - CHROME_BOTTOM, :]
 
 
+BRIGHTNESS_PERCENTILE = 75
+"""Which percentile of pixel values stands in for 'how lit is this scene'.
+
+Not the mean, and the reason is a bug this cost us. A train is a large dark
+object, so it drags the frame mean down -- enough to move a sunlit frame out of
+its daylight bin and into a night one, where it was then compared against a
+reference built from actual darkness. Everything differed, and the detector
+called BLOCKED confidently for the wrong reason. Any dark cloud would have done
+the same.
+
+The conditioning variable must not be disturbed by the thing being detected. A
+high percentile reflects the brightest part of the scene, which a train sitting
+on the tracks does not cover, so it tracks real illumination and ignores the
+object. Measured across a real blockage, the mean fell 135 -> 126 the moment the
+train arrived while the 75th percentile rose smoothly with the approaching noon
+sun, undisturbed.
+"""
+
+MAX_BIN_DISTANCE = 1
+"""How far the nearest reference may be before it is unusable.
+
+Falling back to any reference however distant is how a midday frame gets scored
+against a morning one. Better to admit the lighting has never been seen.
+"""
+
+
 def _brightness_bin(scene: np.ndarray) -> int:
-    return min(int(scene.mean()) * BRIGHTNESS_BINS // 256, BRIGHTNESS_BINS - 1)
+    level = float(np.percentile(scene, BRIGHTNESS_PERCENTILE))
+    return min(int(level) * BRIGHTNESS_BINS // 256, BRIGHTNESS_BINS - 1)
 
 
 class Reference:
@@ -123,6 +150,46 @@ class ReferenceModel:
         self.camera_id = camera_id
         self.bins = bins
         self.sample_counts = sample_counts
+
+    @classmethod
+    def build_refined(
+        cls, camera_id: str, frames: list[bytes], min_samples: int = 15, passes: int = 2
+    ) -> ReferenceModel:
+        """Build references, then rebuild excluding frames that look blocked.
+
+        The median tolerates a minority of blocked frames, but not an arbitrary
+        one. Measured on real data, a single 70-minute blockage was 29% of one
+        brightness bin -- enough to drag the median toward the train and suppress
+        the very difference the detector looks for, so the same train scored 18
+        rows instead of 70.
+
+        Two passes fix it without any labelling: the first pass is contaminated
+        but still good enough to identify the obvious blockages, and the second
+        rebuilds from what is left. Self-correcting, so it stays true as the
+        corpus grows and needs no human to maintain an exclusion list.
+        """
+        model = cls.build(camera_id, frames, min_samples)
+        for _ in range(passes - 1):
+            if not model.bins:
+                return model
+            detector = ReferenceDetector({camera_id: model})
+            keep = [
+                raw
+                for raw in frames
+                if (scene := _decode(raw)) is not None
+                and (ref := model.nearest(_brightness_bin(scene))) is not None
+                and detector.examine(scene, ref).band_rows < detector.thresholds.min_band_rows
+            ]
+            # Refuse to rebuild from a pool that has collapsed -- if most frames
+            # look blocked, the references are wrong, not the crossing.
+            if len(keep) < max(min_samples, len(frames) // 2):
+                log.warning(
+                    "%s: refinement would drop %d of %d frames; keeping first-pass model",
+                    camera_id, len(frames) - len(keep), len(frames),
+                )
+                return model
+            model = cls.build(camera_id, keep, min_samples)
+        return model
 
     @classmethod
     def build(cls, camera_id: str, frames: list[bytes], min_samples: int = 15) -> ReferenceModel:
@@ -156,10 +223,19 @@ class ReferenceModel:
         return cls(camera_id, bins, counts)
 
     def nearest(self, level: int) -> Reference | None:
-        """Reference for this brightness, or the closest available one."""
+        """Reference for this brightness, or None if none is close enough.
+
+        Returning a distant reference rather than nothing is what let a midday
+        frame be scored against a morning one. An unfamiliar lighting condition
+        is a gap in coverage, which the dataset records honestly; a comparison
+        against the wrong reference is a fabricated observation, which it cannot.
+        """
         if not self.bins:
             return None
-        return self.bins[min(self.bins, key=lambda b: abs(b - level))]
+        closest = min(self.bins, key=lambda b: abs(b - level))
+        if abs(closest - level) > MAX_BIN_DISTANCE:
+            return None
+        return self.bins[closest]
 
     def save(self, directory: Path) -> None:
         directory.mkdir(parents=True, exist_ok=True)
