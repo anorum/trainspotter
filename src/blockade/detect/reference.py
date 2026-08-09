@@ -146,10 +146,20 @@ class Reference:
 class ReferenceModel:
     """Empty-crossing references for one camera, one per brightness bin."""
 
-    def __init__(self, camera_id: str, bins: dict[int, Reference], sample_counts: dict[int, int]):
+    def __init__(
+        self,
+        camera_id: str,
+        bins: dict[int, Reference],
+        sample_counts: dict[int, int],
+        band: TrackBand | None = None,
+    ):
         self.camera_id = camera_id
         self.bins = bins
         self.sample_counts = sample_counts
+        self.band = band
+        """None until this camera has been seen blocked. Until then the whole
+        frame counts, which is the permissive setting -- a new camera should risk
+        a false positive rather than silently miss its first blockage."""
 
     @classmethod
     def build_refined(
@@ -244,9 +254,10 @@ class ReferenceModel:
             payload[f"median_{level}"] = ref.median
             payload[f"spread_{level}"] = ref.spread
         np.savez_compressed(directory / f"{self.camera_id}.npz", **payload)
-        (directory / f"{self.camera_id}.json").write_text(
-            json.dumps({"camera_id": self.camera_id, "samples": self.sample_counts}, indent=2)
-        )
+        meta = {"camera_id": self.camera_id, "samples": self.sample_counts}
+        if self.band is not None:
+            meta["band"] = {"top": self.band.top, "bottom": self.band.bottom}
+        (directory / f"{self.camera_id}.json").write_text(json.dumps(meta, indent=2))
 
     @classmethod
     def load(cls, directory: Path, camera_id: str) -> ReferenceModel | None:
@@ -256,9 +267,68 @@ class ReferenceModel:
         with np.load(path) as data:
             levels = {int(k.split("_")[1]) for k in data.files if k.startswith("median_")}
             bins = {lv: Reference(data[f"median_{lv}"], data[f"spread_{lv}"]) for lv in levels}
-        meta_path = directory / f"{camera_id}.json"
-        counts = json.loads(meta_path.read_text())["samples"] if meta_path.exists() else {}
-        return cls(camera_id, bins, {int(k): v for k, v in counts.items()})
+        meta = json.loads((directory / f"{camera_id}.json").read_text()) if (
+            directory / f"{camera_id}.json"
+        ).exists() else {}
+        counts = meta.get("samples", {})
+        raw_band = meta.get("band")
+        band = TrackBand(raw_band["top"], raw_band["bottom"]) if raw_band else None
+        return cls(camera_id, bins, {int(k): v for k, v in counts.items()}, band)
+
+
+@dataclass(frozen=True)
+class TrackBand:
+    """The rows where a train can appear, for one camera.
+
+    Trains are always at track level, so *where* an obstruction sits is a far
+    better discriminator than how tall it is. Measured across one real blockage,
+    the obstructed height varied fourfold — 17 rows for low-profile well cars,
+    72 for loaded double-stacks — while the position stayed put. Counting rows
+    anywhere in the frame therefore risks two failures at once: missing an empty
+    flatcar, and counting road traffic as a train.
+
+    Restricting the count to this band keeps the row threshold low enough for the
+    shortest consist without letting anything below the tracks contribute.
+    """
+
+    top: int
+    bottom: int
+
+    @property
+    def height(self) -> int:
+        return self.bottom - self.top
+
+    def mask(self, rows: np.ndarray) -> np.ndarray:
+        """Zero out everything outside the band."""
+        masked = np.zeros_like(rows)
+        masked[self.top : self.bottom] = rows[self.top : self.bottom]
+        return masked
+
+
+def derive_band(
+    row_profiles: list[np.ndarray], min_support: float = 0.5, pad: int = 6
+) -> TrackBand | None:
+    """Infer the track band from the obstruction profiles of blocked frames.
+
+    A row belongs to the band if it is obstructed in at least `min_support` of
+    them. That keeps rows where trains actually sit across differing car
+    profiles, and drops one-off obstructions such as a vehicle stopped below the
+    tracks, which appear in only a frame or two.
+
+    Derived rather than hand-drawn: DESIGN.md called for ROI polygons clicked out
+    per camera, which does not survive more cameras. This is the same idea
+    obtained from data, so a new camera acquires its band once it has seen a
+    blockage and needs no human.
+    """
+    if not row_profiles:
+        return None
+    support = np.mean(np.stack(row_profiles), axis=0)
+    rows = np.flatnonzero(support >= min_support)
+    if rows.size == 0:
+        return None
+    top = max(0, int(rows.min()) - pad)
+    bottom = min(len(support), int(rows.max()) + pad + 1)
+    return TrackBand(top, bottom)
 
 
 @dataclass
@@ -287,7 +357,9 @@ class ReferenceDetector:
             f"b{t.min_band_rows}-c{t.clear_max_changed}"
         )
 
-    def examine(self, scene: np.ndarray, reference: Reference) -> Evidence:
+    def examine(
+        self, scene: np.ndarray, reference: Reference, band: TrackBand | None = None
+    ) -> Evidence:
         diff = np.abs(scene.astype(np.float32) - reference.median.astype(np.float32))
         # Each pixel is judged against its own history: the flat floor where the
         # scene is dependable, a multiple of its usual deviation where it is not.
@@ -296,9 +368,14 @@ class ReferenceDetector:
         )
         changed = diff > bar
         row_coverage = changed.mean(axis=1)
+        obstructed = row_coverage > self.thresholds.band_row_fraction
+        if band is not None:
+            # Only obstruction at track level counts. Everything below the rails
+            # is road traffic, and counting it is how a bus becomes a train.
+            obstructed = band.mask(obstructed)
         return Evidence(
             changed_fraction=float(changed.mean()),
-            band_rows=int((row_coverage > self.thresholds.band_row_fraction).sum()),
+            band_rows=int(obstructed.sum()),
             luminance=float(scene.mean()),
         )
 
@@ -323,7 +400,7 @@ class ReferenceDetector:
             return self._record(camera, captured_at, object_key, CrossingState.UNKNOWN, 0.0,
                                 "frame size differs from reference")
 
-        ev = self.examine(scene, reference)
+        ev = self.examine(scene, reference, model.band)
         t = self.thresholds
 
         if ev.band_rows >= t.min_band_rows:
