@@ -1,0 +1,189 @@
+{
+  "CCTVInventoryRequest": [
+    {
+      "cctv-other": "US26 at Milwaukie",
+      "cctv-url": "http://www.TripCheck.com/roadcams/cams/26pwlmilw_pid590.jpg",
+      "device-id": 164,
+      "device-name": "US26 at Milwaukie",
+      "hwy-id": "026",
+      "last-update-time": "2026-08-08T03:43:58.087-07:00",
+      "latitude": 45.50129,
+      "longitude": -122.6541,
+      "milepoint": 1.26,
+      "route-id": "US26"
+    },
+    {
+      "cctv-other": "US26 at Ross Island Bridge",
+      "cctv-url": "http://www.TripCheck.com/roadcams/cams/26ribridge_pid591.jpg",
+      "device-id": 165,
+      "device-name": "US26 at Ross Island Bridge",
+      "hwy-id": "026",
+      "last-update-time": "2026-08-08T03:44:02.05-07:00",
+      "latitude": 45.50168,
+      "longitude": -122.66093,
+      "milepoint": 1.0,
+      "route-id": "US26"
+    },
+    {
+      "cctv-other": "Portland - 11th at Milwaukie N",
+      "cctv-url": "http://www.TripCheck.com/roadcams/cams/11th at Milwaukie N_pid3169.JPG",
+      "device-id": 676,
+      "device-name": "Portland - 11th at Milwaukie N",
+      "hwy-id": "",
+      "last-update-time": "2026-08-08T03:43:20.617-07:00",
+      "latitude": 45.50329,
+      "longitude": -122.65457,
+      "milepoint": 0.0,
+      "route-id": "CITY"
+    },
+    {
+      "cctv-other": "Portland - 11th at Milwaukie S",
+      "cctv-url": "http://www.TripCheck.com/roadcams/cams/11th at Milwaukie S_pid3173.JPG",
+      "device-id": 677,
+      "device-name": "Portland - 11th at Milwaukie S",
+      "hwy-id": "",
+      "last-update-time": "2026-08-08T03:43:20.583-07:00",
+      "latitude": 45.50314,
+      "longitude": -122.65414,
+      "milepoint": 0.0,
+      "route-id": "CITY"
+    },
+    {
+      "cctv-other": "Portland - 12th at Clinton",
+      "cctv-url": "http://www.TripCheck.com/roadcams/cams/12th at Clinton_pid3177.JPG",
+      "device-id": 678,
+      "device-name": "Portland - 12th at Clinton",
+      "hwy-id": "",
+      "last-update-time": "2026-08-08T03:43:21.087-07:00",
+      "latitude": 45.5036,
+      "longitude": -122.65381,
+      "milepoint": 0.0,
+      "route-id": "CITY"
+    },
+    {
+      "cctv-other": "Portland - 12th at Division",
+      "cctv-url": "http://www.TripCheck.com/roadcams/cams/12th at Division_pid3181.JPG",
+      "device-id": 679,
+      "device-name": "Portland - 12th at Division",
+      "hwy-id": "",
+      "last-update-time": "2026-08-08T03:43:21.087-07:00",
+      "latitude": 45.50494,
+      "longitude": -122.6536,
+      "milepoint": 0.0,
+      "route-id": "CITY"
+    },
+    {
+      "cctv-other": "Portland - 8th at Division",
+      "cctv-url": "http://www.TripCheck.com/roadcams/cams/8th at Division_pid3189.JPG",
+      "device-id": 681,
+      "device-name": "8th at Division",
+      "hwy-id": "",
+      "last-update-time": "2026-08-08T03:43:20.553-07:00",
+      "latitude": 45.50573,
+      "longitude": -122.65745,
+      "milepoint": 0.0,
+      "route-id": "CITY"
+    },
+    {
+      "cctv-other": "Portland - 8th at Division Place",
+      "cctv-url": "http://www.TripCheck.com/roadcams/cams/8th at Division Place_pid3193.JPG",
+      "device-id": 682,
+      "device-name": "8th at Division Place",
+      "hwy-id": "",
+      "last-update-time": "2026-08-08T03:43:20.583-07:00",
+      "latitude": 45.50476,
+      "longitude": -122.65796,
+      "milepoint": 0.0,
+      "route-id": "CITY"
+    },
+    {
+      "cctv-other": "I-5 at Marquam Bridge (Upper Deck East)",
+      "cctv-url": "http://www.TripCheck.com/roadcams/cams/I-5 at Marquam Bridge (Upper Deck East)_pid4744.jpg",
+      "device-id": 1185,
+      "device-name": "I-5 at Marquam Bridge (Upper Deck East)",
+      "hwy-id": "",
+      "last-update-time": "2026-08-08T03:43:30.603-07:00",
+      "latitude": 45.5092,
+      "longitude": -122.66726,
+      "milepoint": 300.47,
+      "route-id": "I5"
+    },
+    {
+      "cctv-other": "I-5 at Marquam Bridge (Upper Deck West)",
+      "cctv-url": "http://www.TripCheck.com/roadcams/cams/I-5 at Marquam Bridge (Upper Deck West)_pid4803.jpg",
+      "device-id": 1215,
+      "device-name": "I-5 at Marquam Bridge (Upper Deck West)",
+      "hwy-id": "",
+      "last-update-time": "2026-08-08T03:43:32.673-07:00",
+      "latitude": 45.50766,
+      "longitude": -122.66985,
+      "milepoint": 300.32,
+      "route-id": "I5"
+    },
+    {
+      "cctv-other": "I-5 at Marquam Bridge (Lower Deck Mid Span)",
+      "cctv-url": "http://www.TripCheck.com/roadcams/cams/I-5 at Marquam Bridge (Upper Deck West)_pid4805.jpg",
+      "device-id": 1216,
+      "device-name": "I-5 at Marquam Bridge (Lower Deck Mid Span)",
+      "hwy-id": "",
+      "last-update-time": "2026-08-08T03:43:32.69-07:00",
+      "latitude": 45.50799,
+      "longitude": -122.66917,
+      "milepoint": 300.37,
+      "route-id": "I5"
+    },
+    {
+      "cctv-other": "Portland - Division at 20th",
+      "cctv-url": "http://www.TripCheck.com/roadcams/cams/Division at 20th_pid4807.jpg",
+      "device-id": 1217,
+      "device-name": "Division at 20th",
+      "hwy-id": "",
+      "last-update-time": "2026-08-08T03:43:37.627-07:00",
+      "latitude": 45.50483,
+      "longitude": -122.64507,
+      "milepoint": 0.0,
+      "route-id": "City"
+    },
+    {
+      "cctv-other": "Portland - Division at 12th",
+      "cctv-url": "http://www.TripCheck.com/roadcams/cams/SE Division at 12th_pid4871.jpg",
+      "device-id": 1250,
+      "device-name": "SE Division at 12th",
+      "hwy-id": "",
+      "last-update-time": "2026-08-08T03:43:44.577-07:00",
+      "latitude": 45.50493,
+      "longitude": -122.65372,
+      "milepoint": 0.0,
+      "route-id": "City"
+    },
+    {
+      "cctv-other": "Portland - SE Grand Ave at SE Madison St",
+      "cctv-url": "http://www.TripCheck.com/roadcams/cams/SE Grand Ave at SE Madison St_pid4924.jpg",
+      "device-id": 1277,
+      "device-name": "Portland - SE Grand Ave at Madison St",
+      "hwy-id": "",
+      "last-update-time": "2026-07-20T07:56:37.283-07:00",
+      "latitude": 45.51294,
+      "longitude": -122.66092,
+      "milepoint": 0.0,
+      "route-id": "City"
+    },
+    {
+      "cctv-other": "Portland - SE Hawthorne at SE 7th St",
+      "cctv-url": "http://www.TripCheck.com/roadcams/cams/SE Hawthorne at SE 7th St_pid4930.jpg",
+      "device-id": 1280,
+      "device-name": "Portland - SE Hawthorne at SE 7th St",
+      "hwy-id": "",
+      "last-update-time": "2026-07-20T07:56:37.283-07:00",
+      "latitude": 45.51225,
+      "longitude": -122.65855,
+      "milepoint": 0.0,
+      "route-id": "City"
+    }
+  ],
+  "organization-information": {
+    "last-update-time": "2026-08-08T10:45:15.769Z",
+    "organization-id": "us.or..dot",
+    "organization-name": "ODOT"
+  }
+}

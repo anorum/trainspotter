@@ -35,17 +35,26 @@ def content_hash(data: bytes) -> str:
     return f"sha256:{hashlib.sha256(data).hexdigest()}"
 
 
-def frame_key(camera_id: str, captured_at: datetime) -> str:
+def frame_key(camera_id: str, captured_at: datetime, digest: str) -> str:
     """S3 key for a frame.
 
     Hour is a separate path component so no single prefix accumulates a day's
     worth of objects, which keeps listing cheap during backfill.
+
+    The key includes a content-hash suffix because the timestamp alone is not
+    unique: ``captured_at`` comes from the image server's Last-Modified header,
+    which has one-second granularity, so two genuinely different frames can share
+    a timestamp. Without the suffix the second would overwrite the first and the
+    manifest would then reference a key holding bytes it never recorded -- silent
+    corruption of the one artifact that cannot be recaptured.
+
+    Content-addressing also makes writes idempotent: replaying the same frame
+    produces the same key rather than a duplicate object.
     """
     ts = captured_at.astimezone(UTC)
     epoch_ms = int(ts.timestamp() * 1000)
-    return (
-        f"frames/{camera_id}/{ts:%Y}/{ts:%m}/{ts:%d}/{ts:%H}/{epoch_ms}.jpg"
-    )
+    short = digest.removeprefix("sha256:")[:8]
+    return f"frames/{camera_id}/{ts:%Y}/{ts:%m}/{ts:%d}/{ts:%H}/{epoch_ms}-{short}.jpg"
 
 
 def manifest_key(camera_id: str, captured_at: datetime) -> str:

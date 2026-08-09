@@ -13,7 +13,8 @@ That is the point of the project.
 
 See [DESIGN.md](design.md) for the full design.
 
-**Status:** Phase 0 (capture). Not yet collecting — waiting on an ODOT API key.
+**Status:** Phase 0 (capture). **Collecting since 2026-08-08.** All six cameras resolved and
+returning frames; see [docs/camera-survey.md](docs/camera-survey.md).
 
 ---
 
@@ -48,8 +49,9 @@ would be three brokers with RF=3.
 
 ## Attribution
 
-Camera imagery courtesy of the **Oregon Department of Transportation** (TripCheck). Transit data
-courtesy of **TriMet**. Neither endorses this project. See their respective terms of use.
+Camera imagery courtesy of the **Portland Bureau of Transportation** (PBOT), served via the
+**Oregon Department of Transportation** TripCheck API. Transit data courtesy of **TriMet**. None of
+them endorse this project. See their respective terms of use.
 
 ---
 
@@ -90,16 +92,19 @@ durable replay corpus, retrievable from anywhere.
 
 | What | Where | Needed for | Blocking? |
 | --- | --- | --- | --- |
-| **ODOT TripCheck Data API key** | [apiportal.odot.state.or.us](https://apiportal.odot.state.or.us/product/tripcheck-data-api) — subscribe to the "TripCheck Data API" product. You receive **two** keys. | Camera inventory only | **Yes** — resolves camera IDs |
-| **TTIP account + terms review** | TripCheck Travel Information Portal, plus the [Getting Started Guide](https://www.tripcheck.com/pdfs/TripCheckAPI_Getting_Started_GuideV5.pdf) | Permission to archive and redistribute imagery | **Yes — gate** |
+| **ODOT TripCheck Data API key** | [apiportal.odot.state.or.us](https://apiportal.odot.state.or.us/) → Sign up → verify email → **Products** → **TripCheck Data** → name a subscription, accept the Terms of Use, **Subscribe**. Keys appear on **Profile**. Instant, free, no approval wait. You receive **two** keys. | Camera inventory only | **Yes** — resolves camera IDs |
+| **Terms of Use review** | The "Show" link beside the agree checkbox at subscribe time, plus the [Getting Started Guide](https://www.tripcheck.com/pdfs/TripCheckAPI_Getting_Started_GuideV5.pdf) | Permission to archive imagery | **Yes — gate** |
 | **TriMet AppID** | [developer.trimet.org/appid/registration/](https://developer.trimet.org/appid/registration/) — free | GTFS-RT, MAX suppression | No |
 | **AWS IAM user** | Scoped to one bucket | Frame + Iceberg storage | Yes |
 
-The subscription key is spent on the **camera inventory only**, which refreshes every 24 hours —
-roughly one API call per day. Image polling goes directly to the per-camera image URLs and does not
-consume API quota. Polling is nevertheless conditional (`If-None-Match` / `If-Modified-Since`),
+The subscription key is spent on the **camera inventory only**, which ODOT refreshes every 24 hours
+— roughly one API call per day. Image polling goes directly to the per-camera `cctv-url` and does
+not consume API quota. Polling is nevertheless conditional (`If-None-Match` / `If-Modified-Since`),
 floored at 15s, and sends a `User-Agent` naming the project and a contact address. Getting the key
 revoked ends the project.
+
+The cameras refresh about every 60 seconds, so roughly half of all polls return 304 and transfer
+nothing. That is the main reason the whole archive costs a couple of dollars a month.
 
 **Read the imagery terms before starting continuous capture.** If archiving is restricted, the
 shape of this project changes. Record the date reviewed in [design.md](design.md) §2.1.

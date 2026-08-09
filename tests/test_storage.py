@@ -12,10 +12,14 @@ from blockade.storage import LocalFrameCache, ManifestWriter, content_hash, fram
 CAPTURED = datetime(2026, 8, 8, 14, 32, 7, tzinfo=UTC)
 
 
+DIGEST_A = content_hash(b"frame-a")
+DIGEST_B = content_hash(b"frame-b")
+
+
 def test_frame_key_layout_includes_hour():
     """Hour is its own path component so no prefix accumulates a day of objects,
     which keeps listing cheap during backfill."""
-    key = frame_key("odot-1234", CAPTURED)
+    key = frame_key("odot-1234", CAPTURED, DIGEST_A)
     assert key.startswith("frames/odot-1234/2026/08/08/14/")
     assert key.endswith(".jpg")
 
@@ -24,7 +28,25 @@ def test_frame_key_normalises_to_utc():
     """The same instant in another offset must land in the same partition, or a
     replay would scatter one hour of frames across two prefixes."""
     pacific = CAPTURED.astimezone(timezone(timedelta(hours=-7)))
-    assert frame_key("odot-1234", pacific) == frame_key("odot-1234", CAPTURED)
+    assert frame_key("odot-1234", pacific, DIGEST_A) == frame_key("odot-1234", CAPTURED, DIGEST_A)
+
+
+def test_different_frames_sharing_a_timestamp_get_different_keys():
+    """captured_at comes from Last-Modified, which has one-second granularity, so
+    two distinct frames can share a timestamp. If they shared a key the second
+    would overwrite the first and the manifest would reference bytes it never
+    recorded -- silent corruption of a corpus that cannot be recaptured."""
+    assert frame_key("odot-1234", CAPTURED, DIGEST_A) != frame_key(
+        "odot-1234", CAPTURED, DIGEST_B
+    )
+
+
+def test_frame_key_is_idempotent_for_identical_content():
+    """Replaying the same frame must land on the same key rather than duplicating
+    the object."""
+    assert frame_key("odot-1234", CAPTURED, DIGEST_A) == frame_key(
+        "odot-1234", CAPTURED, DIGEST_A
+    )
 
 
 def test_manifest_key_layout():
@@ -41,7 +63,7 @@ def test_cache_write_is_atomic(tmp_path):
     """Write-then-rename: a crash mid-write must not leave a truncated JPEG that
     the detector would silently score as a real observation."""
     cache = LocalFrameCache(tmp_path, ttl_days=7)
-    key = frame_key("odot-1234", CAPTURED)
+    key = frame_key("odot-1234", CAPTURED, DIGEST_A)
     path = cache.write(key, b"\xff\xd8data")
 
     assert path.read_bytes() == b"\xff\xd8data"
@@ -50,8 +72,8 @@ def test_cache_write_is_atomic(tmp_path):
 
 def test_cache_sweep_removes_only_expired_frames(tmp_path):
     cache = LocalFrameCache(tmp_path, ttl_days=7)
-    fresh = cache.write(frame_key("odot-1234", CAPTURED), b"fresh")
-    stale = cache.write(frame_key("odot-5678", CAPTURED), b"stale")
+    fresh = cache.write(frame_key("odot-1234", CAPTURED, DIGEST_A), b"fresh")
+    stale = cache.write(frame_key("odot-5678", CAPTURED, DIGEST_B), b"stale")
     old = time.time() - 8 * 86_400
     os.utime(stale, (old, old))
 
@@ -70,7 +92,7 @@ def _record(captured_at: datetime, camera_id: str = "odot-1234") -> FrameRecord:
         captured_at_source=CapturedAtSource.LAST_MODIFIED,
         fetched_at=captured_at,
         fetch_status=FetchStatus.OK,
-        object_key=frame_key(camera_id, captured_at),
+        object_key=frame_key(camera_id, captured_at, content_hash(b"x")),
         content_hash=content_hash(b"x"),
         image_bytes=1,
         poller_version="0.1.0",

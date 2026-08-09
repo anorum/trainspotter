@@ -1,21 +1,37 @@
-"""Resolve the six target cameras from the ODOT TripCheck Camera Inventory.
+"""Resolve the six target cameras from the ODOT TripCheck CCTV Inventory.
 
-The inventory refreshes every 24 hours, so this runs roughly once a day -- the
-subscription key is spent here and nowhere else. Image polling goes directly to
-the per-camera image URLs this endpoint returns and does not consume API quota.
+The inventory refreshes every 24 hours (per ODOT's Getting Started Guide v5), so
+this runs roughly once a day -- the subscription key is spent here and nowhere
+else. Image polling goes directly to the per-camera ``cctv-url`` and does not
+consume API quota.
 
-The exact response field names are not documented publicly and have not been
-verified against a live response (no subscription key yet). Rather than guess
-silently, this module tries a set of candidate field names and, on failure,
-prints the keys it actually saw so the mapping can be corrected in one edit. The
-raw response is always saved first, so a shape change is diagnosable after the
-fact instead of only at the moment it breaks.
+Endpoint and response shape are taken from the TripCheck API Getting Started
+Guide v5 (2020-10-21), sections 1.3.4 and 2.3.2:
+
+    GET https://api.odot.state.or.us/tripcheck/Cctv/Inventory
+        ?DeviceId=&DeviceName=&RouteId=&Bounds=
+    Ocp-Apim-Subscription-Key: <primary or secondary key>
+
+    {
+      "organization-information": {...},
+      "CCTVInventoryRequest": [
+        {"device-id": 277, "device-name": "AstoriaUS101MeglerBrNB",
+         "latitude": 46.18705, "longitude": -123.85347,
+         "cctv-url": "http://www.TripCheck.com/roadcams/cams/...jpg",
+         "cctv-other": "US101 at Astoria - ODOT District Office", ...}
+      ]
+    }
+
+Note the two distinct names: ``device-name`` is a compact slug and ``cctv-other``
+is the human-readable description. Which one carries the names in DESIGN.md is
+not knowable without a live response, so both are matched.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import math
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -30,6 +46,8 @@ log = logging.getLogger(__name__)
 
 INVENTORY_RAW_PATH = REPO_ROOT / "config" / "odot_camera_inventory.json"
 CAMERA_CONFIG_PATH = REPO_ROOT / "config" / "cameras.yaml"
+
+INVENTORY_ENVELOPE_KEY = "CCTVInventoryRequest"
 
 # From DESIGN.md section 2.1. Two cameras per crossing is deliberate: simultaneous
 # stopped queues on multiple approaches is a far stronger signal than any single
@@ -46,11 +64,13 @@ TARGET_CAMERAS: dict[str, str] = {
     "Portland - 8th at Division Place": "SE_8TH_DIVISION",
 }
 
-# Candidate field names, most likely first. ODOT's API is Azure APIM fronting an
-# internal service, so casing conventions vary between resources.
-ID_FIELDS = ("cameraId", "CameraId", "camera_id", "id", "Id", "deviceId")
-NAME_FIELDS = ("cameraName", "CameraName", "camera_name", "name", "Name", "title", "description")
-URL_FIELDS = ("cameraUrl", "CameraUrl", "camera_url", "url", "Url", "imageUrl", "ImageUrl", "href")
+# Documented field names first; the rest are tolerated in case the schema drifts.
+ID_FIELDS = ("device-id", "deviceId", "device_id", "id")
+NAME_FIELDS = ("device-name", "deviceName", "device_name", "name")
+DESCRIPTION_FIELDS = ("cctv-other", "cctvOther", "description", "title")
+URL_FIELDS = ("cctv-url", "cctvUrl", "cctv_url", "url", "imageUrl")
+LAT_FIELDS = ("latitude", "lat")
+LON_FIELDS = ("longitude", "lon", "lng")
 
 
 def _first_present(item: dict[str, Any], candidates: tuple[str, ...]) -> Any | None:
@@ -60,15 +80,22 @@ def _first_present(item: dict[str, Any], candidates: tuple[str, ...]) -> Any | N
     return None
 
 
+def _normalise(text: str) -> str:
+    """Fold case, punctuation, and spacing so 'Portland - 11th at Milwaukie N'
+    matches 'Portland-11th at Milwaukie  N' and similar formatting drift."""
+    return "".join(ch for ch in text.casefold() if ch.isalnum())
+
+
 def _find_camera_list(payload: Any) -> list[dict[str, Any]]:
-    """Locate the list of camera objects in an unknown envelope.
+    """Locate the camera list, preferring the documented envelope key."""
+    if isinstance(payload, dict):
+        documented = payload.get(INVENTORY_ENVELOPE_KEY)
+        if isinstance(documented, list):
+            return [x for x in documented if isinstance(x, dict)]
+    if isinstance(payload, list):
+        return [x for x in payload if isinstance(x, dict)]
 
-    The payload may be a bare list or a list nested under some wrapper key. Rather
-    than hardcode a guess, walk the structure and take the longest list of dicts.
-    """
-    if isinstance(payload, list) and payload and isinstance(payload[0], dict):
-        return payload
-
+    # Fallback: the envelope key changed. Take the longest list of dicts.
     best: list[dict[str, Any]] = []
     stack: list[Any] = [payload]
     while stack:
@@ -83,16 +110,32 @@ def _find_camera_list(payload: Any) -> list[dict[str, Any]]:
     return best
 
 
-def fetch_inventory(settings: Settings) -> Any:
-    """Fetch the raw camera inventory. Returns parsed JSON."""
+def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    r = 6_371_000.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp, dl = math.radians(lat2 - lat1), math.radians(lon2 - lon1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+def fetch_inventory(settings: Settings, bounded: bool = True) -> Any:
+    """Fetch the raw camera inventory.
+
+    ``Bounds`` narrows the response to inner SE Portland rather than every camera
+    in Oregon. The full inventory is still fetchable with ``bounded=False``, which
+    is what to use when a name fails to resolve and the camera may have moved.
+    """
     if not settings.has_odot_key:
         raise RuntimeError(
-            "No ODOT subscription key. Set BLOCKADE_ODOT_API_KEY, or hand-write "
-            "config/cameras.yaml from config/cameras.example.yaml to start capture "
-            "before the key arrives."
+            "No ODOT subscription key. Set BLOCKADE_ODOT_API_KEY (get one at "
+            "https://apiportal.odot.state.or.us -> Products -> TripCheck Data), or "
+            "hand-write config/cameras.yaml from config/cameras.example.yaml to "
+            "start capture before the key arrives."
         )
+    params = {"Bounds": settings.odot_bounds} if bounded else {}
     response = httpx.get(
         settings.odot_inventory_url,
+        params=params,
         headers={
             "Ocp-Apim-Subscription-Key": settings.odot_api_key or "",
             "Accept": "application/json",
@@ -100,45 +143,62 @@ def fetch_inventory(settings: Settings) -> Any:
         },
         timeout=30.0,
     )
+    if response.status_code == 401:
+        raise RuntimeError("401 Access Denied -- the subscription key is invalid or missing.")
+    if response.status_code == 429:
+        raise RuntimeError("429 Too Many Requests -- rate limited. The inventory only "
+                           "changes every 24h; cache it rather than re-fetching.")
     response.raise_for_status()
     return response.json()
+
+
+def describe(item: dict[str, Any]) -> str:
+    """Human-readable one-line summary of an inventory entry."""
+    name = _first_present(item, NAME_FIELDS) or "?"
+    other = _first_present(item, DESCRIPTION_FIELDS) or ""
+    lat = _first_present(item, LAT_FIELDS)
+    lon = _first_present(item, LON_FIELDS)
+    has_coords = isinstance(lat, (int, float)) and isinstance(lon, (int, float))
+    coords = f"{lat:.5f},{lon:.5f}" if has_coords else "?"
+    return f"{_first_present(item, ID_FIELDS)!s:>6}  {name:<38} {coords:>20}  {other}"
 
 
 def resolve(payload: Any, targets: dict[str, str] | None = None) -> tuple[list[dict], list[str]]:
     """Map the inventory onto the target camera list.
 
-    Returns the resolved camera entries and the names that could not be found.
-    A missing name is reported rather than skipped: cameras get renamed and
-    decommissioned, and silently capturing five of six would not be obvious for
+    Matches ``device-name`` and ``cctv-other`` against the DESIGN.md names, after
+    normalising away case, spacing, and punctuation. Returns the resolved entries
+    and the names that could not be found -- a missing name is reported rather
+    than skipped, because silently capturing five of six would not be obvious for
     weeks.
     """
     targets = targets or TARGET_CAMERAS
     items = _find_camera_list(payload)
     if not items:
         raise ValueError(
-            f"No list of camera objects found in the inventory response. "
-            f"Top-level type was {type(payload).__name__}. "
+            f"No camera list in the inventory response (expected key "
+            f"{INVENTORY_ENVELOPE_KEY!r}). Top-level type was {type(payload).__name__}. "
             f"Raw response saved to {INVENTORY_RAW_PATH}."
         )
 
-    sample_keys = sorted(items[0].keys())
-    indexed: dict[str, dict[str, Any]] = {}
+    index: dict[str, dict[str, Any]] = {}
     for item in items:
-        name = _first_present(item, NAME_FIELDS)
-        if name is not None:
-            indexed[str(name).strip().casefold()] = item
+        for field in (NAME_FIELDS, DESCRIPTION_FIELDS):
+            value = _first_present(item, field)
+            if value is not None:
+                index.setdefault(_normalise(str(value)), item)
 
-    if not indexed:
+    if not index:
         raise ValueError(
-            f"Found {len(items)} camera objects but none had a recognisable name field. "
-            f"Tried {NAME_FIELDS}; observed keys: {sample_keys}. "
-            f"Add the correct field name to NAME_FIELDS in this module."
+            f"Found {len(items)} camera objects, none with a recognisable name. "
+            f"Tried {NAME_FIELDS + DESCRIPTION_FIELDS}; observed keys: "
+            f"{sorted(items[0].keys())}."
         )
 
     resolved: list[dict] = []
     missing: list[str] = []
     for target_name, crossing_id in targets.items():
-        item = indexed.get(target_name.casefold())
+        item = index.get(_normalise(target_name))
         if item is None:
             missing.append(target_name)
             continue
@@ -147,19 +207,23 @@ def resolve(payload: Any, targets: dict[str, str] | None = None) -> tuple[list[d
         if raw_id is None or url is None:
             raise ValueError(
                 f"Camera {target_name!r} matched but is missing an id or image URL. "
-                f"Tried id={ID_FIELDS}, url={URL_FIELDS}; observed keys: {sorted(item.keys())}."
+                f"Observed keys: {sorted(item.keys())}."
             )
+        lat = _first_present(item, LAT_FIELDS)
+        lon = _first_present(item, LON_FIELDS)
         resolved.append(
             {
                 "camera_id": f"odot-{raw_id}",
                 "name": target_name,
                 "crossing_id": crossing_id,
-                "image_url": str(url),
+                # https, not the http the inventory returns: these are polled every
+                # 30s for years and there is no reason to do it in cleartext.
+                "image_url": str(url).replace("http://", "https://", 1),
                 "source": CameraSource.ODOT_INVENTORY.value,
                 "usability": "unknown",
                 "poll_interval_seconds": 30.0,
                 "enabled": True,
-                "notes": "",
+                "notes": f"lat={lat} lon={lon}",
             }
         )
     return resolved, missing
@@ -168,19 +232,70 @@ def resolve(payload: Any, targets: dict[str, str] | None = None) -> tuple[list[d
 app = typer.Typer(help="ODOT camera inventory.", no_args_is_help=True)
 
 
+def _load_or_fetch(settings: Settings, source: Path, bounded: bool = True) -> Any:
+    if source.exists():
+        return json.loads(source.read_text())
+    payload = fetch_inventory(settings, bounded=bounded)
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text(json.dumps(payload, indent=2, sort_keys=True))
+    return payload
+
+
 @app.command()
 def fetch(
     output: Path = typer.Option(INVENTORY_RAW_PATH, help="Where to save the raw response."),
+    everything: bool = typer.Option(False, "--all", help="Fetch statewide, ignoring Bounds."),
 ) -> None:
     """Fetch and save the raw inventory. Committed as the provenance record."""
     settings = get_settings()
-    payload = fetch_inventory(settings)
+    try:
+        payload = fetch_inventory(settings, bounded=not everything)
+    except RuntimeError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from exc
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(payload, indent=2, sort_keys=True))
     items = _find_camera_list(payload)
     typer.echo(f"Saved {len(items)} camera records to {output}")
     if items:
         typer.echo(f"Observed fields: {sorted(items[0].keys())}")
+
+
+@app.command("list")
+def list_cmd(
+    source: Path = typer.Option(INVENTORY_RAW_PATH, help="Raw inventory JSON."),
+    everything: bool = typer.Option(False, "--all", help="Fetch statewide, ignoring Bounds."),
+    near: str = typer.Option(
+        "", help="lat,lon -- sort by distance from this point instead of by id."
+    ),
+) -> None:
+    """List cameras in the inventory. Use this when a name fails to resolve: the
+    cameras are all here, and picking them by location is more reliable than
+    matching a display name ODOT can change."""
+    settings = get_settings()
+    try:
+        payload = _load_or_fetch(settings, source, bounded=not everything)
+    except RuntimeError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from exc
+
+    items = _find_camera_list(payload)
+    if near:
+        lat0, lon0 = (float(x) for x in near.split(","))
+
+        def distance(item: dict) -> float:
+            lat, lon = _first_present(item, LAT_FIELDS), _first_present(item, LON_FIELDS)
+            if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+                return float("inf")
+            return _haversine_m(lat0, lon0, lat, lon)
+
+        items = sorted(items, key=distance)
+        for item in items:
+            typer.echo(f"{distance(item):8.0f}m  {describe(item)}")
+        return
+
+    for item in items:
+        typer.echo(describe(item))
 
 
 @app.command("resolve")
@@ -192,16 +307,23 @@ def resolve_cmd(
 ) -> None:
     """Resolve the six target cameras and write config/cameras.yaml."""
     settings = get_settings()
-    if not source.exists():
-        payload = fetch_inventory(settings)
-        source.parent.mkdir(parents=True, exist_ok=True)
-        source.write_text(json.dumps(payload, indent=2, sort_keys=True))
-    else:
-        payload = json.loads(source.read_text())
+    try:
+        payload = _load_or_fetch(settings, source)
+        cameras, missing = resolve(payload)
+    except (RuntimeError, ValueError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from exc
 
-    cameras, missing = resolve(payload)
     for name in missing:
         typer.secho(f"NOT FOUND in inventory: {name}", fg=typer.colors.RED, err=True)
+    if missing:
+        typer.secho(
+            "\nCameras get renamed. Run `blockade-inventory list --near 45.5045,-122.6540` "
+            "to see what is actually near the crossings, then set the names in "
+            "TARGET_CAMERAS or hand-write the roster.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
 
     output.parent.mkdir(parents=True, exist_ok=True)
     header = (

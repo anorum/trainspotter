@@ -1,6 +1,38 @@
 # Camera survey
 
-**Status: not started — blocked on the ODOT API key.**
+**Status: in progress.** Capture started 2026-08-08 21:24 PDT. All six cameras resolved and
+returning frames. Findings below are from the first night frames only — day, dusk, and rain
+samples still needed before the verdicts are final.
+
+## Findings that already change the design
+
+**1. The images are much smaller than assumed: 328×334, ~20 KB.**
+Roughly 90 px of that is burned-in chrome (a title/timestamp header and a "Camera courtesy of
+PBOT" footer), leaving about **328×240 of usable roadway**. At that size a vehicle a block back is
+a few dozen pixels. This is a real constraint on Phase 1: a general-purpose detector will struggle,
+and the motion proxy is likely to carry more of the signal than DESIGN.md assumed. Every ROI
+polygon must exclude the chrome bands, or the frame-difference score will fire on the ticking
+timestamp rather than on traffic.
+
+**2. These are PBOT cameras, not ODOT ones**, served through TripCheck. Attribution in the README
+should credit PBOT as well as ODOT.
+
+**3. Both 11th Ave cameras have a direct sightline to the rail corridor.**
+Device 676 and 677 are labelled "SE Milwaukie @ Gideon" and the track structure is visible in
+frame. DESIGN.md §11 left this open — "whether any camera has direct sightline to the rails; if one
+does, add a direct train-detection signal as a second opinion." It does. This is worth pursuing in
+Phase 1 as an independent second signal for `SE_11TH_MILWAUKIE`, because a signal that observes the
+train rather than the queue fails in different ways than the queue detector does.
+
+**4. The burned-in timestamp agrees with the `Last-Modified` header.**
+The header reads "Aug 08 2026 9:21 PM" and `Last-Modified` gave 04:21 UTC — the same instant. Event
+time from `Last-Modified` is therefore trustworthy, and the burned-in text is a cross-check
+available if a camera's header ever starts lying.
+
+**5. A seventh useful camera exists.** Device 1250, "Portland - Division at 12th", sits 53 m from
+the target set and gives another angle on the 12th crossing. Not enabled; worth adding if the
+survey finds any of the paired cameras unusable.
+
 
 The Phase 0 gate. Visually inspect all six feeds before writing any detector, and record what is
 actually there rather than what the camera name implies. Some cameras will not be usable, and
@@ -47,23 +79,34 @@ For each camera, attach sample frames at **noon, dusk, night, and in rain**, the
 | Obstructions | Poles, signage, overexposure, lens dirt, frozen frames |
 | Verdict | `usable` / `marginal` / `unusable` |
 
-### Portland - 11th at Milwaukie N — `SE_11TH_MILWAUKIE`
-_Not yet surveyed._
+### Portland - 11th at Milwaukie N — `odot-676`, `SE_11TH_MILWAUKIE`
+45.50329, -122.65457 · labelled "212 - SE Milwaukie @ Gideon St"
+Night: streetlights and headlights dominate; vehicle bodies are hard to separate from background.
+**Rail structure visible in frame** — candidate for a direct train signal. Day/dusk/rain pending.
+Verdict: **pending**.
 
-### Portland - 11th at Milwaukie S — `SE_11TH_MILWAUKIE`
-_Not yet surveyed._
+### Portland - 11th at Milwaukie S — `odot-677`, `SE_11TH_MILWAUKIE`
+45.50314, -122.65414 · labelled "213 - SE Milwaukie @ Gideon St"
+Also overlooks the rail corridor. Darker frame than 676; a large unlit region occupies the left
+third. Verdict: **pending**.
 
-### Portland - 12th at Clinton — `SE_12TH_CLINTON`
-_Not yet surveyed._ Expected to be the camera closest to the rails.
+### Portland - 12th at Clinton — `odot-678`, `SE_12TH_CLINTON`
+45.50360, -122.65381 · labelled "214 - SE 12th @ Clinton"
+Clean view straight down the roadway with the intersection centred — the most promising framing for
+queue detection of the four seen so far. Verdict: **pending**.
 
-### Portland - 12th at Division — `SE_12TH_CLINTON`
-_Not yet surveyed._
+### Portland - 12th at Division — `odot-679`, `SE_12TH_CLINTON`
+45.50494, -122.65360 · largest payload of the six (~29 KB), suggesting more scene detail.
+Verdict: **pending**.
 
-### Portland - 8th at Division — `SE_8TH_DIVISION`
-_Not yet surveyed._
+### Portland - 8th at Division — `odot-681`, `SE_8TH_DIVISION`
+45.50573, -122.65745 · ~300 m from the crossings, the furthest of the set. Verdict: **pending**.
 
-### Portland - 8th at Division Place — `SE_8TH_DIVISION`
-_Not yet surveyed._
+### Portland - 8th at Division Place — `odot-682`, `SE_8TH_DIVISION`
+45.50476, -122.65796 · Verdict: **pending**.
+
+### Portland - Division at 12th — `odot-1250` (not enabled)
+45.50493, -122.65372 · A second angle on the 12th crossing, 53 m from `odot-679`. Held in reserve.
 
 ## Summary
 

@@ -196,7 +196,7 @@ class FramePoller:
                 ),
             )
 
-        key = frame_key(camera.camera_id, captured_at)
+        key = frame_key(camera.camera_id, captured_at, digest)
         self._cache.write(key, data)
         if self._store is not None:
             try:

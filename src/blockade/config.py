@@ -100,8 +100,15 @@ class Settings(BaseSettings):
         default=None,
         description="Second key issued with the first; alternated to stay under rate limits.",
     )
-    odot_inventory_url: str = (
-        "https://api.odot.state.or.us/tripcheck/Cameras/Inventory"
+    odot_inventory_url: str = "https://api.odot.state.or.us/tripcheck/Cctv/Inventory"
+
+    odot_bounds: str = Field(
+        default="-122.670,45.495,-122.645,45.515",
+        description=(
+            "minLon,minLat,maxLon,maxLat passed to the CCTV Inventory endpoint to "
+            "return only inner SE Portland instead of every camera in Oregon. "
+            "Covers SE 8th through 12th, Clinton through Powell."
+        ),
     )
 
     # --- Storage ------------------------------------------------------------

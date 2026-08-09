@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  macOS LaunchAgent for Phase 0 capture.
+
+  DESIGN.md calls for a systemd unit on a Pi; this is the same idea for a Mac. It
+  is a stopgap that starts the clock tonight -- the durable home is the k3s
+  Deployment in deploy/capture/. Every day without capture is a day permanently
+  missing from the corpus, because ODOT overwrites each image with the next.
+
+  Install:
+    cp deploy/local/com.blockade.capture.plist ~/Library/LaunchAgents/
+    launchctl load  ~/Library/LaunchAgents/com.blockade.capture.plist
+    launchctl list | grep blockade
+
+  Stop:
+    launchctl unload ~/Library/LaunchAgents/com.blockade.capture.plist
+
+  Note: a LaunchAgent only runs while the user is logged in, and the machine
+  must not sleep. `caffeinate -s` or Energy Saver settings are the difference
+  between a continuous corpus and one full of overnight holes.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.blockade.capture</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/uv</string>
+        <string>run</string>
+        <string>blockade-capture</string>
+        <string>run</string>
+        <string>--dry-run</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/alexnorum/repos/train-spotting</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart if it ever exits. A stopped poller is silent data loss. -->
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/alexnorum/repos/train-spotting/var/capture.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/alexnorum/repos/train-spotting/var/capture.log</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

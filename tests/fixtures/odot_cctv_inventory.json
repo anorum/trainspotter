@@ -1,0 +1,105 @@
+{
+  "CCTVInventoryRequest": [
+    {
+      "cctv-other": "US26 at Milwaukie",
+      "cctv-url": "http://www.TripCheck.com/roadcams/cams/26pwlmilw_pid590.jpg",
+      "device-id": 164,
+      "device-name": "US26 at Milwaukie",
+      "hwy-id": "026",
+      "last-update-time": "2026-08-08T03:43:58.087-07:00",
+      "latitude": 45.50129,
+      "longitude": -122.6541,
+      "milepoint": 1.26,
+      "route-id": "US26"
+    },
+    {
+      "cctv-other": "Portland - 11th at Milwaukie N",
+      "cctv-url": "http://www.TripCheck.com/roadcams/cams/11th at Milwaukie N_pid3169.JPG",
+      "device-id": 676,
+      "device-name": "Portland - 11th at Milwaukie N",
+      "hwy-id": "",
+      "last-update-time": "2026-08-08T03:43:20.617-07:00",
+      "latitude": 45.50329,
+      "longitude": -122.65457,
+      "milepoint": 0.0,
+      "route-id": "CITY"
+    },
+    {
+      "cctv-other": "Portland - 11th at Milwaukie S",
+      "cctv-url": "http://www.TripCheck.com/roadcams/cams/11th at Milwaukie S_pid3173.JPG",
+      "device-id": 677,
+      "device-name": "Portland - 11th at Milwaukie S",
+      "hwy-id": "",
+      "last-update-time": "2026-08-08T03:43:20.583-07:00",
+      "latitude": 45.50314,
+      "longitude": -122.65414,
+      "milepoint": 0.0,
+      "route-id": "CITY"
+    },
+    {
+      "cctv-other": "Portland - 12th at Clinton",
+      "cctv-url": "http://www.TripCheck.com/roadcams/cams/12th at Clinton_pid3177.JPG",
+      "device-id": 678,
+      "device-name": "Portland - 12th at Clinton",
+      "hwy-id": "",
+      "last-update-time": "2026-08-08T03:43:21.087-07:00",
+      "latitude": 45.5036,
+      "longitude": -122.65381,
+      "milepoint": 0.0,
+      "route-id": "CITY"
+    },
+    {
+      "cctv-other": "Portland - 12th at Division",
+      "cctv-url": "http://www.TripCheck.com/roadcams/cams/12th at Division_pid3181.JPG",
+      "device-id": 679,
+      "device-name": "Portland - 12th at Division",
+      "hwy-id": "",
+      "last-update-time": "2026-08-08T03:43:21.087-07:00",
+      "latitude": 45.50494,
+      "longitude": -122.6536,
+      "milepoint": 0.0,
+      "route-id": "CITY"
+    },
+    {
+      "cctv-other": "Portland - 8th at Division",
+      "cctv-url": "http://www.TripCheck.com/roadcams/cams/8th at Division_pid3189.JPG",
+      "device-id": 681,
+      "device-name": "8th at Division",
+      "hwy-id": "",
+      "last-update-time": "2026-08-08T03:43:20.553-07:00",
+      "latitude": 45.50573,
+      "longitude": -122.65745,
+      "milepoint": 0.0,
+      "route-id": "CITY"
+    },
+    {
+      "cctv-other": "Portland - 8th at Division Place",
+      "cctv-url": "http://www.TripCheck.com/roadcams/cams/8th at Division Place_pid3193.JPG",
+      "device-id": 682,
+      "device-name": "8th at Division Place",
+      "hwy-id": "",
+      "last-update-time": "2026-08-08T03:43:20.583-07:00",
+      "latitude": 45.50476,
+      "longitude": -122.65796,
+      "milepoint": 0.0,
+      "route-id": "CITY"
+    },
+    {
+      "cctv-other": "Portland - Division at 12th",
+      "cctv-url": "http://www.TripCheck.com/roadcams/cams/SE Division at 12th_pid4871.jpg",
+      "device-id": 1250,
+      "device-name": "SE Division at 12th",
+      "hwy-id": "",
+      "last-update-time": "2026-08-08T03:43:44.577-07:00",
+      "latitude": 45.50493,
+      "longitude": -122.65372,
+      "milepoint": 0.0,
+      "route-id": "City"
+    }
+  ],
+  "organization-information": {
+    "last-update-time": "2026-08-08T10:45:15.769Z",
+    "organization-id": "us.or..dot",
+    "organization-name": "ODOT"
+  }
+}
