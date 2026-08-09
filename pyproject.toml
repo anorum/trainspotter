@@ -27,6 +27,11 @@ dependencies = [
 transit = [
     "gtfs-realtime-bindings>=1.0",
 ]
+# The free detector. numpy + Pillow only -- no model weights, no GPU, no service.
+vision = [
+    "numpy>=1.26",
+    "pillow>=10.0",
+]
 
 [project.scripts]
 blockade-inventory = "blockade.capture.inventory:app"
