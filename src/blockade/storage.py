@@ -108,6 +108,19 @@ class S3ObjectStore:
             raise
         return True
 
+    def list_keys(self, prefix: str) -> set[str]:
+        """Every key under ``prefix``.
+
+        One LIST per 1000 objects, versus one HEAD per object when diffing a
+        backfill. At tens of thousands of frames that is the difference between a
+        cheap sync and a slow, chatty one.
+        """
+        keys: set[str] = set()
+        paginator = self._client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=self._bucket, Prefix=prefix):
+            keys.update(obj["Key"] for obj in page.get("Contents", []))
+        return keys
+
 
 class LocalFrameCache:
     """Mirror of the S3 frame layout on a PVC, swept on a TTL.

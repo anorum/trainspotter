@@ -112,7 +112,7 @@ class Settings(BaseSettings):
     )
 
     # --- Storage ------------------------------------------------------------
-    s3_bucket: str = "blockade"
+    s3_bucket: str = "pdx-trainspotter"
     s3_region: str = "us-west-2"
     s3_endpoint_url: str | None = Field(
         default=None,
