@@ -7,7 +7,10 @@ that cannot be recaptured, because ODOT overwrites each image with the next.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import os
+import time
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -17,7 +20,7 @@ import respx
 from blockade.capture.poller import FramePoller
 from blockade.config import Camera, Settings
 from blockade.schemas import CapturedAtSource, FetchStatus, FrameRecord
-from blockade.storage import LocalFrameCache, ManifestWriter
+from blockade.storage import LocalFrameCache, ManifestWriter, content_hash, frame_key
 from tests.conftest import JPEG_A, JPEG_B
 
 IMAGE_URL = "https://tripcheck.example/cams/1234.jpg"
@@ -211,6 +214,24 @@ async def test_empty_body_is_an_error_not_a_frame(settings, camera, client, cach
     record = await poller.poll_once(camera)
 
     assert record.fetch_status is FetchStatus.ERROR
+
+
+async def test_cache_is_never_swept_without_a_durable_copy(
+    settings, camera, client, cache, manifest, tmp_path
+):
+    """The TTL sweeper assumes S3 holds the archive and the local copy is a
+    read cache. Running local-only, there is no second copy -- sweeping would
+    permanently destroy frames ODOT has long since overwritten. The sweeper must
+    refuse to run rather than quietly delete the corpus a week later."""
+    key = frame_key("odot-1234", datetime.now(UTC), content_hash(b"old"))
+    path = cache.write(key, b"old")
+    stale = time.time() - 400 * 86_400
+    os.utime(path, (stale, stale))
+
+    poller = FramePoller(settings, [camera], client, cache, manifest, store=None)
+    await asyncio.wait_for(poller._sweep_cache_periodically(), timeout=1.0)
+
+    assert path.exists(), "a frame with no second copy must never be deleted"
 
 
 @respx.mock

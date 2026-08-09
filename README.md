@@ -129,11 +129,24 @@ decommissioned; silently capturing five of six would not be obvious for weeks.
 ### Capture
 
 ```bash
-uv run blockade-capture once        # poll each camera once, print outcomes, verify the roster
-uv run blockade-capture run         # continuous; metrics on :9102
+uv run blockade-capture once              # poll each camera once, verify the roster
+uv run blockade-capture run --local-only  # continuous, local disk only; metrics on :9102
+uv run blockade-capture run               # continuous, writing to S3 as well
 ```
 
 `once` is the pre-flight check — run it before starting continuous capture.
+
+**`--local-only` is the current mode**, since object storage is deferred until this is
+productionised. In that mode the local frames are the *only* copy, so the 7-day cache TTL is
+disabled and frames are kept indefinitely — sweeping them would permanently destroy imagery ODOT
+overwrote long ago. Budget roughly **180 MB/day (~5.4 GB/month)** of disk.
+
+When a bucket does exist, `blockade-sync` uploads everything captured in the meantime and the TTL
+starts applying again. Nothing captured now is lost by deferring.
+
+On macOS, [deploy/local/com.blockade.capture.plist](deploy/local/com.blockade.capture.plist) runs
+capture as a LaunchAgent — the equivalent of the systemd unit DESIGN.md calls for. Note it only
+runs while you are logged in and the machine is awake.
 
 ### Test
 

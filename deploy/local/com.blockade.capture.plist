@@ -30,7 +30,10 @@
         <string>run</string>
         <string>blockade-capture</string>
         <string>run</string>
-        <string>--dry-run</string>
+        <!-- No object store until this is productionised. Frames are therefore
+             kept indefinitely rather than expired: the local disk is the only
+             copy, and ODOT has already overwritten the originals. -->
+        <string>--local-only</string>
     </array>
 
     <key>WorkingDirectory</key>

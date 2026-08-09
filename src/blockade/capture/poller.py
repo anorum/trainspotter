@@ -292,6 +292,23 @@ class FramePoller:
             self._manifest.flush_all()
 
     async def _sweep_cache_periodically(self) -> None:
+        """Expire cached frames -- but only when a durable copy exists elsewhere.
+
+        The TTL exists because S3 holds the archive and the local copy is just a
+        read cache that saves egress. With no object store configured there is no
+        second copy, so sweeping would permanently destroy frames that ODOT has
+        long since overwritten. Running local-only is a legitimate mode; silently
+        deleting the corpus a week later is not.
+        """
+        if self._store is None:
+            log.warning(
+                "no object store configured: local frames will be kept indefinitely "
+                "rather than expired after %d days, because there is no second copy. "
+                "Expect ~180 MB/day. Run `blockade-sync` once a bucket exists.",
+                self._settings.local_cache_ttl_days,
+            )
+            return
+
         while True:
             await asyncio.sleep(3600)
             try:
@@ -311,10 +328,10 @@ def _fail(message: str) -> None:
     raise typer.Exit(code=1)
 
 
-async def _run(settings: Settings, dry_run: bool, once: bool) -> None:
+async def _run(settings: Settings, local_only: bool, once: bool) -> None:
     roster = load_roster(settings.camera_config_path)
     cameras = roster.enabled()
-    store = None if dry_run else S3ObjectStore(settings)
+    store = None if local_only else S3ObjectStore(settings)
     cache = LocalFrameCache(settings.local_cache_dir, settings.local_cache_ttl_days)
     manifest = ManifestWriter(settings.manifest_dir, store)
 
@@ -348,27 +365,33 @@ async def _run(settings: Settings, dry_run: bool, once: bool) -> None:
         log.info("shutdown complete")
 
 
+LOCAL_ONLY_HELP = (
+    "Write frames to local disk only, with no object store. Frames are then kept "
+    "indefinitely rather than expired, since there is no second copy."
+)
+
+
 @app.command()
 def run(
-    dry_run: bool = typer.Option(False, help="Skip S3; write to the local cache only."),
+    local_only: bool = typer.Option(False, "--local-only", help=LOCAL_ONLY_HELP),
 ) -> None:
     """Capture continuously until SIGTERM."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     try:
-        asyncio.run(_run(get_settings(), dry_run=dry_run, once=False))
+        asyncio.run(_run(get_settings(), local_only=local_only, once=False))
     except (FileNotFoundError, ValueError) as exc:
         _fail(str(exc))
 
 
 @app.command()
 def once(
-    dry_run: bool = typer.Option(True, help="Skip S3; write to the local cache only."),
+    local_only: bool = typer.Option(True, "--local-only/--upload", help=LOCAL_ONLY_HELP),
 ) -> None:
     """Poll every camera exactly once and print the outcome. Use this to verify a
     roster before starting continuous capture."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     try:
-        asyncio.run(_run(get_settings(), dry_run=dry_run, once=True))
+        asyncio.run(_run(get_settings(), local_only=local_only, once=True))
     except (FileNotFoundError, ValueError) as exc:
         _fail(str(exc))
 

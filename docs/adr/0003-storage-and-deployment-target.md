@@ -1,7 +1,16 @@
 # 3. Storage and deployment target
 
 **Date:** 2026-08-08
-**Status:** Accepted
+**Status:** Accepted, implementation deferred
+
+> **Deferred 2026-08-08.** The bucket `pdx-trainspotter` exists, but capture runs `--local-only`
+> until the project is productionised: AWS credentials are not worth wiring up to collect a corpus
+> that fits comfortably on a local disk. `blockade-sync` backfills whatever accumulated whenever
+> the bucket is connected, so the decision below stands and nothing captured now is lost.
+>
+> One consequence had to be handled rather than deferred: the local cache's 7-day TTL assumes S3
+> holds the archive. With no second copy it would have started deleting the corpus a week in, so
+> the sweeper now refuses to run when no object store is configured.
 
 ## Context
 
