@@ -1,0 +1,138 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: blockade
+---
+# Frames and the JSONL manifest. The manifest is the backfill source for the whole
+# pipeline, so this volume must survive pod restarts and image upgrades.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: blockade-capture-data
+  namespace: blockade
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      # ~1.2 GB/day of frames at a 7-day cache TTL, plus manifest headroom.
+      storage: 20Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: blockade-cameras
+  namespace: blockade
+data:
+  # Replace with the output of `blockade-inventory resolve`.
+  # kubectl -n blockade create configmap blockade-cameras \
+  #   --from-file=cameras.yaml=config/cameras.yaml --dry-run=client -o yaml | kubectl apply -f -
+  cameras.yaml: |
+    cameras: []
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: blockade-credentials
+  namespace: blockade
+type: Opaque
+stringData:
+  # kubectl -n blockade create secret generic blockade-credentials \
+  #   --from-literal=BLOCKADE_ODOT_API_KEY=... --from-literal=AWS_ACCESS_KEY_ID=... ...
+  BLOCKADE_ODOT_API_KEY: ""
+  BLOCKADE_ODOT_API_KEY_SECONDARY: ""
+  AWS_ACCESS_KEY_ID: ""
+  AWS_SECRET_ACCESS_KEY: ""
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: blockade-capture
+  namespace: blockade
+spec:
+  replicas: 1
+  # Recreate, not RollingUpdate: two pollers briefly overlapping would double the
+  # request rate against ODOT and write duplicate manifest records for the same tick.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: blockade-capture
+  template:
+    metadata:
+      labels:
+        app: blockade-capture
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      containers:
+        - name: capture
+          image: ghcr.io/YOU/blockade:0.1.0
+          args: ["run"]
+          ports:
+            - name: metrics
+              containerPort: 9102
+          envFrom:
+            - secretRef:
+                name: blockade-credentials
+          env:
+            - name: BLOCKADE_CAMERA_CONFIG_PATH
+              value: /etc/blockade/cameras.yaml
+            - name: BLOCKADE_S3_BUCKET
+              value: blockade
+            - name: BLOCKADE_S3_REGION
+              value: us-west-2
+            - name: BLOCKADE_USER_AGENT
+              value: "blockade/0.1 (+https://github.com/YOU/blockade; you@example.com)"
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/blockade
+            - name: cameras
+              mountPath: /etc/blockade
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              # No CPU limit: throttling the poll loop would skew captured_at and
+              # silently widen the gaps this project exists to measure.
+              memory: 512Mi
+          # Liveness on the metrics port only proves the process is up. Whether it
+          # is actually capturing is an alerting concern -- see servicemonitor.yaml,
+          # where a stalled camera is caught by frame staleness, not by a probe.
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: blockade-capture-data
+        - name: cameras
+          configMap:
+            name: blockade-cameras
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: blockade-capture
+  namespace: blockade
+  labels:
+    app: blockade-capture
+spec:
+  selector:
+    app: blockade-capture
+  ports:
+    - name: metrics
+      port: 9102
+      targetPort: metrics

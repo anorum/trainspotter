@@ -1,0 +1,72 @@
+# Example camera roster.
+#
+# `blockade-inventory resolve` generates the real config/cameras.yaml once an ODOT
+# subscription key exists. Until then this file documents the shape, and a
+# hand-written cameras.yaml with `source: manual` works identically -- the poller
+# never talks to the ODOT API, only to the image URLs listed here.
+#
+# Camera names are from DESIGN.md section 2.1. The image_url values below are
+# PLACEHOLDERS: the real ones come from the inventory endpoint's per-camera URL
+# field. Do not guess them into cameras.yaml -- an unverified URL that 404s looks
+# identical in the metrics to a camera that is genuinely down.
+
+cameras:
+  - camera_id: odot-PLACEHOLDER-1
+    name: Portland - 11th at Milwaukie N
+    crossing_id: SE_11TH_MILWAUKIE
+    image_url: https://tripcheck.com/RoadCams/cams/PLACEHOLDER.jpg
+    source: manual
+    usability: unknown
+    poll_interval_seconds: 30.0
+    enabled: true
+    notes: 11th northbound approach
+
+  - camera_id: odot-PLACEHOLDER-2
+    name: Portland - 11th at Milwaukie S
+    crossing_id: SE_11TH_MILWAUKIE
+    image_url: https://tripcheck.com/RoadCams/cams/PLACEHOLDER.jpg
+    source: manual
+    usability: unknown
+    poll_interval_seconds: 30.0
+    enabled: true
+    notes: 11th southbound approach
+
+  - camera_id: odot-PLACEHOLDER-3
+    name: Portland - 12th at Clinton
+    crossing_id: SE_12TH_CLINTON
+    image_url: https://tripcheck.com/RoadCams/cams/PLACEHOLDER.jpg
+    source: manual
+    usability: unknown
+    poll_interval_seconds: 30.0
+    enabled: true
+    notes: closest to the rails
+
+  - camera_id: odot-PLACEHOLDER-4
+    name: Portland - 12th at Division
+    crossing_id: SE_12TH_CLINTON
+    image_url: https://tripcheck.com/RoadCams/cams/PLACEHOLDER.jpg
+    source: manual
+    usability: unknown
+    poll_interval_seconds: 30.0
+    enabled: true
+    notes: 12th northern approach
+
+  - camera_id: odot-PLACEHOLDER-5
+    name: Portland - 8th at Division
+    crossing_id: SE_8TH_DIVISION
+    image_url: https://tripcheck.com/RoadCams/cams/PLACEHOLDER.jpg
+    source: manual
+    usability: unknown
+    poll_interval_seconds: 30.0
+    enabled: true
+    notes: 8th approach
+
+  - camera_id: odot-PLACEHOLDER-6
+    name: Portland - 8th at Division Place
+    crossing_id: SE_8TH_DIVISION
+    image_url: https://tripcheck.com/RoadCams/cams/PLACEHOLDER.jpg
+    source: manual
+    usability: unknown
+    poll_interval_seconds: 30.0
+    enabled: true
+    notes: 8th approach

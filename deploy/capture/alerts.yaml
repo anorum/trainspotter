@@ -1,0 +1,66 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: blockade-capture
+  namespace: blockade
+spec:
+  selector:
+    matchLabels:
+      app: blockade-capture
+  endpoints:
+    - port: metrics
+      interval: 30s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: blockade-capture
+  namespace: blockade
+spec:
+  groups:
+    - name: blockade-capture
+      rules:
+        # The alert that matters. ODOT overwrites each image with the next, so a
+        # stalled camera is data permanently lost -- not a delay, a hole.
+        - alert: BlockadeCameraStalled
+          expr: time() - blockade_last_new_frame_timestamp > 900
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "No new frame from {{ $labels.camera_id }} in 15 minutes"
+            description: >-
+              Either the camera is down or its refresh interval changed. Frames
+              missed now cannot be recovered later.
+
+        - alert: BlockadeAllCamerasStalled
+          expr: min(time() - blockade_last_new_frame_timestamp) > 900
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "No new frames from any camera in 15 minutes"
+            description: >-
+              Points at the poller, the network, or a revoked key rather than a
+              single camera fault.
+
+        - alert: BlockadeCameraErroring
+          expr: blockade_consecutive_errors > 10
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.camera_id }} has failed {{ $value }} consecutive polls"
+
+        # A camera whose every poll is a duplicate is either frozen or refreshing
+        # far slower than assumed. Both change what the detector should trust.
+        - alert: BlockadeCameraAllDuplicates
+          expr: |
+            sum by (camera_id) (rate(blockade_frames_total{status="ok"}[1h])) == 0
+            and sum by (camera_id) (rate(blockade_frames_total[1h])) > 0
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.camera_id }} served no new image for an hour"

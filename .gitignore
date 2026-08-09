@@ -1,0 +1,18 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+
+# Local capture output. The corpus lives on S3 and the PVC, never in git.
+var/
+data/frames/
+*.jsonl
+*.jsonl.gz
+
+# Credentials
+.env
+.env.*
+!.env.example
