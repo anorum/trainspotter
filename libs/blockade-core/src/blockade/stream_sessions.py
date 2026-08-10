@@ -1,0 +1,148 @@
+"""The streaming counterpart of ``sessions.py``: one observation at a time.
+
+The batch oracle sees the whole history and looks backwards; a stream cannot.
+The gap rule - "a session ends when no BLOCKED arrives for ten minutes" - turns
+into a timer: every BLOCKED observation re-arms an alarm at ``captured_at +
+gap``, and if the alarm fires first, the session closes. That is the entire
+translation; everything else is bookkeeping.
+
+This class is pure Python with all state in one serializable dataclass, so the
+Flink operator wrapping it stays a thin shell: Flink contributes durable keyed
+state, event-time timers, and crash recovery, while the decisions live here
+where they are unit-tested and diffed against the batch oracle. A closed
+session emitted by this class must match what ``derive_sessions`` produces
+from the same observations - that equivalence is pinned by tests, and a
+disagreement is a concrete counterexample rather than a vague worry.
+
+Emission protocol, shaped for the compacted ``crossing.sessions.v1`` topic:
+a session is emitted with ``is_open=True`` as soon as it qualifies (enough
+observations, long enough) and re-emitted as it grows; the final emission on
+close has ``is_open=False``. Every emission carries the same deterministic
+``session_id``, so compaction keeps exactly one row per session - the latest.
+Runs that never qualify close silently, matching the oracle's filters.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import UTC, datetime
+
+from blockade.schemas import BlockageSession, CrossingState, ObservationRecord
+from blockade.sessions import SessionParams
+
+
+def _ms(moment: datetime) -> int:
+    return int(moment.timestamp() * 1000)
+
+
+def _from_ms(epoch_ms: int) -> datetime:
+    return datetime.fromtimestamp(epoch_ms / 1000, tz=UTC)
+
+
+@dataclass
+class SessionizerState:
+    """Everything the sessionizer remembers about one crossing.
+
+    Primitives only, deliberately: this crosses a checkpoint boundary in Flink,
+    and epoch milliseconds survive serialization without a timezone to lose.
+    """
+
+    crossing_id: str
+    started_at_ms: int
+    last_blocked_ms: int
+    observation_count: int
+    peak_confidence: float
+    detector_version: str
+
+    def to_json_dict(self) -> dict:
+        return self.__dict__.copy()
+
+    @classmethod
+    def from_json_dict(cls, data: dict) -> SessionizerState:
+        return cls(**data)
+
+
+class StreamingSessionizer:
+    """Feeds on one crossing's observations; emits session records.
+
+    Stateless itself - the caller owns the ``SessionizerState`` and the timer,
+    because in Flink both belong to the framework. Methods return the new
+    state, the records to emit, and the timer to (re)arm. One instance serves
+    every key, as it will inside Flink.
+    """
+
+    def __init__(self, params: SessionParams | None = None) -> None:
+        self.params = params or SessionParams()
+
+    def observe(
+        self, state: SessionizerState | None, obs: ObservationRecord
+    ) -> tuple[SessionizerState | None, list[BlockageSession], int | None]:
+        """One observation in; (new state, emissions, timer-at-ms) out.
+
+        UNKNOWN and CLEAR are ignored entirely, exactly as in the oracle: an
+        unreadable frame is an absence of evidence, and a momentary CLEAR
+        between railcars must not split a session - only sustained silence
+        (the gap timer) ends one.
+        """
+        if obs.state is not CrossingState.BLOCKED:
+            return state, [], None
+
+        at = _ms(obs.captured_at)
+        if state is None or at - state.last_blocked_ms > self._gap_ms:
+            # A fresh session. In Flink the timer closes the previous one
+            # before event time can reach this far, so the stale state seen
+            # here only occurs when tests drive the class directly.
+            state = SessionizerState(
+                crossing_id=obs.crossing_id,
+                started_at_ms=at,
+                last_blocked_ms=at,
+                observation_count=1,
+                peak_confidence=obs.confidence,
+                detector_version=obs.detector_version,
+            )
+        else:
+            state.last_blocked_ms = max(state.last_blocked_ms, at)
+            state.observation_count += 1
+            state.peak_confidence = max(state.peak_confidence, obs.confidence)
+
+        emissions = [self._session(state, is_open=True)] if self._qualifies(state) else []
+        # One millisecond past the boundary, because the gap is inclusive: an
+        # observation exactly `gap` after the last one continues the session
+        # (the oracle's rule is `<=`), so the timer must fire strictly after
+        # that instant. The oracle caught this as an off-by-one on real data -
+        # two frames landed exactly 600.000s apart and the session split.
+        return state, emissions, state.last_blocked_ms + self._gap_ms + 1
+
+    def on_timer(
+        self, state: SessionizerState | None, fired_at_ms: int
+    ) -> tuple[SessionizerState | None, list[BlockageSession]]:
+        """The gap elapsed with no BLOCKED. Close and clear, or ignore a stale
+        timer that a later observation has already superseded."""
+        if state is None or fired_at_ms <= state.last_blocked_ms + self._gap_ms:
+            return state, []
+        emissions = [self._session(state, is_open=False)] if self._qualifies(state) else []
+        return None, emissions
+
+    @property
+    def _gap_ms(self) -> int:
+        return int(self.params.gap.total_seconds() * 1000)
+
+    def _qualifies(self, state: SessionizerState) -> bool:
+        long_enough = (
+            state.last_blocked_ms - state.started_at_ms
+            >= self.params.min_duration.total_seconds() * 1000
+        )
+        return state.observation_count >= self.params.min_observations and long_enough
+
+    def _session(self, state: SessionizerState, is_open: bool) -> BlockageSession:
+        started = _from_ms(state.started_at_ms)
+        return BlockageSession(
+            session_id=BlockageSession.make_session_id(state.crossing_id, started),
+            crossing_id=state.crossing_id,
+            started_at=started,
+            ended_at=_from_ms(state.last_blocked_ms),
+            duration_seconds=int((state.last_blocked_ms - state.started_at_ms) / 1000),
+            peak_queue_occupancy=state.peak_confidence,
+            is_open=is_open,
+            detector_version=state.detector_version,
+        )
