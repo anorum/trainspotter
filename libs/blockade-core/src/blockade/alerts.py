@@ -61,6 +61,26 @@ class CrossingAlertState:
     last_seen: datetime | None = None
     alerted_at: datetime | None = None
 
+    def to_json_dict(self) -> dict:
+        """Primitives only - this crosses a Flink checkpoint boundary."""
+        return {
+            "alerted": self.alerted,
+            "blocked_streak": self.blocked_streak,
+            "clear_streak": self.clear_streak,
+            "last_seen": self.last_seen.isoformat() if self.last_seen else None,
+            "alerted_at": self.alerted_at.isoformat() if self.alerted_at else None,
+        }
+
+    @classmethod
+    def from_json_dict(cls, data: dict) -> CrossingAlertState:
+        return cls(
+            alerted=data["alerted"],
+            blocked_streak=data["blocked_streak"],
+            clear_streak=data["clear_streak"],
+            last_seen=datetime.fromisoformat(data["last_seen"]) if data["last_seen"] else None,
+            alerted_at=datetime.fromisoformat(data["alerted_at"]) if data["alerted_at"] else None,
+        )
+
 
 @dataclass(frozen=True)
 class Alert:

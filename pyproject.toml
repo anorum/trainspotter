@@ -6,6 +6,10 @@
 # several services, no drift.
 [tool.uv.workspace]
 members = ["libs/*", "services/*"]
+# The pipeline is not a workspace member: apache-flink is a ~500MB dependency
+# tree, and its logic lives in blockade-core classes the main suite already
+# tests. The Dockerfile is its build definition; job.py is plumbing.
+exclude = ["services/pipeline"]
 
 [tool.uv.sources]
 blockade-core = { workspace = true }

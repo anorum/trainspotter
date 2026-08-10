@@ -40,10 +40,20 @@ def obs(
 
 
 class Driver:
-    """Stands in for Flink: owns state and timers, advances event time."""
+    """Stands in for Flink: owns state and timers, advances the watermark.
 
-    def __init__(self, params: SessionParams | None = None) -> None:
+    ``watermark_lag_ms`` mirrors the bounded-out-of-orderness strategy: the
+    watermark trails the newest event by that much, so timers between an old
+    event and a new one fire *after* the new element is processed. Equivalence
+    must hold at zero lag and at the real two-minute lag - the sessionizer
+    cannot be allowed to care which race it loses.
+    """
+
+    def __init__(
+        self, params: SessionParams | None = None, watermark_lag_ms: int = 0
+    ) -> None:
         self.sessionizer = StreamingSessionizer(params)
+        self.watermark_lag_ms = watermark_lag_ms
         self.states: dict[str, SessionizerState | None] = {}
         self.timers: dict[str, int | None] = {}
         self.emitted: list[BlockageSession] = []
@@ -51,9 +61,7 @@ class Driver:
     def run(self, observations: list[ObservationRecord]) -> list[BlockageSession]:
         for o in sorted(observations, key=lambda o: o.captured_at):
             now_ms = int(o.captured_at.timestamp() * 1000)
-            # The watermark reaching now fires any timer armed before it -
-            # this ordering (timers first) is Flink's own.
-            self._fire_due(now_ms)
+            self._fire_due(now_ms - self.watermark_lag_ms)
             state, out, timer = self.sessionizer.observe(self.states.get(o.crossing_id), o)
             self.states[o.crossing_id] = state
             if timer is not None:
@@ -80,11 +88,12 @@ class Driver:
 
 
 def assert_matches_oracle(observations: list[ObservationRecord]) -> None:
-    oracle = derive_sessions(observations)
-    driver = Driver()
-    driver.run(observations)
-    streamed = driver.closed()
-    assert [s.model_dump() for s in streamed] == [s.model_dump() for s in oracle]
+    oracle = [s.model_dump() for s in derive_sessions(observations)]
+    for lag_ms in (0, 120_000):
+        driver = Driver(watermark_lag_ms=lag_ms)
+        driver.run(observations)
+        streamed = [s.model_dump() for s in driver.closed()]
+        assert streamed == oracle, f"disagrees with oracle at watermark lag {lag_ms}ms"
 
 
 def test_one_long_blockage_matches_oracle() -> None:

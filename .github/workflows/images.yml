@@ -36,7 +36,7 @@ jobs:
       # the other. Capture in particular should be shippable on its own.
       fail-fast: false
       matrix:
-        service: [poller, detector]
+        service: [poller, detector, pipeline]
     steps:
       - uses: actions/checkout@v4
 

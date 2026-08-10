@@ -54,3 +54,19 @@ spec:
     cleanup.policy: compact
     segment.bytes: 33554432
     min.cleanable.dirty.ratio: "0.1"
+---
+# Rising-edge alerts, one per blockage. Small and transient - the notifier
+# consumes them within seconds - so short retention: anything older than a day
+# is history, not an alert.
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: crossing.alerts.v1
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: blockade
+spec:
+  partitions: 3
+  replicas: 1
+  config:
+    retention.ms: 86400000

@@ -87,11 +87,19 @@ class StreamingSessionizer:
         if obs.state is not CrossingState.BLOCKED:
             return state, [], None
 
+        emissions: list[BlockageSession] = []
         at = _ms(obs.captured_at)
-        if state is None or at - state.last_blocked_ms > self._gap_ms:
-            # A fresh session. In Flink the timer closes the previous one
-            # before event time can reach this far, so the stale state seen
-            # here only occurs when tests drive the class directly.
+        if state is not None and at - state.last_blocked_ms > self._gap_ms:
+            # This observation arrived past the gap, so the previous session is
+            # over - and it must be closed *here*, not left to the timer.
+            # Watermarks lag events by the out-of-orderness bound, so Flink
+            # processes this element before the close timer fires; relying on
+            # the timer would silently drop the close emission. The stale timer
+            # later fires against the fresh state and is ignored.
+            if self._qualifies(state):
+                emissions.append(self._session(state, is_open=False))
+            state = None
+        if state is None:
             state = SessionizerState(
                 crossing_id=obs.crossing_id,
                 started_at_ms=at,
@@ -105,7 +113,8 @@ class StreamingSessionizer:
             state.observation_count += 1
             state.peak_confidence = max(state.peak_confidence, obs.confidence)
 
-        emissions = [self._session(state, is_open=True)] if self._qualifies(state) else []
+        if self._qualifies(state):
+            emissions.append(self._session(state, is_open=True))
         # One millisecond past the boundary, because the gap is inclusive: an
         # observation exactly `gap` after the last one continues the session
         # (the oracle's rule is `<=`), so the timer must fire strictly after
