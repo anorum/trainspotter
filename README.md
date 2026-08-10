@@ -70,9 +70,20 @@ That contrast is unmistakable even at 328x240.
 
 ## Honest limitations
 
-- **False positives are the open problem.** Scored across a full day, reference differencing produced roughly fifteen spurious sessions on one camera. Most are under five minutes and fall outside the project's stated scope, but three were longer and genuinely wrong.
-- **Accuracy claims are small-sample.** Three observed blockages, all on one camera, all reported by one person. Two of the three validations turned out to have luck in them, documented in the commit history rather than quietly dropped.
-- **Per-camera calibration does not scale by hand.** Cameras differ enough that they need different settings, which is why references and the track band are derived from data rather than configured.
+**The false-positive rate is unmeasured, not high.**
+An earlier version of this file claimed roughly fifteen spurious sessions a day.
+That number was never measured - it was `sessions found` minus `sessions independently confirmed`, which silently assumes an unconfirmed detection is a wrong one.
+It is not: freight movements through Brooklyn Yard are frequent, and one session picked out as a textbook false positive turned out, on checking, to be a real train.
+Over 36 hours the detector finds about ten sessions a day on one camera, which is what design.md describes as normal for these crossings.
+
+Measuring it properly needs ground truth that nobody can produce by watching a camera around the clock, which is the strongest argument for building the alert path early: an alert is a prompt to go and check, so the system generates its own verification.
+
+**Accuracy claims are small-sample.**
+Three confirmed blockages, all on one camera, all reported by one observer.
+Two of the three validations turned out to contain luck, documented in the commit history rather than quietly dropped.
+
+**Per-camera calibration does not scale by hand.**
+Cameras differ enough to need different settings, which is why references and the track band are derived from data rather than configured.
 
 ## What this deliberately does not do
 
