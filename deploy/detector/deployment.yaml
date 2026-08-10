@@ -1,0 +1,116 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: detector
+  namespace: blockade
+  annotations:
+    # Documentation only on k3s - the Deployment wires the env vars by hand.
+    # A separate role from the poller, deliberately: the poller writes the
+    # corpus, the detector only reads it, and a compromised detector pod
+    # should not be able to corrupt a single frame.
+    eks.amazonaws.com/role-arn: ${AWS_DETECTOR_ROLE_ARN}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: detector
+  namespace: blockade
+  labels:
+    app: detector
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  # One replica: with three partitions the group could run three, but one
+  # keeps ordering questions simple while the pipeline is being proven.
+  # Scaling is a replica-count change; the consumer group rebalances itself.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: detector
+  template:
+    metadata:
+      labels:
+        app: detector
+    spec:
+      serviceAccountName: detector
+      imagePullSecrets:
+        - name: regcred
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      containers:
+        - name: detector
+          image: ghcr.io/anorum/trainspotter/detector:latest
+          args: ["run"]
+          ports:
+            - name: metrics
+              containerPort: 9102
+          env:
+            - name: AWS_ROLE_ARN
+              value: ${AWS_DETECTOR_ROLE_ARN}
+            - name: AWS_WEB_IDENTITY_TOKEN_FILE
+              value: /var/run/secrets/eks.amazonaws.com/serviceaccount/token
+            - name: AWS_REGION
+              value: us-west-2
+            - name: BLOCKADE_S3_BUCKET
+              value: pdx-trainspotter
+            - name: BLOCKADE_S3_REGION
+              value: us-west-2
+            - name: BLOCKADE_KAFKA_BOOTSTRAP
+              value: blockade-kafka-bootstrap.kafka.svc.cluster.local:9092
+            # Writable scratch: references sync here at startup. Ephemeral on
+            # purpose - the pod re-syncs on boot, so there is nothing to keep.
+            - name: BLOCKADE_REFERENCES_DIR
+              value: /tmp/references
+            - name: BLOCKADE_LOCAL_CACHE_DIR
+              value: /tmp/cache
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: aws-token
+              mountPath: /var/run/secrets/eks.amazonaws.com/serviceaccount
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: aws-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: sts.amazonaws.com
+                  expirationSeconds: 3600
+                  path: token
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: detector
+  namespace: blockade
+  labels:
+    app: detector
+spec:
+  selector:
+    app: detector
+  ports:
+    - name: metrics
+      port: 9102
+      targetPort: metrics
