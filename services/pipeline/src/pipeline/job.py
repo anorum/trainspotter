@@ -30,7 +30,7 @@ import os
 from blockade.alerts import CrossingAlertState, RisingEdgeAlerter
 from blockade.schemas import ObservationRecord
 from blockade.stream_sessions import SessionizerState, StreamingSessionizer
-from pyflink.common import Duration, Types, WatermarkStrategy
+from pyflink.common import Duration, Row, Types, WatermarkStrategy
 from pyflink.common.serialization import SimpleStringSchema
 from pyflink.common.watermark_strategy import TimestampAssigner
 from pyflink.datastream import (
@@ -91,7 +91,10 @@ class CrossingFunction(KeyedProcessFunction):
         if timer is not None:
             ctx.timer_service().register_event_time_timer(timer)
         for session in sessions:
-            yield session.session_id, session.model_dump_json()
+            # Row, not a tuple: the declared output type is ROW, and the Table
+            # bridge that feeds the sink calls Row-specific methods on it. A
+            # tuple survives graph construction and dies in the worker.
+            yield Row(session.session_id, session.model_dump_json())
 
         # --- alert branch: per-element, no timers, so an alert never waits on
         # a watermark. The alerter keeps its own dict keyed by crossing_id;
@@ -113,7 +116,7 @@ class CrossingFunction(KeyedProcessFunction):
                     "reason": alert.reason,
                 }
             )
-            yield ALERTS, (alert.crossing_id, payload)
+            yield ALERTS, Row(alert.crossing_id, payload)
 
     def _save_session(self, state: SessionizerState | None) -> None:
         if state is None:
@@ -127,7 +130,7 @@ class CrossingFunction(KeyedProcessFunction):
         state, sessions = self.sessionizer.on_timer(state, timestamp)
         self._save_session(state)
         for session in sessions:
-            yield session.session_id, session.model_dump_json()
+            yield Row(session.session_id, session.model_dump_json())
 
 
 def keyed_kafka_sink_ddl(table: str, topic: str) -> str:
