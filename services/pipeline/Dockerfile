@@ -9,13 +9,20 @@
 
 FROM flink:1.20.3-java17 AS builder
 USER root
+# The base image is Ubuntu jammy, whose python3 is 3.10; blockade-core needs
+# 3.11 (datetime.UTC among other things) and PyFlink 1.20 supports it. The
+# deadsnakes PPA ships prebuilt 3.11 debs for arm64, so nothing here compiles
+# under QEMU except pemja itself.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        python3 python3-venv python3-dev gcc g++ openjdk-17-jdk-headless \
+        software-properties-common gnupg \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get install -y --no-install-recommends \
+        python3.11 python3.11-venv python3.11-dev gcc g++ openjdk-17-jdk-headless \
     && rm -rf /var/lib/apt/lists/*
 # pemja's setup.py finds jni.h through JAVA_HOME, which must be the JDK here,
 # not the runtime JRE. The path is architecture-suffixed on Debian/Ubuntu.
 RUN export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-$(dpkg --print-architecture) \
-    && python3 -m venv /opt/pyflink-env \
+    && python3.11 -m venv /opt/pyflink-env \
     && /opt/pyflink-env/bin/pip install --no-cache-dir apache-flink==1.20.3
 
 COPY libs/blockade-core /tmp/blockade-core
@@ -24,7 +31,11 @@ RUN /opt/pyflink-env/bin/pip install --no-cache-dir /tmp/blockade-core
 
 FROM flink:1.20.3-java17
 USER root
-RUN apt-get update && apt-get install -y --no-install-recommends python3 \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        software-properties-common gnupg \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get install -y --no-install-recommends python3.11 libpython3.11 \
+    && apt-get purge -y software-properties-common gnupg && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /opt/pyflink-env /opt/pyflink-env
 
