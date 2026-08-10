@@ -1,0 +1,56 @@
+---
+# Frame metadata. Never image bytes - object storage plus a reference, always
+# (DESIGN.md section 10.3). A test asserts message size so a future change
+# cannot quietly start publishing images.
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: crossing.frames.v1
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: blockade
+spec:
+  partitions: 3
+  replicas: 1
+  config:
+    # Seven days. The corpus is kept forever in S3, and the backfill producer
+    # republishes from the manifests when history older than this needs
+    # reprocessing - so retention here bounds convenience, not durability.
+    retention.ms: 604800000
+    segment.bytes: 67108864
+---
+# Raw detections, one per frame scored. DESIGN2 section 5: the immutable record
+# of what the detector saw. Never edited; interpretation lives downstream.
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: crossing.observations.v1
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: blockade
+spec:
+  partitions: 3
+  replicas: 1
+  config:
+    retention.ms: 604800000
+    segment.bytes: 67108864
+---
+# Sessions, keyed by session_id. Compacted rather than time-retained: a session
+# is a mutable fact that opens, updates, and closes, and compaction keeps the
+# latest state of each one indefinitely. This works only because session_id is
+# derived deterministically from crossing_id and started_at, so an update lands
+# on the same key rather than creating a second row.
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: crossing.sessions.v1
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: blockade
+spec:
+  partitions: 3
+  replicas: 1
+  config:
+    cleanup.policy: compact
+    segment.bytes: 33554432
+    min.cleanable.dirty.ratio: "0.1"
