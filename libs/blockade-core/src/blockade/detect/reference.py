@@ -169,7 +169,12 @@ class ReferenceModel:
 
     @classmethod
     def build_refined(
-        cls, camera_id: str, frames: list[bytes], min_samples: int = 15, passes: int = 2
+        cls,
+        camera_id: str,
+        frames: list[bytes],
+        min_samples: int = 15,
+        passes: int = 2,
+        band: TrackBand | None = None,
     ) -> ReferenceModel:
         """Build references, then rebuild excluding frames that look blocked.
 
@@ -183,8 +188,16 @@ class ReferenceModel:
         but still good enough to identify the obvious blockages, and the second
         rebuilds from what is left. Self-correcting, so it stays true as the
         corpus grows and needs no human to maintain an exclusion list.
+
+        When the camera has a known band, the refinement pass judges frames
+        inside it - measured on real data, a bandless refinement failed to
+        exclude a 69-minute night blockage from its brightness bin, and the
+        rebuilt median absorbed the train the detector then could not see.
+        The band also travels into the returned model, so a rebuild cannot
+        silently discard what the camera had already learned.
         """
         model = cls.build(camera_id, frames, min_samples)
+        model.band = band
         for _ in range(passes - 1):
             if not model.bins:
                 return model
@@ -194,7 +207,8 @@ class ReferenceModel:
                 for raw in frames
                 if (scene := _decode(raw)) is not None
                 and (ref := model.nearest(_brightness_bin(scene))) is not None
-                and detector.examine(scene, ref).band_rows < detector.thresholds.min_band_rows
+                and detector.examine(scene, ref, band).band_rows
+                < detector.thresholds.min_band_rows
             ]
             # Refuse to rebuild from a pool that has collapsed -- if most frames
             # look blocked, the references are wrong, not the crossing.
@@ -205,6 +219,7 @@ class ReferenceModel:
                 )
                 return model
             model = cls.build(camera_id, keep, min_samples)
+            model.band = band
         return model
 
     @classmethod
