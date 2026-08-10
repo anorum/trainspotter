@@ -24,13 +24,13 @@ detector re-tune reprocesses the corpus.
 
 **Measured 2026-08-08, once capture was live** (the original estimate here was ~6× too high):
 
-- Frames are **328×334, ~21 KB** — not the 40–80 KB assumed.
+- Frames are **328×334, ~21 KB** - not the 40–80 KB assumed.
 - Cameras refresh roughly **every 60s**, not every 30s. With conditional GETs, ~55% of polls return
   304 and transfer nothing.
 - So ~8.6k stored frames/day, **~180 MB/day, ~5.4 GB/month**.
 
 Polling stays at 30s despite the 60s refresh. A 304 is nearly free, and polling at half the refresh
-interval bounds how stale `captured_at` can be — which is the quantity that determines detection
+interval bounds how stale `captured_at` can be - which is the quantity that determines detection
 latency.
 
 ## Decision
@@ -72,13 +72,13 @@ so a reader tries local first and falls back to the bucket with the same key.
 | PUT requests (~259k/mo) | ~$1.30 | ~$1.30 |
 | GET + egress (backfill only) | ~$0 | ~$0 |
 
-Roughly **$1.50–3/month in year one** — cheap enough that storage cost is not a design constraint.
+Roughly **$1.50–3/month in year one** - cheap enough that storage cost is not a design constraint.
 
 Requests, not bytes, dominate the bill, which is counterintuitive and worth knowing before
 optimising storage class. It also means the *conditional GET is the cost control*: it removes a
 PUT, not just a download.
 
-Lifecycle rules move objects to Standard-IA at 30 days and Glacier Instant Retrieval at 90 — but
+Lifecycle rules move objects to Standard-IA at 30 days and Glacier Instant Retrieval at 90 - but
 at 21 KB per frame these fall under the 128 KB minimum billable size, so the transitions are
 configured with `ObjectSizeGreaterThan` and will effectively **never fire** for individual frames.
 That is deliberate: transitioning them would cost more than it saves. Revisit only if frames are

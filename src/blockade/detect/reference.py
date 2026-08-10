@@ -1,6 +1,6 @@
 """Free detector: compare each frame against what an empty crossing looks like.
 
-The signal this exploits is the one the first observed blockage revealed — a
+The signal this exploits is the one the first observed blockage revealed - a
 train is a long horizontal mass spanning most of the frame that hides the road
 markings and the far side of the intersection behind it. That is enormous and
 structural, so it does not need a learned model to find. It needs something to
@@ -20,7 +20,7 @@ is empty the large majority of the time, so the median of a big enough sample is
 the empty scene, and a blockage never dominates it.
 
 Lighting is handled by bucketing the pool on frame brightness rather than on
-clock time — no sunrise table, no timezone handling, and it adapts to overcast
+clock time - no sunrise table, no timezone handling, and it adapts to overcast
 days and street-lighting changes on its own.
 """
 
@@ -133,7 +133,7 @@ class Reference:
     description of a sunlit scene: over ten hours the sun moves, shadows sweep
     across the road, and trees shift, so any individual frame differs from the
     median in places that have nothing to do with a train. Recording per-pixel
-    spread lets each pixel carry its own threshold — restless pixels (shadow
+    spread lets each pixel carry its own threshold - restless pixels (shadow
     edges, foliage, the traffic lanes) must change a lot to count, while
     reliably-static ones need only change a little.
     """
@@ -282,8 +282,8 @@ class TrackBand:
 
     Trains are always at track level, so *where* an obstruction sits is a far
     better discriminator than how tall it is. Measured across one real blockage,
-    the obstructed height varied fourfold — 17 rows for low-profile well cars,
-    72 for loaded double-stacks — while the position stayed put. Counting rows
+    the obstructed height varied fourfold - 17 rows for low-profile well cars,
+    72 for loaded double-stacks - while the position stayed put. Counting rows
     anywhere in the frame therefore risks two failures at once: missing an empty
     flatcar, and counting road traffic as a train.
 
@@ -418,7 +418,7 @@ class ReferenceDetector:
                 f"matches empty reference ({ev.changed_fraction:.0%} differs)",
             )
 
-        # Something is there, but it is not a frame-spanning mass — most likely
+        # Something is there, but it is not a frame-spanning mass - most likely
         # vehicles, weather, or a lighting shift. Not a train, and not clearly
         # nothing, so the honest answer is that we do not know.
         return self._record(

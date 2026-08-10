@@ -36,7 +36,7 @@ class Detector(Protocol):
         """Judge one frame.
 
         Must not raise. A detector that cannot reach its model, or cannot read
-        the image, returns UNKNOWN — the crossing genuinely was unobserved, and
+        the image, returns UNKNOWN - the crossing genuinely was unobserved, and
         recording that is truthful where dropping the tick leaves a hole
         indistinguishable from a capture outage.
         """

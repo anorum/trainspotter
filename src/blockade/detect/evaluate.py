@@ -4,11 +4,11 @@ The headline number people reach for is agreement rate, and it is the least
 useful thing here. Two failure modes matter far more, and they are not
 symmetric:
 
-- **Overconfidence** — the detector states BLOCKED or CLEAR where the reference
+- **Overconfidence** - the detector states BLOCKED or CLEAR where the reference
   says the frame is unreadable. This is the one that corrupts the dataset,
   because it manufactures observations out of frames nobody can actually read,
   and no downstream analysis can detect it after the fact.
-- **Missed blockage** — the detector says CLEAR where the reference says
+- **Missed blockage** - the detector says CLEAR where the reference says
   BLOCKED. This is what makes the alert useless, and it is the failure a user
   notices.
 

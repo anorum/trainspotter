@@ -30,7 +30,7 @@ aws iam create-policy --policy-name blockade-s3 \
 
 **Lifecycle applies to `frames/` only.** Manifests are tiny and are read during every backfill;
 Iceberg metadata must stay in Standard or the maintenance jobs get slow and expensive. Transitioning
-small objects is also counterproductive — Glacier classes bill a 128 KB minimum per object and a
+small objects is also counterproductive - Glacier classes bill a 128 KB minimum per object and a
 40 KB overhead, so a 50 KB JPEG is not obviously cheaper in Glacier than in Standard-IA. The
 transitions below are set at 90 days for that reason, and are worth re-checking against real object
 sizes once a few months of frames exist.

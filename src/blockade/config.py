@@ -146,6 +146,42 @@ class Settings(BaseSettings):
     camera_config_path: Path = DEFAULT_CAMERA_CONFIG
 
     # --- Detection ----------------------------------------------------------
+    detector: str = Field(
+        default="reference",
+        description=(
+            "Which detector to run: reference | yolo | vlm. Interchangeable by "
+            "design -- which one is best is an open question only real data "
+            "answers, and every row records the detector_version that produced it "
+            "so results from different detectors are never silently mixed."
+        ),
+    )
+    references_dir: Path = Path("var/references")
+
+    # --- YOLO-World ---------------------------------------------------------
+    yolo_weights: str = Field(
+        default="yolov8s-world.pt",
+        description="Ultralytics downloads this on first use. The 's' variant is the "
+        "accuracy/CPU-time balance for a 328x240 frame every two minutes.",
+    )
+    yolo_prompts: list[str] = Field(
+        default=["train", "freight train", "railroad car", "locomotive"],
+        description=(
+            "Open-vocabulary classes. YOLO-World takes text prompts, so this is the "
+            "whole 'training' step -- no labelled data, which is what makes it usable "
+            "today while a fine-tuned model is still hypothetical."
+        ),
+    )
+    yolo_confidence: float = Field(
+        default=0.10,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Deliberately low. Open-vocab detectors score domain-mismatched targets "
+            "poorly, and grainy 328x240 traffic-camera stills are as mismatched as it "
+            "gets. The geometric check does the discriminating, not this threshold."
+        ),
+    )
+
     detector_model: str = Field(
         default="claude-haiku-4-5",
         description=(
