@@ -4,105 +4,109 @@ kind: Namespace
 metadata:
   name: blockade
 ---
-# Frames and the JSONL manifest. The manifest is the backfill source for the whole
-# pipeline, so this volume must survive pod restarts and image upgrades.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: poller
+  namespace: blockade
+  annotations:
+    # Documentation only. On EKS this annotation drives a mutating webhook that
+    # injects the credential env vars and token volume automatically. k3s has no
+    # such webhook, so the Deployment below wires them by hand - the annotation
+    # is kept so the intent is visible where people expect to find it.
+    eks.amazonaws.com/role-arn: ${AWS_ROLE_ARN}
+---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: blockade-capture-data
+  name: poller-state
   namespace: blockade
 spec:
   accessModes: [ReadWriteOnce]
   resources:
     requests:
-      # ~1.2 GB/day of frames at a 7-day cache TTL, plus manifest headroom.
-      storage: 20Gi
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: blockade-cameras
-  namespace: blockade
-data:
-  # Replace with the output of `blockade-inventory resolve`.
-  # kubectl -n blockade create configmap blockade-cameras \
-  #   --from-file=cameras.yaml=config/cameras.yaml --dry-run=client -o yaml | kubectl apply -f -
-  cameras.yaml: |
-    cameras: []
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: blockade-credentials
-  namespace: blockade
-type: Opaque
-stringData:
-  # kubectl -n blockade create secret generic blockade-credentials \
-  #   --from-literal=BLOCKADE_ODOT_API_KEY=... --from-literal=AWS_ACCESS_KEY_ID=... ...
-  BLOCKADE_ODOT_API_KEY: ""
-  BLOCKADE_ODOT_API_KEY_SECONDARY: ""
-  AWS_ACCESS_KEY_ID: ""
-  AWS_SECRET_ACCESS_KEY: ""
+      # Working state, not the archive. The manifest is the outbox: records land
+      # here first and are published from here, so it must survive a restart.
+      # Frames and manifests both go to S3, so losing this volume costs a
+      # republish rather than data.
+      storage: 5Gi
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: blockade-capture
+  name: poller
   namespace: blockade
+  labels:
+    app: poller
+  annotations:
+    # The cluster runs Reloader: editing the camera roster ConfigMap restarts
+    # this Deployment, so adding a camera is a config commit rather than a
+    # rebuild.
+    reloader.stakater.com/auto: "true"
 spec:
   replicas: 1
-  # Recreate, not RollingUpdate: two pollers briefly overlapping would double the
-  # request rate against ODOT and write duplicate manifest records for the same tick.
+  # Recreate, not RollingUpdate. Two pollers briefly overlapping would double
+  # the request rate against ODOT, and a revoked key ends the project.
   strategy:
     type: Recreate
   selector:
     matchLabels:
-      app: blockade-capture
+      app: poller
   template:
     metadata:
       labels:
-        app: blockade-capture
+        app: poller
     spec:
+      serviceAccountName: poller
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
         fsGroup: 10001
       containers:
-        - name: capture
-          image: ghcr.io/YOU/blockade:0.1.0
+        - name: poller
+          image: ghcr.io/anorum/trainspotter/poller:latest
           args: ["run"]
           ports:
             - name: metrics
               containerPort: 9102
-          envFrom:
-            - secretRef:
-                name: blockade-credentials
           env:
-            - name: BLOCKADE_CAMERA_CONFIG_PATH
-              value: /etc/blockade/cameras.yaml
+            # --- IRSA. No stored credential: boto3 reads these three, exchanges
+            # the projected token with STS, and refreshes on its own.
+            - name: AWS_ROLE_ARN
+              value: ${AWS_ROLE_ARN}
+            - name: AWS_WEB_IDENTITY_TOKEN_FILE
+              value: /var/run/secrets/eks.amazonaws.com/serviceaccount/token
+            - name: AWS_REGION
+              value: us-west-2
             - name: BLOCKADE_S3_BUCKET
-              value: blockade
+              value: pdx-trainspotter
             - name: BLOCKADE_S3_REGION
               value: us-west-2
             - name: BLOCKADE_USER_AGENT
-              value: "blockade/0.1 (+https://github.com/YOU/blockade; you@example.com)"
+              valueFrom:
+                secretKeyRef:
+                  name: odot-credentials
+                  key: BLOCKADE_USER_AGENT
+          envFrom:
+            - secretRef:
+                name: odot-credentials
           volumeMounts:
-            - name: data
+            - name: state
               mountPath: /var/lib/blockade
             - name: cameras
-              mountPath: /etc/blockade
+              mountPath: /app/config
+              readOnly: true
+            - name: aws-token
+              mountPath: /var/run/secrets/eks.amazonaws.com/serviceaccount
               readOnly: true
           resources:
             requests:
               cpu: 50m
-              memory: 128Mi
+              memory: 96Mi
             limits:
-              # No CPU limit: throttling the poll loop would skew captured_at and
-              # silently widen the gaps this project exists to measure.
-              memory: 512Mi
-          # Liveness on the metrics port only proves the process is up. Whether it
-          # is actually capturing is an alerting concern -- see servicemonitor.yaml,
-          # where a stalled camera is caught by frame staleness, not by a probe.
+              # No CPU limit on purpose: throttling the poll loop would skew
+              # captured_at and widen the very gaps this project measures.
+              memory: 256Mi
           livenessProbe:
             httpGet:
               path: /metrics
@@ -115,23 +119,32 @@ spec:
             capabilities:
               drop: ["ALL"]
       volumes:
-        - name: data
+        - name: state
           persistentVolumeClaim:
-            claimName: blockade-capture-data
+            claimName: poller-state
         - name: cameras
           configMap:
             name: blockade-cameras
+        - name: aws-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  # The audience must match the trust policy exactly; STS
+                  # rejects the token otherwise. One hour, rotated by kubelet.
+                  audience: sts.amazonaws.com
+                  expirationSeconds: 3600
+                  path: token
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: blockade-capture
+  name: poller
   namespace: blockade
   labels:
-    app: blockade-capture
+    app: poller
 spec:
   selector:
-    app: blockade-capture
+    app: poller
   ports:
     - name: metrics
       port: 9102

@@ -1,9 +1,14 @@
 # Builds and publishes the service images.
 #
-# Runs on ubuntu-24.04-arm because the k3s nodes are Raspberry Pi 5s. A native
-# arm64 runner rather than QEMU emulation, which is both far quicker and avoids
-# the class of bug where a wheel builds under emulation and misbehaves on real
-# hardware.
+# Targets linux/arm64 because the k3s nodes are Raspberry Pi 5s.
+#
+# Built on x86 under QEMU rather than a native arm64 runner: those are free only
+# on public repositories, and this one is private. Emulated builds are slower
+# (minutes, not seconds) but need no PAT and no paid plan - the workflow's own
+# GITHUB_TOKEN can push to GHCR.
+#
+# Worth replacing with a self-hosted arm64 runner on the cluster itself, which
+# would be native, consume no Actions minutes, and reach GitHub outbound only.
 name: images
 
 on:
@@ -22,7 +27,7 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
@@ -34,6 +39,12 @@ jobs:
         service: [poller, detector]
     steps:
       - uses: actions/checkout@v4
+
+      # Registers binfmt handlers so the x86 runner can execute arm64 binaries.
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v3
 
       - uses: docker/login-action@v3
         with:
