@@ -90,6 +90,11 @@ spec:
               value: pdx-trainspotter
             - name: BLOCKADE_S3_REGION
               value: us-west-2
+            # Cross-namespace service DNS: the broker lives in the kafka
+            # namespace. Unset, the poller runs capture-only and the manifest
+            # accumulates - capture must never depend on Kafka being up.
+            - name: BLOCKADE_KAFKA_BOOTSTRAP
+              value: blockade-kafka-bootstrap.kafka.svc.cluster.local:9092
             - name: BLOCKADE_USER_AGENT
               valueFrom:
                 secretKeyRef:

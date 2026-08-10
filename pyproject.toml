@@ -16,6 +16,11 @@ dev = [
     "pytest-asyncio>=0.23",
     "respx>=0.21",
     "ruff>=0.5",
+    # The extras the test suite imports, so a bare `uv sync` reproduces the
+    # test environment instead of depending on a flag someone has to remember.
+    # yolo is deliberately absent: no test imports torch, and 2GB of weights
+    # do not belong in every dev checkout.
+    "blockade-core[vision,vlm,kafka]",
 ]
 
 [tool.ruff]

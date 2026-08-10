@@ -356,10 +356,28 @@ async def _run(settings: Settings, local_only: bool, once: bool) -> None:
                 loop.add_signal_handler(sig, stop.set)
 
         runner = asyncio.create_task(poller.run())
+        outbox_task = None
+        outbox = None
+        if settings.kafka_bootstrap:
+            # A sibling task, never a step in the poll loop: the manifest append
+            # is capture's commit point, and everything after it is async. With
+            # no bootstrap configured, capture runs exactly as before and the
+            # manifest accumulates for a later drain.
+            from poller.outbox import ManifestOutbox
+
+            outbox = ManifestOutbox(settings)
+            outbox_task = asyncio.create_task(outbox.run(), name="outbox")
+            log.info("outbox publishing to %s", settings.kafka_bootstrap)
         await stop.wait()
         runner.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await runner
+        if outbox_task is not None:
+            outbox_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await outbox_task
+        if outbox is not None:
+            await outbox.close()
         manifest.flush_all()
         log.info("shutdown complete")
 

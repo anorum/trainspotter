@@ -150,6 +150,27 @@ class Settings(BaseSettings):
     )
     manifest_dir: Path = Path("var/manifests")
 
+    # --- Kafka ----------------------------------------------------------------
+    kafka_bootstrap: str | None = Field(
+        default=None,
+        description=(
+            "Kafka bootstrap servers. None disables publishing entirely: capture "
+            "runs exactly as before and the manifest accumulates, ready to be "
+            "drained when a broker appears. Capture must never depend on Kafka."
+        ),
+    )
+    kafka_frames_topic: str = "crossing.frames.v1"
+    kafka_observations_topic: str = "crossing.observations.v1"
+    outbox_dir: Path = Field(
+        default=Path("var/outbox"),
+        description=(
+            "Where the outbox publisher keeps its per-camera position files. "
+            "Must live on the same durable volume as the manifest: losing a "
+            "position file is harmless (the backlog republishes, at-least-once) "
+            "but it should not happen on every pod restart."
+        ),
+    )
+
     # --- Polling behaviour --------------------------------------------------
     user_agent: str = Field(
         default="blockade/0.1 (+https://github.com/alexnorum/blockade)",

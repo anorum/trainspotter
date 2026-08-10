@@ -35,6 +35,7 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     BLOCKADE_LOCAL_CACHE_DIR=/var/lib/blockade/frames \
     BLOCKADE_MANIFEST_DIR=/var/lib/blockade/manifests \
+    BLOCKADE_OUTBOX_DIR=/var/lib/blockade/outbox \
     BLOCKADE_CAMERA_CONFIG_PATH=/app/config/cameras.yaml
 
 # The manifest is the outbox and the backfill corpus, so this volume must

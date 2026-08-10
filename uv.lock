@@ -15,10 +15,30 @@ members = [
 
 [manifest.dependency-groups]
 dev = [
+    { name = "blockade-core", extras = ["vision", "vlm", "kafka"], editable = "libs/blockade-core" },
     { name = "pytest", specifier = ">=8.2" },
     { name = "pytest-asyncio", specifier = ">=0.23" },
     { name = "respx", specifier = ">=0.21" },
     { name = "ruff", specifier = ">=0.5" },
+]
+
+[[package]]
+name = "aiokafka"
+version = "0.14.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "async-timeout" },
+    { name = "packaging" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/89/5f/dfc1180fd22d1acdc91949ec36e97199c43742dacb057cb8efed3679ed04/aiokafka-0.14.0.tar.gz", hash = "sha256:8ffdc945798ba4d3d132b705d4244d0a1f493925efb57c637a2ca88ee82794e1", size = 601374, upload-time = "2026-04-29T10:43:03.574Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/57/f6/82b3d4eee9be6e81468f4b8b8a2f3780a0147095de6965d8c79db4c86f48/aiokafka-0.14.0-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:549ac4bf3bbc823151fd4bdf761d644db8b0271bd9ae3f110b7f5ab804fcc1aa", size = 348017, upload-time = "2026-04-29T10:42:26.323Z" },
+    { url = "https://files.pythonhosted.org/packages/f4/45/78cb9ab3e3d16c7fde1523cfefe329f3d1331e55abaff4da67c2f355e942/aiokafka-0.14.0-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:9fa8416efd9f260c76125eceb554c4d731115df11d15fe6c4356a4855df7eccb", size = 351463, upload-time = "2026-04-29T10:42:28.441Z" },
+    { url = "https://files.pythonhosted.org/packages/b3/59/ee9a414470a978ac8edd8711482a973c513e3ef0a980eb71fc2d9dba6173/aiokafka-0.14.0-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:ccacd1c5e0e3e1ab4d2b3dac5228623e5a682915a61d2adc2e018015aa259475", size = 1090654, upload-time = "2026-04-29T10:42:30.142Z" },
+    { url = "https://files.pythonhosted.org/packages/22/1f/780842cd28363c00a518859a58b6e802e5f79e88a442ffb482b88cfa891c/aiokafka-0.14.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:ceb49c78b3e08ed3f9ff85350932ae59788596e8b45c6a4ca5d599337ba261e9", size = 1071040, upload-time = "2026-04-29T10:42:31.794Z" },
+    { url = "https://files.pythonhosted.org/packages/fe/a5/d13ee2387feb95fccaae56c6a4ee9df15dbc33bf319693ed7a81293643db/aiokafka-0.14.0-cp311-cp311-win32.whl", hash = "sha256:5383991dcad641868a0af78c42ac86a1406ccf9803a20e2d690fc34a6119134e", size = 313386, upload-time = "2026-04-29T10:42:34.105Z" },
+    { url = "https://files.pythonhosted.org/packages/12/5d/efe156d9e6cfc1affa8b513c8ec1f2ca0f2770e80a04058ce8a8851e7900/aiokafka-0.14.0-cp311-cp311-win_amd64.whl", hash = "sha256:91f34a6f8626b20f0adacdd364036f40d1da85d213c2cf7be0607cde2c8d0f2b", size = 331737, upload-time = "2026-04-29T10:42:35.71Z" },
 ]
 
 [[package]]
@@ -72,6 +92,15 @@ wheels = [
 ]
 
 [[package]]
+name = "async-timeout"
+version = "5.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a5/ae/136395dfbfe00dfc94da3f3e136d0b13f394cba8f4841120e34226265780/async_timeout-5.0.1.tar.gz", hash = "sha256:d9321a7a3d5a6a5e187e824d2fa0793ce379a202935782d555d6e9d2735677d3", size = 9274, upload-time = "2024-11-06T16:41:39.6Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fe/ba/e2081de779ca30d473f21f5b30e0e737c438205440784c7dfc81efc2b029/async_timeout-5.0.1-py3-none-any.whl", hash = "sha256:39e3809566ff85354557ec2398b55e096c8364bacac9405a7a1fa429e77fe76c", size = 6233, upload-time = "2024-11-06T16:41:37.9Z" },
+]
+
+[[package]]
 name = "awscrt"
 version = "0.36.0"
 source = { registry = "https://pypi.org/simple" }
@@ -107,6 +136,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+kafka = [
+    { name = "aiokafka" },
+]
 vision = [
     { name = "numpy" },
     { name = "pillow" },
@@ -120,6 +152,7 @@ yolo = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aiokafka", marker = "extra == 'kafka'", specifier = ">=0.12" },
     { name = "anthropic", marker = "extra == 'vlm'", specifier = ">=0.40" },
     { name = "boto3", specifier = ">=1.34" },
     { name = "botocore", extras = ["crt"], specifier = ">=1.34" },
@@ -131,7 +164,7 @@ requires-dist = [
     { name = "structlog", specifier = ">=24.1" },
     { name = "ultralytics", marker = "extra == 'yolo'", specifier = ">=8.3" },
 ]
-provides-extras = ["vision", "yolo", "vlm"]
+provides-extras = ["vision", "kafka", "yolo", "vlm"]
 
 [[package]]
 name = "blockade-detector"
@@ -155,7 +188,7 @@ name = "blockade-poller"
 version = "0.1.0"
 source = { editable = "services/poller" }
 dependencies = [
-    { name = "blockade-core" },
+    { name = "blockade-core", extra = ["kafka"] },
     { name = "httpx" },
     { name = "prometheus-client" },
     { name = "typer" },
@@ -163,7 +196,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "blockade-core", editable = "libs/blockade-core" },
+    { name = "blockade-core", extras = ["kafka"], editable = "libs/blockade-core" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "prometheus-client", specifier = ">=0.20" },
     { name = "typer", specifier = ">=0.12" },
