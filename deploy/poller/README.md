@@ -1,0 +1,68 @@
+# Poller deployment
+
+## Apply
+
+The manifest carries `${AWS_ROLE_ARN}` rather than a literal ARN, so it holds no
+account identifier. Substitute at apply time:
+
+```sh
+AWS_ROLE_ARN=arn:aws:iam::<account>:role/blockade-poller \
+  envsubst < deploy/poller/deployment.yaml | kubectl apply -f -
+```
+
+## Prerequisites, created out of band
+
+Neither belongs in git - one is a registry credential, the other holds API keys.
+
+```sh
+# Pull credential for the private GHCR package. read:packages is sufficient;
+# CI pushes with its own GITHUB_TOKEN and never needs this.
+kubectl create secret docker-registry regcred -n blockade \
+  --docker-server=ghcr.io --docker-username=<user> --docker-password=<PAT>
+
+# ODOT subscription keys and the contact User-Agent. The User-Agent lives here
+# rather than in the manifest so no address is committed.
+kubectl create secret generic odot-credentials -n blockade \
+  --from-literal=BLOCKADE_ODOT_API_KEY=... \
+  --from-literal=BLOCKADE_ODOT_API_KEY_SECONDARY=... \
+  --from-literal=BLOCKADE_USER_AGENT='blockade/0.1 (+<repo>; <contact>)'
+
+# Camera roster. Reloader restarts the Deployment when this changes, so adding a
+# camera is a config change rather than a rebuild.
+kubectl create configmap blockade-cameras -n blockade \
+  --from-file=cameras.yaml=config/cameras.yaml
+```
+
+## AWS access
+
+No stored credential. The pod runs as the `poller` ServiceAccount and mounts a
+projected token with audience `sts.amazonaws.com`; boto3 exchanges it for
+one-hour credentials via `AssumeRoleWithWebIdentity`.
+
+On EKS a mutating webhook injects the env vars and volume from the
+`eks.amazonaws.com/role-arn` annotation. k3s has no such webhook, so the pod spec
+does it by hand - that is what the `aws-token` volume and the three `AWS_*`
+variables are.
+
+The trust policy pins `sub` to `system:serviceaccount:blockade:poller` with
+`StringEquals`. A wildcard there would let any pod in the cluster assume the role.
+
+## Verifying it captures
+
+```sh
+kubectl exec -n blockade deploy/poller -- \
+  python -c "import urllib.request;print(urllib.request.urlopen('http://localhost:9102/metrics').read().decode())" \
+  | grep blockade_frames_total
+```
+
+Expect all six cameras, and `not_modified` counts climbing alongside `ok` - most
+polls should return 304, since the cameras refresh roughly every two minutes
+while the poll interval is 30s.
+
+## Migration note
+
+Capture previously ran on a Mac under launchd
+(`deploy/local/com.blockade.capture.plist`). Both were run together until the
+cluster pod was confirmed capturing all six cameras, then launchd was unloaded.
+Running both permanently would double the request rate against ODOT, and a
+revoked key ends the project.
