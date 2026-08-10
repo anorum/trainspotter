@@ -4,8 +4,8 @@ kind: ServiceAccount
 metadata:
   name: flink
   namespace: blockade
-  annotations:
-    eks.amazonaws.com/role-arn: ${AWS_FLINK_ROLE_ARN}
+  # IRSA role: blockade-flink, checkpoint prefix only. The ARN lives in the
+  # imperative `aws-roles` Secret, never in git.
 ---
 # The job as a declarative resource. The operator turns this into a JobManager
 # Deployment, a TaskManager pod, and a running job - and owns the operational
@@ -44,7 +44,10 @@ spec:
             - name: BLOCKADE_KAFKA_BOOTSTRAP
               value: blockade-kafka-bootstrap.kafka.svc.cluster.local:9092
             - name: AWS_ROLE_ARN
-              value: ${AWS_FLINK_ROLE_ARN}
+              valueFrom:
+                secretKeyRef:
+                  name: aws-roles
+                  key: flink
             - name: AWS_WEB_IDENTITY_TOKEN_FILE
               value: /var/run/secrets/eks.amazonaws.com/serviceaccount/token
             - name: AWS_REGION

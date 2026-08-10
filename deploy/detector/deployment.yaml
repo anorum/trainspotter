@@ -4,12 +4,10 @@ kind: ServiceAccount
 metadata:
   name: detector
   namespace: blockade
-  annotations:
-    # Documentation only on k3s - the Deployment wires the env vars by hand.
-    # A separate role from the poller, deliberately: the poller writes the
-    # corpus, the detector only reads it, and a compromised detector pod
-    # should not be able to corrupt a single frame.
-    eks.amazonaws.com/role-arn: ${AWS_DETECTOR_ROLE_ARN}
+  # IRSA role: blockade-detector. A separate role from the poller,
+  # deliberately - the poller writes the corpus, the detector only reads it,
+  # and a compromised detector pod should not be able to corrupt a frame.
+  # The ARN lives in the imperative `aws-roles` Secret, never in git.
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -49,7 +47,10 @@ spec:
               containerPort: 9102
           env:
             - name: AWS_ROLE_ARN
-              value: ${AWS_DETECTOR_ROLE_ARN}
+              valueFrom:
+                secretKeyRef:
+                  name: aws-roles
+                  key: detector
             - name: AWS_WEB_IDENTITY_TOKEN_FILE
               value: /var/run/secrets/eks.amazonaws.com/serviceaccount/token
             - name: AWS_REGION

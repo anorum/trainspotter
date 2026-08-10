@@ -2,13 +2,17 @@
 
 ## Apply
 
-The manifest carries `${AWS_ROLE_ARN}` rather than a literal ARN, so it holds no
-account identifier. Substitute at apply time:
+The manifests carry no role ARNs.
+Each pod reads `AWS_ROLE_ARN` from the imperative `aws-roles` Secret, so the AWS account id never lands in git:
 
 ```sh
-AWS_ROLE_ARN=arn:aws:iam::<account>:role/blockade-poller \
-  envsubst < deploy/poller/deployment.yaml | kubectl apply -f -
+kubectl create secret generic aws-roles -n blockade \
+  --from-literal=poller=<blockade-poller role arn> \
+  --from-literal=detector=<blockade-detector role arn> \
+  --from-literal=flink=<blockade-flink role arn>
 ```
+
+ArgoCD syncs `deploy/` directly; there is no substitution step.
 
 ## Prerequisites, created out of band
 

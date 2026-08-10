@@ -9,12 +9,9 @@ kind: ServiceAccount
 metadata:
   name: poller
   namespace: blockade
-  annotations:
-    # Documentation only. On EKS this annotation drives a mutating webhook that
-    # injects the credential env vars and token volume automatically. k3s has no
-    # such webhook, so the Deployment below wires them by hand - the annotation
-    # is kept so the intent is visible where people expect to find it.
-    eks.amazonaws.com/role-arn: ${AWS_ROLE_ARN}
+  # IRSA role: blockade-poller. On EKS an annotation here would drive a
+  # mutating webhook; k3s has none, so the Deployment wires the env vars by
+  # hand. The ARN lives in the imperative `aws-roles` Secret, never in git.
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -81,7 +78,10 @@ spec:
             # --- IRSA. No stored credential: boto3 reads these three, exchanges
             # the projected token with STS, and refreshes on its own.
             - name: AWS_ROLE_ARN
-              value: ${AWS_ROLE_ARN}
+              valueFrom:
+                secretKeyRef:
+                  name: aws-roles
+                  key: poller
             - name: AWS_WEB_IDENTITY_TOKEN_FILE
               value: /var/run/secrets/eks.amazonaws.com/serviceaccount/token
             - name: AWS_REGION
