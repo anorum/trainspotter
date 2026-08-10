@@ -1,12 +1,8 @@
 ---
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: flink
-  namespace: blockade
-  # IRSA role: blockade-flink, checkpoint prefix only. The ARN lives in the
-  # imperative `aws-roles` Secret, never in git.
----
+# The `flink` ServiceAccount this deployment runs as is owned by the platform:
+# the flink-operator chart renders one into each namespace it watches. The
+# IRSA role (blockade-flink, checkpoint prefix only) binds to that SA by name;
+# the ARN lives in the imperative `aws-roles` Secret, never in git.
 # The job as a declarative resource. The operator turns this into a JobManager
 # Deployment, a TaskManager pod, and a running job - and owns the operational
 # folklore: crash recovery from the latest checkpoint, restarts, and (when
