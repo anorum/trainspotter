@@ -7,7 +7,7 @@ requires-python = ">=3.11,<3.12"
 license = { text = "MIT" }
 
 dependencies = [
-    "blockade-core[vision]",
+    "blockade-core[vision,kafka]",
     "typer>=0.12",
     "prometheus-client>=0.20",
 ]

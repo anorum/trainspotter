@@ -161,6 +161,15 @@ class Settings(BaseSettings):
     )
     kafka_frames_topic: str = "crossing.frames.v1"
     kafka_observations_topic: str = "crossing.observations.v1"
+    kafka_group_id: str = Field(
+        default="blockade-detector",
+        description=(
+            "Consumer group for the streaming detector. Also the replay lever: "
+            "a new group id has no committed offsets and starts from the "
+            "earliest retained frame, rescoring the topic's history without "
+            "touching the group that serves live traffic."
+        ),
+    )
     outbox_dir: Path = Field(
         default=Path("var/outbox"),
         description=(

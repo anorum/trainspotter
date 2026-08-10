@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Iterable
 
-from aiokafka import AIOKafkaProducer
+from aiokafka import AIOKafkaConsumer, AIOKafkaProducer, ConsumerRecord
 
 
 class RecordProducer:
@@ -54,3 +54,45 @@ class RecordProducer:
     @staticmethod
     async def await_acks(futures: Iterable[asyncio.Future]) -> None:
         await asyncio.gather(*futures)
+
+
+class RecordConsumer:
+    """Batch-at-a-time consumer with offsets committed by the caller.
+
+    Auto-commit is off deliberately: it acknowledges records on a timer,
+    which under a crash acknowledges work that never happened. The caller
+    processes a batch, publishes its results, waits for those acks, and only
+    then calls ``commit()`` - so the group's saved position never runs ahead
+    of durable output. A crash replays a batch; deterministic downstream
+    identity absorbs the duplicates. At-least-once, end to end.
+    """
+
+    def __init__(self, bootstrap: str, topic: str, group_id: str, client_id: str) -> None:
+        self._consumer = AIOKafkaConsumer(
+            topic,
+            bootstrap_servers=bootstrap,
+            group_id=group_id,
+            client_id=client_id,
+            enable_auto_commit=False,
+            # A new group starts from the beginning of the log, not the end:
+            # the first detector deployment should score the retained history,
+            # and a group that already has committed offsets ignores this.
+            auto_offset_reset="earliest",
+        )
+
+    async def start(self) -> None:
+        await self._consumer.start()
+
+    async def stop(self) -> None:
+        await self._consumer.stop()
+
+    async def get_batch(
+        self, timeout_ms: int = 5000, max_records: int = 100
+    ) -> list[ConsumerRecord]:
+        """Up to ``max_records`` across assigned partitions, or whatever arrived
+        within the timeout. An empty list is a quiet topic, not an error."""
+        batches = await self._consumer.getmany(timeout_ms=timeout_ms, max_records=max_records)
+        return [record for records in batches.values() for record in records]
+
+    async def commit(self) -> None:
+        await self._consumer.commit()
