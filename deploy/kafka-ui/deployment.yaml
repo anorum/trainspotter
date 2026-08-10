@@ -1,0 +1,106 @@
+---
+# A browser view of the Kafka cluster: topics, partitions, offsets, message
+# contents, and consumer-group lag. Consumer lag is the one that matters most
+# once the pipeline is running - it is how you tell "the detector is keeping up"
+# from "the detector is falling behind", which no amount of log reading shows.
+#
+# kafbat/kafka-ui rather than Redpanda Console: Apache-2.0 against Redpanda's
+# BSL, and it has a genuine read-only mode. Redpanda Console is Go rather than
+# JVM and would use meaningfully less memory, which on these Pis is a real
+# argument - but an unauthenticated page that can delete topics is the worse
+# trade. Measured at 294Mi in practice, against the 512Mi limit below.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-ui
+  namespace: kafka
+  labels:
+    app: kafka-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka-ui
+  template:
+    metadata:
+      labels:
+        app: kafka-ui
+    spec:
+      containers:
+        - name: kafka-ui
+          image: ghcr.io/kafbat/kafka-ui:v1.5.0
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: KAFKA_CLUSTERS_0_NAME
+              value: blockade
+            - name: KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS
+              value: blockade-kafka-bootstrap.kafka.svc:9092
+            # Read-only. This is reachable from the whole LAN with no
+            # authentication, so it can browse everything and change nothing.
+            # Flip to "false" when resetting consumer-group offsets for a replay
+            # - that is the one workflow this blocks, and it is deliberate that
+            # turning it on is a conscious act.
+            - name: KAFKA_CLUSTERS_0_READONLY
+              value: "true"
+            # No runtime cluster editing: the cluster list is config, and config
+            # lives in git.
+            - name: DYNAMIC_CONFIG_ENABLED
+              value: "false"
+            # Capped well below the container limit. The JVM sizes its heap from
+            # the cgroup by default, which on a 512Mi limit leaves too little
+            # headroom for non-heap memory and gets the pod OOMKilled rather
+            # than garbage collected.
+            - name: JAVA_OPTS
+              value: "-Xms128m -Xmx320m"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: http
+            initialDelaySeconds: 90
+            periodSeconds: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            # The JVM writes to /tmp, so a read-only root filesystem needs this.
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-ui
+  namespace: kafka
+  labels:
+    app: kafka-ui
+spec:
+  # NodePort, not Ingress: the cluster runs no ingress resources and has no
+  # cert-manager, and this only needs to be reachable on the home LAN. Reachable
+  # at http://<any-node>:30800.
+  type: NodePort
+  selector:
+    app: kafka-ui
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      nodePort: 30800
