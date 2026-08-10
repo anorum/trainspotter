@@ -26,7 +26,11 @@ spec:
     volumes:
       - id: 0
         type: persistent-claim
-        size: 20Gi
+        size: 50Gi
+        # The HDD, not the default class. Kafka rewrites log segments constantly,
+        # which on the Pi's boot flash is a wear problem rather than a capacity
+        # one - and the default class also carries a Delete reclaim policy.
+        class: local-hdd-storage
         # Retained on delete. Kafka here is a transport, not the archive - the
         # corpus lives in S3 - but losing the volume mid-flight would drop
         # records the outbox had already marked published.

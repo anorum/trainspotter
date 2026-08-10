@@ -23,13 +23,15 @@ metadata:
   namespace: blockade
 spec:
   accessModes: [ReadWriteOnce]
+  # The 12TB HDD, not the default class. local-path writes to the Pi's boot
+  # media, which the poller would wear out with a continuous frame stream, and
+  # its Delete reclaim policy is wrong for the manifest - the manifest is the
+  # outbox, and losing it loses the record of what has been published.
+  storageClassName: local-hdd-storage
+  volumeName: blockade-poller-state-pv
   resources:
     requests:
-      # Working state, not the archive. The manifest is the outbox: records land
-      # here first and are published from here, so it must survive a restart.
-      # Frames and manifests both go to S3, so losing this volume costs a
-      # republish rather than data.
-      storage: 5Gi
+      storage: 50Gi
 ---
 apiVersion: apps/v1
 kind: Deployment

@@ -1,0 +1,33 @@
+---
+# Frames and manifests go on the 12TB HDD, not the default storage class.
+#
+# local-path writes to /var/lib/rancher/k3s/storage - the Pi's boot media. The
+# poller writes continuously, so that is both a write-endurance problem on flash
+# and a capacity ceiling. It also carries a Delete reclaim policy, which is wrong
+# for the manifest: the manifest is the outbox, and losing it means losing the
+# record of which frames have been published.
+#
+# local-hdd-storage has no provisioner, so the PV is declared by hand and the
+# directory must already exist on the node.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: blockade-poller-state-pv
+spec:
+  capacity:
+    storage: 50Gi
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-hdd-storage
+  local:
+    path: /mnt/hd/blockade/poller-state
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              # The HDD is physically in swagman-2, so anything bound to it is
+              # pinned there. Acceptable for a single-replica service; it is the
+              # reason frames also go to S3, so no consumer depends on this node.
+              values: [swagman-2]
