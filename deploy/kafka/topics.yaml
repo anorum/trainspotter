@@ -2,7 +2,7 @@
 # Frame metadata. Never image bytes - object storage plus a reference, always
 # (DESIGN.md section 10.3). A test asserts message size so a future change
 # cannot quietly start publishing images.
-apiVersion: kafka.strimzi.io/v1beta2
+apiVersion: kafka.strimzi.io/v1
 kind: KafkaTopic
 metadata:
   name: crossing.frames.v1
@@ -21,7 +21,7 @@ spec:
 ---
 # Raw detections, one per frame scored. DESIGN2 section 5: the immutable record
 # of what the detector saw. Never edited; interpretation lives downstream.
-apiVersion: kafka.strimzi.io/v1beta2
+apiVersion: kafka.strimzi.io/v1
 kind: KafkaTopic
 metadata:
   name: crossing.observations.v1
@@ -40,7 +40,7 @@ spec:
 # latest state of each one indefinitely. This works only because session_id is
 # derived deterministically from crossing_id and started_at, so an update lands
 # on the same key rather than creating a second row.
-apiVersion: kafka.strimzi.io/v1beta2
+apiVersion: kafka.strimzi.io/v1
 kind: KafkaTopic
 metadata:
   name: crossing.sessions.v1

@@ -9,7 +9,7 @@
 # Requires the Strimzi operator:
 #   kubectl create namespace kafka
 #   kubectl apply -f 'https://strimzi.io/install/latest?namespace=kafka' -n kafka
-apiVersion: kafka.strimzi.io/v1beta2
+apiVersion: kafka.strimzi.io/v1
 kind: KafkaNodePool
 metadata:
   name: dual-role
@@ -35,19 +35,31 @@ spec:
         # corpus lives in S3 - but losing the volume mid-flight would drop
         # records the outbox had already marked published.
         deleteClaim: false
+  resources:
+    requests:
+      memory: 1Gi
+      cpu: 200m
+    limits:
+      memory: 1400Mi
+  jvmOptions:
+    # Deliberately small. Two nodes with ~6.7Gi free between them also have to
+    # carry Flink, and an oversized heap here is memory the stream processor
+    # cannot have.
+    -Xms: 768m
+    -Xmx: 768m
 ---
-apiVersion: kafka.strimzi.io/v1beta2
+apiVersion: kafka.strimzi.io/v1
 kind: Kafka
 metadata:
   name: blockade
   namespace: kafka
-  annotations:
-    strimzi.io/node-pools: enabled
-    strimzi.io/kraft: enabled
 spec:
   kafka:
-    version: 3.9.0
-    metadataVersion: 3.9-IV0
+    # Pinned deliberately: an unpinned version would let an operator upgrade
+    # move the broker underneath us. metadataVersion is omitted so the operator
+    # picks the default matching this version rather than us hand-writing a
+    # format string that has to be kept in sync.
+    version: 4.2.1
     listeners:
       - name: plain
         port: 9092
@@ -63,18 +75,6 @@ spec:
       transaction.state.log.min.isr: 1
       default.replication.factor: 1
       min.insync.replicas: 1
-    resources:
-      requests:
-        memory: 1Gi
-        cpu: 200m
-      limits:
-        memory: 1400Mi
-    jvmOptions:
-      # Deliberately small. Two nodes with ~6.7Gi free between them also have to
-      # carry Flink, and an oversized heap here is memory the stream processor
-      # cannot have.
-      -Xms: 768m
-      -Xmx: 768m
   entityOperator:
     topicOperator:
       resources:
