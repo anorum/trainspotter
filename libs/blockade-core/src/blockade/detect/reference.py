@@ -70,9 +70,15 @@ class Thresholds:
     """A row counts as obstructed when this fraction of it differs from the
     reference. A train spans the frame; a car does not."""
 
-    min_band_rows: int = 12
+    min_band_rows: int = 10
     """How many obstructed rows make a mass. Filters out a single vehicle or a
-    shadow edge."""
+    shadow edge.
+
+    Set from measurement, not intuition: across two days of odot-678 frames,
+    no CLEAR frame exceeded 8 obstructed rows (p99 was 0), while a confirmed
+    train that the original value of 12 missed scored 11. Ten sits two rows
+    above the observed noise ceiling and safely below the weakest real train
+    seen so far. Re-derive this margin whenever the reference model changes."""
 
     clear_max_changed: float = 0.10
     """Below this overall changed fraction the crossing is called clear."""
