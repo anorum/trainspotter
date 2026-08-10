@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -8,10 +9,19 @@ from blockade.config import Camera, CameraSource, CameraUsability
 from blockade.detect.reference import ReferenceDetector, ReferenceModel, _brightness_bin, _decode
 from blockade.schemas import ObservationRecord
 
+CAMERA_ID = re.compile(r"^odot-\d+$")
+
 
 def _infer_camera_id(image_path: Path, reference_dir: Path) -> str | None:
-    for part in image_path.parts:
-        if part.startswith("odot-"):
+    """Recover the camera id from the frame's directory.
+
+    Only directory components are considered, and the shape is checked. Scanning
+    every path part matched the filename too, so a frame saved as
+    "odot-678-clear-night.jpg" reported its whole filename as the camera id and
+    then found no reference for it.
+    """
+    for part in image_path.parent.parts:
+        if CAMERA_ID.match(part):
             return part
 
     reference_files = sorted(reference_dir.glob("*.npz"))
