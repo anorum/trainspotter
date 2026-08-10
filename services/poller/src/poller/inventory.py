@@ -39,7 +39,6 @@ from typing import Any
 import httpx
 import typer
 import yaml
-
 from blockade.config import REPO_ROOT, CameraSource, Settings, get_settings
 
 log = logging.getLogger(__name__)

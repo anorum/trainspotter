@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from blockade.capture.sync import sync
 from blockade.config import Settings
 from blockade.storage import LocalFrameCache, ManifestWriter, content_hash, frame_key
+from poller.sync import sync
+
 from tests.test_storage import _record
 
 CAPTURED = datetime(2026, 8, 8, 14, 32, 7, tzinfo=UTC)
@@ -60,7 +61,7 @@ def test_uploads_local_frames(tmp_path, monkeypatch):
     settings = _settings(tmp_path)
     keys = _seed(settings)
     store = FakeStore()
-    monkeypatch.setattr("blockade.capture.sync.S3ObjectStore", lambda s: store)
+    monkeypatch.setattr("poller.sync.S3ObjectStore", lambda s: store)
 
     stats = sync(settings)
 
@@ -74,7 +75,7 @@ def test_skips_frames_already_in_the_bucket(tmp_path, monkeypatch):
     settings = _settings(tmp_path)
     keys = _seed(settings)
     store = FakeStore(existing=set(keys))
-    monkeypatch.setattr("blockade.capture.sync.S3ObjectStore", lambda s: store)
+    monkeypatch.setattr("poller.sync.S3ObjectStore", lambda s: store)
 
     stats = sync(settings)
 
@@ -86,7 +87,7 @@ def test_dry_run_uploads_nothing(tmp_path, monkeypatch):
     settings = _settings(tmp_path)
     _seed(settings)
     store = FakeStore()
-    monkeypatch.setattr("blockade.capture.sync.S3ObjectStore", lambda s: store)
+    monkeypatch.setattr("poller.sync.S3ObjectStore", lambda s: store)
 
     stats = sync(settings, dry_run=True)
 
@@ -100,7 +101,7 @@ def test_manifests_are_reuploaded_each_run(tmp_path, monkeypatch):
     settings = _settings(tmp_path)
     _seed(settings)
     store = FakeStore()
-    monkeypatch.setattr("blockade.capture.sync.S3ObjectStore", lambda s: store)
+    monkeypatch.setattr("poller.sync.S3ObjectStore", lambda s: store)
 
     first = sync(settings)
     second = sync(settings)
@@ -112,7 +113,7 @@ def test_manifests_are_reuploaded_each_run(tmp_path, monkeypatch):
 def test_sync_is_safe_with_no_local_data(tmp_path, monkeypatch):
     settings = _settings(tmp_path)
     store = FakeStore()
-    monkeypatch.setattr("blockade.capture.sync.S3ObjectStore", lambda s: store)
+    monkeypatch.setattr("poller.sync.S3ObjectStore", lambda s: store)
 
     stats = sync(settings)
 

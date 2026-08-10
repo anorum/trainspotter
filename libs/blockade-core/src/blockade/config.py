@@ -16,7 +16,24 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+
+def _find_repo_root() -> Path:
+    """Walk up looking for the workspace root.
+
+    A fixed `parents[N]` breaks the moment a file moves between directories,
+    which is exactly what happened when this package moved into a workspace. In
+    a container none of these markers exist, and the env vars set in the image
+    supply the paths instead, so falling back to the working directory is
+    correct rather than a guess.
+    """
+    here = Path(__file__).resolve()
+    for candidate in here.parents:
+        if (candidate / ".git").exists() or (candidate / "libs").is_dir():
+            return candidate
+    return Path.cwd()
+
+
+REPO_ROOT = _find_repo_root()
 DEFAULT_CAMERA_CONFIG = REPO_ROOT / "config" / "cameras.yaml"
 
 

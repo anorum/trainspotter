@@ -12,8 +12,6 @@ from datetime import UTC, datetime
 
 import numpy as np
 import pytest
-from PIL import Image
-
 from blockade.detect.reference import (
     CHROME_BOTTOM,
     CHROME_TOP,
@@ -24,6 +22,7 @@ from blockade.detect.reference import (
     _decode,
 )
 from blockade.schemas import CrossingState
+from PIL import Image
 
 CAPTURED = datetime(2026, 8, 9, 7, 23, 10, tzinfo=UTC)
 KEY = "frames/odot-678/2026/08/09/07/x.jpg"

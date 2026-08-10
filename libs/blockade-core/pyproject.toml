@@ -1,0 +1,32 @@
+[project]
+name = "blockade-core"
+version = "0.1.0"
+description = "Shared record definitions, storage, and detectors for the crossing pipeline."
+readme = "../../README.md"
+requires-python = ">=3.11,<3.12"
+license = { text = "MIT" }
+
+# The contract between services. Every record that crosses a topic is defined
+# here exactly once, so a producer and a consumer cannot disagree about a shape.
+dependencies = [
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "pyyaml>=6.0",
+    "boto3>=1.34",
+    "botocore[crt]>=1.34",
+    "structlog>=24.1",
+]
+
+[project.optional-dependencies]
+# The free detector. numpy and Pillow only - no model weights, no GPU.
+vision = ["numpy>=1.26", "pillow>=10.0"]
+# Deliberately separate: torch is ~2GB and does not belong on an 8GB ARM node.
+yolo = ["ultralytics>=8.3"]
+vlm = ["anthropic>=0.40"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/blockade"]

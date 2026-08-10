@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from blockade.schemas import CrossingState
+
 from main import classify_image
 
 

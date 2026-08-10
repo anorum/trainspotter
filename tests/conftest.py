@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from blockade.config import Camera, CameraSource, Settings
 from blockade.storage import LocalFrameCache, ManifestWriter
 

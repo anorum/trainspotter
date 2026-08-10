@@ -13,9 +13,8 @@ import json
 from pathlib import Path
 
 import pytest
-
-from blockade.capture.inventory import TARGET_CAMERAS, _find_camera_list, resolve
 from blockade.config import CameraRoster
+from poller.inventory import TARGET_CAMERAS, _find_camera_list, resolve
 
 FIXTURE = Path(__file__).parent / "fixtures" / "odot_cctv_inventory.json"
 

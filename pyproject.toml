@@ -1,42 +1,14 @@
-[project]
-name = "blockade"
-version = "0.1.0"
-description = "Detects freight rail blockages at SE Portland grade crossings from public ODOT traffic camera imagery."
-readme = "README.md"
-requires-python = ">=3.11,<3.12"
-license = { text = "MIT" }
+# Workspace root. Not a package itself - it defines the members and the shared
+# tooling configuration.
+#
+# Split this way because poller and detector deploy independently but share the
+# record definitions that are the contract between them. One copy of schemas.py,
+# several services, no drift.
+[tool.uv.workspace]
+members = ["libs/*", "services/*"]
 
-# Pinned to 3.11: PyFlink (Phase 2) does not yet support 3.12, and the capture
-# service shares this interpreter so the Phase 0 corpus replays through the same code.
-dependencies = [
-    "anthropic>=0.40",
-    "httpx>=0.27",
-    "pydantic>=2.7",
-    "pydantic-settings>=2.3",
-    "pyyaml>=6.0",
-    # botocore[crt] is required to read credentials from the AWS CLI's login
-    # credential provider (`aws login`); without it boto3 cannot see the session.
-    "boto3>=1.34",
-    "botocore[crt]>=1.34",
-    "prometheus-client>=0.20",
-    "structlog>=24.1",
-    "typer>=0.12",
-]
-
-[project.optional-dependencies]
-transit = [
-    "gtfs-realtime-bindings>=1.0",
-]
-# The free detector. numpy + Pillow only -- no model weights, no GPU, no service.
-vision = [
-    "numpy>=1.26",
-    "pillow>=10.0",
-]
-
-[project.scripts]
-blockade-inventory = "blockade.capture.inventory:app"
-blockade-capture = "blockade.capture.poller:app"
-blockade-sync = "blockade.capture.sync:app"
+[tool.uv.sources]
+blockade-core = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -45,13 +17,6 @@ dev = [
     "respx>=0.21",
     "ruff>=0.5",
 ]
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/blockade"]
 
 [tool.ruff]
 line-length = 100
@@ -62,10 +27,12 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.ruff.lint.per-file-ignores]
 # B008 forbids function calls in argument defaults, but `typer.Option(...)` in a
-# default is exactly how Typer declares CLI options. Scoped to the CLI entrypoints
-# rather than disabled globally, where the check is worth keeping.
-"src/blockade/capture/inventory.py" = ["B008"]
-"src/blockade/capture/poller.py" = ["B008"]
+# default is exactly how Typer declares CLI options. Scoped to the CLI
+# entrypoints rather than disabled globally, where the check is worth keeping.
+"services/poller/src/poller/inventory.py" = ["B008"]
+"services/poller/src/poller/poller.py" = ["B008"]
+"services/poller/src/poller/sync.py" = ["B008"]
+"services/detector/src/detector/runner.py" = ["B008"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

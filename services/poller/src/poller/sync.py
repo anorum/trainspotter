@@ -21,7 +21,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import typer
-
 from blockade.config import Settings, get_settings
 from blockade.storage import S3ObjectStore, manifest_key
 

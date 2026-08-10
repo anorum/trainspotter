@@ -10,7 +10,6 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
-
 from blockade.schemas import BlockageSession, FetchStatus, FrameRecord
 
 STARTED = datetime(2026, 8, 8, 14, 31, 0, tzinfo=UTC)

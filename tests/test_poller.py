@@ -16,11 +16,11 @@ from datetime import UTC, datetime, timedelta
 import httpx
 import pytest
 import respx
-
-from blockade.capture.poller import FramePoller
 from blockade.config import Camera, Settings
 from blockade.schemas import CapturedAtSource, FetchStatus, FrameRecord
 from blockade.storage import LocalFrameCache, ManifestWriter, content_hash, frame_key
+from poller.poller import FramePoller
+
 from tests.conftest import JPEG_A, JPEG_B
 
 IMAGE_URL = "https://tripcheck.example/cams/1234.jpg"

@@ -13,7 +13,6 @@ from types import SimpleNamespace
 import anthropic
 import httpx
 import pytest
-
 from blockade.detect.vlm import PROMPT_HASH, VlmDetector, _Judgement, detector_version
 from blockade.schemas import CrossingState
 

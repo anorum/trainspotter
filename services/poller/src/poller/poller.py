@@ -19,8 +19,6 @@ from email.utils import parsedate_to_datetime
 
 import httpx
 import typer
-from prometheus_client import Counter, Gauge, Histogram, start_http_server
-
 from blockade import __version__
 from blockade.config import Camera, Settings, get_settings, load_roster
 from blockade.schemas import CapturedAtSource, FetchStatus, FrameRecord
@@ -31,6 +29,7 @@ from blockade.storage import (
     content_hash,
     frame_key,
 )
+from prometheus_client import Counter, Gauge, Histogram, start_http_server
 
 log = logging.getLogger(__name__)
 
