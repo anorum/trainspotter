@@ -58,6 +58,12 @@ spec:
         app: poller
     spec:
       serviceAccountName: poller
+      # Private GHCR package, same pattern as alex-api. Created imperatively per
+      # namespace rather than committed - it is a registry credential, not
+      # application config, and CI never needs it (it pushes with its own
+      # GITHUB_TOKEN). Scope is read:packages only.
+      imagePullSecrets:
+        - name: regcred
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
