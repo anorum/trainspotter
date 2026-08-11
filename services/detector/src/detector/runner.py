@@ -247,6 +247,73 @@ async def _stream(settings: Settings) -> None:
 
 
 @app.command()
+def spotcheck(
+    frames_dir: Path = typer.Option(..., help="Root holding {camera_id}/**/*.jpg frames."),
+    stride_minutes: int = typer.Option(15, help="Coarse sampling stride per camera."),
+    camera: str = typer.Option("", help="Limit to one camera id."),
+    labels: Path = typer.Option(
+        Path("data/labels/labels.jsonl"), help="Label file to append to."
+    ),
+) -> None:
+    """Grow the label set: VLM spot-checks at a stride, walks blockage edges.
+
+    Needs ANTHROPIC_API_KEY. Labels are appended with the model+prompt version
+    as labeller, so machine labels never masquerade as human ones.
+    """
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    from blockade.detect.vlm import VlmDetector
+
+    from detector.spotcheck import (
+        Judged,
+        append_labels,
+        frame_time,
+        label_record,
+        list_frames,
+        sweep_camera,
+    )
+
+    settings = get_settings()
+    roster = [
+        c
+        for c in load_roster(settings.camera_config_path).enabled()
+        if not camera or c.camera_id == camera
+    ]
+    vlm = VlmDetector(settings)
+
+    total_added = total_calls = 0
+    for cam in roster:
+        camera_dir = frames_dir / cam.camera_id
+        frames = list_frames(camera_dir) if camera_dir.exists() else []
+        if not frames:
+            continue
+
+        def judge(path: Path, cam=cam):
+            nonlocal total_calls
+            total_calls += 1
+            obs = vlm.classify(path.read_bytes(), cam, frame_time(path), path.name)
+            return Judged(path, obs.captured_at, obs.state, obs.confidence, obs.reason)
+
+        verdicts = sweep_camera(cam, frames, judge, stride_minutes)
+        records = [
+            label_record(
+                cam,
+                v,
+                f"frames/{cam.camera_id}/{v.captured_at:%Y/%m/%d/%H}/{v.path.name}",
+                vlm.version,
+            )
+            for v in verdicts
+        ]
+        added = append_labels(records, labels)
+        blocked = sum(1 for v in verdicts if v.state.value == "BLOCKED")
+        typer.echo(
+            f"{cam.camera_id}: {len(frames)} frames, {len(verdicts)} judged, "
+            f"{blocked} blocked, {added} new labels"
+        )
+        total_added += added
+    typer.echo(f"total: {total_calls} API calls, {total_added} labels added -> {labels}")
+
+
+@app.command()
 def run() -> None:
     """Consume frame metadata from Kafka and publish detections continuously.
 
