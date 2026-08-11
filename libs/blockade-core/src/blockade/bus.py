@@ -105,8 +105,9 @@ class TopicTailer:
     API rebuilds its world by replaying, every boot. Committed offsets would
     be dead weight (there is nothing to resume; the replay *is* the recovery),
     and a consumer group would split partitions across replicas when every
-    replica needs the full log. So: no group, explicit assignment of every
-    partition, seek to the beginning.
+    replica needs the full log. So: no group - ``group_id=None`` subscription
+    in the constructor lets aiokafka self-assign all partitions locally and
+    start from the beginning via ``auto_offset_reset="earliest"``.
 
     ``caught_up`` reports whether the tail has passed the end offsets captured
     at start - the readiness signal that keeps a freshly booted server from
