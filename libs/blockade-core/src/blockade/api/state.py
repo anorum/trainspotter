@@ -111,11 +111,7 @@ class LiveState:
         stale = latest is None or now - latest.captured_at > self._stale_after
         state = CrossingState.UNKNOWN if stale else latest.state
         open_session = next(
-            (
-                s
-                for s in self._sessions.values()
-                if s.crossing_id == crossing_id and s.is_open
-            ),
+            (s for s in self._sessions.values() if s.crossing_id == crossing_id and s.is_open),
             None,
         )
         cameras = [

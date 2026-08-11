@@ -83,9 +83,7 @@ class StateFeed:
                     except ValueError:
                         # A poison record must not stall the board; it stays in
                         # the topic for inspection, same policy as the detector.
-                        log.error(
-                            "unparseable record at %s:%s", record.partition, record.offset
-                        )
+                        log.error("unparseable record at %s:%s", record.partition, record.offset)
                 if self.state.changed:
                     self.state.changed = False
                     self._notify()

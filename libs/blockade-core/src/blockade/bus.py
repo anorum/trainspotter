@@ -158,6 +158,4 @@ class TopicTailer:
     @property
     def caught_up(self) -> bool:
         """True once every partition has passed the end offset seen at start."""
-        return all(
-            self._positions.get(tp, 0) >= end for tp, end in self._boot_end_offsets.items()
-        )
+        return all(self._positions.get(tp, 0) >= end for tp, end in self._boot_end_offsets.items())

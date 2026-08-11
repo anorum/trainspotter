@@ -35,10 +35,15 @@ ODOT/PBOT camera stills
         +--> [alert branch]      rising edge + asymmetric reset -> one alert per train
         |
         +--> [analytics branch]  sessions with gap timeout -> start, end, duration
+        |
+        +--> [serving layer]     tails Kafka groupless, reducer builds the board
+                                 live status at blockade.home.alexnorum.com
+                                 frames from S3, SSE for the browser
 ```
 
-One detection, one event, two consumers.
+One detection, one event, three consumers.
 The alert branch answers "should I leave now"; the analytics branch answers "how often and for how long", and can be rebuilt from the observations whenever its parameters change.
+The serving layer answers "is a train blocking right now" with a live schematic board.
 
 Image bytes never enter the message bus - object storage plus a reference, always.
 

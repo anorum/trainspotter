@@ -60,9 +60,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/v1/status")
     async def status() -> Response:
-        return Response(
-            state.snapshot().model_dump_json(), media_type="application/json"
-        )
+        return Response(state.snapshot().model_dump_json(), media_type="application/json")
 
     @app.get("/api/v1/crossings")
     async def crossings() -> dict:
@@ -70,9 +68,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             "crossings": [
                 {
                     "crossing_id": crossing_id,
-                    "cameras": [
-                        {"camera_id": cid, "name": name} for cid, name in cams
-                    ],
+                    "cameras": [{"camera_id": cid, "name": name} for cid, name in cams],
                     "lat": coords.get(crossing_id, (None, None))[0],
                     "lon": coords.get(crossing_id, (None, None))[1],
                 }

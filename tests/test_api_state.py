@@ -90,9 +90,7 @@ def test_late_arrivals_never_regress_the_present() -> None:
     board = state.snapshot(now=T0 + timedelta(minutes=11))
     clinton = next(c for c in board.crossings if c.crossing_id == "SE_12TH_CLINTON")
     assert clinton.state is CrossingState.CLEAR
-    joined = state.recent_observations(
-        "SE_12TH_CLINTON", T0, T0 + timedelta(minutes=11)
-    )
+    joined = state.recent_observations("SE_12TH_CLINTON", T0, T0 + timedelta(minutes=11))
     assert len(joined) == 2, "the late record still serves history joins"
 
 
