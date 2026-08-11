@@ -34,13 +34,18 @@ class Materializer:
     def __init__(self, settings: Settings, pool) -> None:
         assert settings.kafka_bootstrap is not None
         self._pool = pool
+        # One group per topic, deliberately: two members of a single group
+        # subscribing to different topics confuses partition assignment, and
+        # the observations partitions ended up owned by the member that
+        # ignores them - zero observation rows ever landed. Separate groups
+        # give each consumer full ownership of its own topic.
         self._obs = RecordConsumer(
             settings.kafka_bootstrap, settings.kafka_observations_topic,
-            group_id="blockade-api-db", client_id="blockade-api-db-obs",
+            group_id="blockade-api-db-obs", client_id="blockade-api-db-obs",
         )
         self._sess = RecordConsumer(
             settings.kafka_bootstrap, settings.kafka_sessions_topic,
-            group_id="blockade-api-db", client_id="blockade-api-db-sess",
+            group_id="blockade-api-db-sess", client_id="blockade-api-db-sess",
         )
         self._tasks: list[asyncio.Task] = []
 
