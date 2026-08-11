@@ -18,10 +18,9 @@ import json
 import logging
 from pathlib import Path
 
-log = logging.getLogger(__name__)
+from blockade.detect.classifier import IMAGE_SIZE, LABELS
 
-IMAGE_SIZE = 224
-LABELS = ("CLEAR", "BLOCKED")  # index 0/1; BLOCKED is the positive class
+log = logging.getLogger(__name__)
 
 
 def load_examples(manifest: Path, frames_roots: list[Path], split: str) -> list[tuple[Path, int]]:
@@ -31,8 +30,12 @@ def load_examples(manifest: Path, frames_roots: list[Path], split: str) -> list[
         if rec["split"] != split:
             continue
         name = Path(rec["object_key"]).name
+        camera_id = rec["camera_id"]
         for root in frames_roots:
-            hits = list(root.rglob(name))
+            hits = [
+                h for h in root.rglob(name)
+                if camera_id in h.parts
+            ]
             if hits:
                 out.append((hits[0], LABELS.index(rec["label"])))
                 break

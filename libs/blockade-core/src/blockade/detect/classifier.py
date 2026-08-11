@@ -12,6 +12,7 @@ trained, and says so, rather than guessing.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import logging
 from datetime import UTC, datetime
@@ -32,6 +33,14 @@ MIN_CONFIDENCE = 0.7
 must not accumulate coin flips: a confidently wrong reading corrupts a record
 that cannot be recaptured, while UNKNOWN is merely a gap."""
 
+LABELS: tuple[str, str] = ("CLEAR", "BLOCKED")
+"""Output index -> class name. Positive class is BLOCKED at index 1. Shared with
+the trainer so a reordering on either side cannot silently invert the detector."""
+
+_BLOCKED_INDEX = LABELS.index("BLOCKED")
+
+_VERSION_BASE = "classifier/mobilenetv3s-v1"
+
 
 def model_key(camera_id: str) -> str:
     """S3 key for a camera's classifier, next to its reference model."""
@@ -43,30 +52,40 @@ class ClassifierDetector:
 
     def __init__(self, settings: Settings) -> None:
         self._dir = settings.references_dir
-        self._sessions: dict[str, object] = {}
-        self.version = "classifier/mobilenetv3s-v1"
+        self._sessions: dict[str, tuple[object | None, str]] = {}
+        self.version = f"{_VERSION_BASE}-c{MIN_CONFIDENCE}"
 
-    def _session(self, camera_id: str):
+    def _session(self, camera_id: str) -> tuple[object | None, str]:
         if camera_id not in self._sessions:
-            path = self._dir / f"classifier-{camera_id}.onnx"
-            if not path.exists():
-                self._sessions[camera_id] = None
-            else:
-                import onnxruntime
-
-                self._sessions[camera_id] = onnxruntime.InferenceSession(
-                    str(path), providers=["CPUExecutionProvider"]
-                )
+            self._sessions[camera_id] = self._load(camera_id)
         return self._sessions[camera_id]
+
+    def _load(self, camera_id: str) -> tuple[object | None, str]:
+        path = self._dir / f"classifier-{camera_id}.onnx"
+        if not path.exists():
+            return None, self.version
+        try:
+            data = path.read_bytes()
+            digest = hashlib.sha256(data).hexdigest()[:12]
+            version = f"{_VERSION_BASE}-c{MIN_CONFIDENCE}-h{digest}"
+            import onnxruntime
+
+            session = onnxruntime.InferenceSession(
+                str(path), providers=["CPUExecutionProvider"]
+            )
+            return session, version
+        except Exception as exc:
+            log.warning("classifier load failed for %s: %s", camera_id, exc)
+            return None, self.version
 
     def classify(
         self, image: bytes, camera: Camera, captured_at: datetime, object_key: str
     ) -> ObservationRecord:
-        session = self._session(camera.camera_id)
+        session, version = self._session(camera.camera_id)
         if session is None:
             return self._record(
                 camera, captured_at, object_key, CrossingState.UNKNOWN, 0.0,
-                "no classifier trained for this camera",
+                "no classifier trained for this camera", version,
             )
         try:
             from PIL import Image
@@ -78,27 +97,34 @@ class ClassifierDetector:
         except Exception as exc:
             return self._record(
                 camera, captured_at, object_key, CrossingState.UNKNOWN, 0.0,
-                f"image could not be decoded: {type(exc).__name__}",
+                f"image could not be decoded: {type(exc).__name__}", version,
             )
 
-        logits = session.run(["logits"], {"image": x})[0][0]
+        try:
+            logits = session.run(["logits"], {"image": x})[0][0]
+        except Exception as exc:
+            log.warning("classifier inference failed for %s: %s", object_key, exc)
+            return self._record(
+                camera, captured_at, object_key, CrossingState.UNKNOWN, 0.0,
+                f"inference failed: {type(exc).__name__}", version,
+            )
         exp = np.exp(logits - logits.max())
         probs = exp / exp.sum()
-        blocked_p = float(probs[1])
+        blocked_p = float(probs[_BLOCKED_INDEX])
 
         if blocked_p >= MIN_CONFIDENCE:
             return self._record(
                 camera, captured_at, object_key, CrossingState.BLOCKED, blocked_p,
-                f"classifier: blocked p={blocked_p:.2f}",
+                f"classifier: blocked p={blocked_p:.2f}", version,
             )
         if blocked_p <= 1 - MIN_CONFIDENCE:
             return self._record(
                 camera, captured_at, object_key, CrossingState.CLEAR, 1 - blocked_p,
-                f"classifier: clear p={1 - blocked_p:.2f}",
+                f"classifier: clear p={1 - blocked_p:.2f}", version,
             )
         return self._record(
             camera, captured_at, object_key, CrossingState.UNKNOWN, 0.0,
-            f"classifier undecided (blocked p={blocked_p:.2f})",
+            f"classifier undecided (blocked p={blocked_p:.2f})", version,
         )
 
     def _record(
@@ -109,6 +135,7 @@ class ClassifierDetector:
         state: CrossingState,
         confidence: float,
         reason: str,
+        version: str,
     ) -> ObservationRecord:
         return ObservationRecord(
             crossing_id=camera.crossing_id,
@@ -119,5 +146,5 @@ class ClassifierDetector:
             confidence=0.0 if state is CrossingState.UNKNOWN else confidence,
             reason=reason[:200],
             object_key=object_key,
-            detector_version=self.version,
+            detector_version=version,
         )

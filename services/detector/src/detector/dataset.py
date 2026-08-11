@@ -47,10 +47,20 @@ def _frame_time(path: Path) -> datetime:
     return datetime.fromtimestamp(int(path.stem.split("-")[0]) / 1000, tz=UTC)
 
 
-def session_windows(session_files: list[Path], crossing_id: str) -> list[tuple[datetime, datetime]]:
-    """Merged [start, end] windows for one crossing from session JSONL files.
+def session_windows(
+    session_files: list[Path],
+    crossing_id: str,
+    open_end: datetime | None = None,
+) -> list[tuple[datetime, datetime, bool]]:
+    """Merged windows for one crossing from session JSONL files.
 
     Later records for the same session_id win, matching topic compaction.
+
+    Each window carries a `closed` flag. An unclosed session extends to
+    `open_end` (typically the last observed frame time) so its frames are still
+    excluded from quiet-negatives - a live blockage is not a quiet period. It
+    is marked closed=False so callers can keep it out of positive cores, whose
+    real end we do not know and must not guess.
     """
     by_id: dict[str, dict] = {}
     for file in session_files:
@@ -60,12 +70,13 @@ def session_windows(session_files: list[Path], crossing_id: str) -> list[tuple[d
             rec = json.loads(line)
             if rec.get("crossing_id") == crossing_id:
                 by_id[rec["session_id"]] = rec
-    windows = []
+    windows: list[tuple[datetime, datetime, bool]] = []
     for rec in by_id.values():
         start = datetime.fromisoformat(rec["started_at"])
-        end = datetime.fromisoformat(rec["ended_at"]) if rec.get("ended_at") else None
-        if end is not None:
-            windows.append((start, end))
+        if rec.get("ended_at"):
+            windows.append((start, datetime.fromisoformat(rec["ended_at"]), True))
+        elif open_end is not None and open_end >= start:
+            windows.append((start, open_end, False))
     return sorted(windows)
 
 
@@ -79,7 +90,10 @@ def build_manifest(
     seed: int = 11,
 ) -> list[Example]:
     frames = sorted(frames_dir.rglob("*.jpg"), key=_frame_time)
-    windows = session_windows(session_files, crossing_id)
+    frames_end = _frame_time(frames[-1]) if frames else None
+    windows = session_windows(session_files, crossing_id, open_end=frames_end)
+    closed_windows = [(s, e) for s, e, closed in windows if closed]
+    near_windows = [(s, e) for s, e, _ in windows]
     gold_keys = {
         json.loads(line)["object_key"]
         for line in gold_labels.read_text().splitlines()
@@ -97,10 +111,10 @@ def build_manifest(
                 sweep_clear_keys.add(Path(rec["object_key"]).name)
 
     def in_core(t: datetime) -> bool:
-        return any(s + CORE_MARGIN <= t <= e - CORE_MARGIN for s, e in windows)
+        return any(s + CORE_MARGIN <= t <= e - CORE_MARGIN for s, e in closed_windows)
 
     def near_any_session(t: datetime) -> bool:
-        return any(s - QUIET_MARGIN <= t <= e + QUIET_MARGIN for s, e in windows)
+        return any(s - QUIET_MARGIN <= t <= e + QUIET_MARGIN for s, e in near_windows)
 
     examples: list[Example] = []
     for path in frames:
