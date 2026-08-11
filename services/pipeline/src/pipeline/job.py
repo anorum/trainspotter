@@ -104,9 +104,7 @@ class CrossingFunction(KeyedProcessFunction):
             restored = CrossingAlertState.from_json_dict(json.loads(raw))
             self.alerter.states[obs.crossing_id] = restored
         alert = self.alerter.observe(obs)
-        self.alert_state.update(
-            json.dumps(self.alerter.states[obs.crossing_id].to_json_dict())
-        )
+        self.alert_state.update(json.dumps(self.alerter.states[obs.crossing_id].to_json_dict()))
         if alert is not None:
             payload = json.dumps(
                 {
