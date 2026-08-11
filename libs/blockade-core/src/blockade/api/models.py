@@ -40,14 +40,15 @@ class CrossingStatus(BaseModel):
     crossing_id: str
     state: CrossingState
     stale: bool = False
-    """True when the newest observation is old enough that the state shown is
-    a memory, not a measurement. The displayed state is downgraded to UNKNOWN
-    whenever this is set - a dead detector must never leave BLOCKED frozen on
-    a screen."""
+    """True when no camera on this crossing has a fresh observation - the
+    displayed state is UNKNOWN whenever this is set, because a dead detector
+    must never leave BLOCKED frozen on a screen and a stale BLOCKED must not
+    hold the crossing hostage either."""
     since: datetime | None = None
-    """When the current state began (the first observation of the present run
-    of identical states)."""
+    """When the crossing's consensus state last changed, at event time."""
     latest_observation: ObservationRecord | None = None
+    """The freshest observation from the camera that carried the consensus
+    vote, or None when no camera is fresh (i.e. ``stale`` is True)."""
     open_session: BlockageSession | None = None
     cameras: list[CameraFrameInfo] = []
 
