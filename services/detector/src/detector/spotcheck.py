@@ -119,7 +119,8 @@ def sweep_camera(
             walked += 1
         if walked >= MAX_WALK and streak < CLEAR_STREAK_TO_STOP:
             log.warning(
-                "spotcheck walk from index %d step %+d hit MAX_WALK=%d without a CLEAR shoulder for camera %s; labels for this side end mid-blockage",
+                "spotcheck walk from index %d step %+d hit MAX_WALK=%d without a "
+                "CLEAR shoulder for camera %s; labels for this side end mid-blockage",
                 start,
                 step,
                 MAX_WALK,
