@@ -61,7 +61,12 @@ def fake_consumer_cls(monkeypatch: pytest.MonkeyPatch):
     return created
 
 
-async def test_start_fetches_metadata_before_assigning(fake_consumer_cls) -> None:
+async def test_start_fetches_metadata_before_assigning(
+    monkeypatch: pytest.MonkeyPatch, fake_consumer_cls
+) -> None:
+    async def no_sleep(_: float) -> None: ...
+    monkeypatch.setattr(bus.asyncio, "sleep", no_sleep)
+
     tailer = TopicTailer("broker:9092", "crossing.sessions.v1", "test")
 
     await tailer.start()
