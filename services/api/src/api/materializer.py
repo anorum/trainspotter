@@ -1,13 +1,14 @@
 """Kafka to Postgres: the history store's feed.
 
-A grouped consumer (blockade-api-db) over observations and sessions, batch
-upserts inside one transaction, Kafka offsets committed only after the
-transaction commits - a crash replays a batch and the idempotent upserts
-absorb it. Deterministic session ids and the versioned observation key make
-at-least-once safe, the same argument as everywhere else on the bus.
+One grouped consumer per topic (blockade-api-db-obs, blockade-api-db-sess)
+over observations and sessions, batch upserts inside one transaction, Kafka
+offsets committed only after the transaction commits - a crash replays a
+batch and the idempotent upserts absorb it. Deterministic session ids and
+the versioned observation key make at-least-once safe, the same argument as
+everywhere else on the bus.
 
 Fail-fast like the tailer: an unhandled error exits the process, kubelet
-restarts, the group resumes from committed offsets.
+restarts, each group resumes from its committed offsets.
 """
 
 from __future__ import annotations
