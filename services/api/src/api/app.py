@@ -1,7 +1,7 @@
 """The FastAPI app: thin plumbing around blockade.api.state.
 
-Routes are deliberately small enough to live in one file for Phase A; they
-split into a package when sessions and analytics arrive.
+Routes are deliberately small enough to live in one file; they split into a
+package when analytics endpoints outgrow it.
 """
 
 from __future__ import annotations
