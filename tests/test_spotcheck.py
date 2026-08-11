@@ -133,6 +133,48 @@ def test_append_labels_is_idempotent(tmp_path: Path) -> None:
     assert first == len(records) and second == 0
 
 
+def test_blockage_strictly_between_stride_samples_is_missed(tmp_path: Path) -> None:
+    """Honest limitation: a blockage shorter than the stride can fall between
+    samples. With a 15-minute stride on the 2-minute-cadence timeline the
+    stride lands on indices 0, 8, 16, 24; a blockage at {2, 3} lies strictly
+    between the first two samples and both endpoints read CLEAR, so no walk is
+    triggered and those frames are never judged."""
+    frames = timeline(tmp_path)
+    judge = scripted(blocked={2, 3})
+
+    verdicts = sweep_camera(CAMERA, frames, judge, stride_minutes=15)
+
+    got = states(verdicts)
+    assert 2 not in got and 3 not in got, "between-stride blockage is not recovered"
+    assert 2 not in judge.calls and 3 not in judge.calls, "and no API call is spent on it"
+
+
+def test_already_labeled_frames_are_skipped_before_judging(tmp_path: Path) -> None:
+    """Repeat sweeps must not re-spend calls on frames the label file already
+    covers. Object_keys the caller declares already-labeled are short-circuited
+    before the judge is invoked."""
+    frames = timeline(tmp_path)
+    judge = scripted(blocked=set(range(10, 18)))
+
+    def object_key_for(path: Path) -> str:
+        return path.name
+
+    prior = {frames[i].name for i in range(10, 18)}
+    verdicts = sweep_camera(
+        CAMERA,
+        frames,
+        judge,
+        stride_minutes=15,
+        already_labeled=prior,
+        object_key_for=object_key_for,
+    )
+
+    got = states(verdicts)
+    for i in range(10, 18):
+        assert i not in got, f"already-labeled index {i} must not be re-emitted"
+        assert i not in judge.calls, f"already-labeled index {i} must not be re-judged"
+
+
 def test_stride_handles_irregular_cadence(tmp_path: Path) -> None:
     """Real cameras skip beats; the stride keys off time, not index."""
     sparse = [p for i, p in enumerate(timeline(tmp_path)) if i % 3 != 1]

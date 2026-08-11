@@ -83,38 +83,56 @@ def sweep_camera(
 
     ``judge(path) -> Judged`` is injected so tests drive the logic with a
     scripted model and the real sweep drives it with the VLM.
+
+    On a repeat sweep, ``already_labeled`` (a set of object_keys) paired with
+    ``object_key_for(path) -> str`` short-circuits frames the label file
+    already covers before any API call is made. In walks those frames behave
+    like UNKNOWN: absence of new evidence neither extends nor ends the walk.
     """
     already = already_labeled or set()
     judged: dict[int, Judged] = {}
 
-    def judge_index(i: int) -> Judged:
-        if i not in judged:
-            judged[i] = judge(frames[i])
+    def is_already_labeled(i: int) -> bool:
+        return object_key_for is not None and object_key_for(frames[i]) in already
+
+    def judge_index(i: int) -> Judged | None:
+        if i in judged:
+            return judged[i]
+        if is_already_labeled(i):
+            return None
+        judged[i] = judge(frames[i])
         return judged[i]
 
     def walk(start: int, step: int) -> None:
         streak, walked, i = 0, 0, start + step
         while 0 <= i < len(frames) and walked < MAX_WALK and streak < CLEAR_STREAK_TO_STOP:
             verdict = judge_index(i)
-            if verdict.state is CrossingState.CLEAR:
-                streak += 1
-            elif verdict.state is CrossingState.BLOCKED:
-                streak = 0
-            # UNKNOWN neither extends nor resets: an unreadable frame inside a
-            # blockage is not a boundary, the same rule the alerter uses.
+            if verdict is not None:
+                if verdict.state is CrossingState.CLEAR:
+                    streak += 1
+                elif verdict.state is CrossingState.BLOCKED:
+                    streak = 0
+                # UNKNOWN neither extends nor resets: an unreadable frame
+                # inside a blockage is not a boundary, the same rule the
+                # alerter uses. Already-labeled frames follow the same rule.
             i += step
             walked += 1
+        if walked >= MAX_WALK and streak < CLEAR_STREAK_TO_STOP:
+            log.warning(
+                "spotcheck walk from index %d step %+d hit MAX_WALK=%d without a CLEAR shoulder for camera %s; labels for this side end mid-blockage",
+                start,
+                step,
+                MAX_WALK,
+                camera.camera_id,
+            )
 
     for i in stride_indices(frames, stride_minutes):
         verdict = judge_index(i)
-        if verdict.state is CrossingState.BLOCKED:
+        if verdict is not None and verdict.state is CrossingState.BLOCKED:
             walk(i, -1)
             walk(i, +1)
 
-    results = [judged[i] for i in sorted(judged)]
-    if object_key_for is not None:
-        results = [j for j in results if object_key_for(j.path) not in already]
-    return results
+    return [judged[i] for i in sorted(judged)]
 
 
 def label_record(camera: Camera, verdict: Judged, object_key: str, labeller: str) -> dict:

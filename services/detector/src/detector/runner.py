@@ -280,6 +280,12 @@ def spotcheck(
     ]
     vlm = VlmDetector(settings)
 
+    already_labeled: set[str] = set()
+    if labels.exists():
+        for line in labels.read_text().splitlines():
+            if line.strip():
+                already_labeled.add(json.loads(line)["object_key"])
+
     total_added = total_calls = 0
     for cam in roster:
         camera_dir = frames_dir / cam.camera_id
@@ -293,15 +299,19 @@ def spotcheck(
             obs = vlm.classify(path.read_bytes(), cam, frame_time(path), path.name)
             return Judged(path, obs.captured_at, obs.state, obs.confidence, obs.reason)
 
-        verdicts = sweep_camera(cam, frames, judge, stride_minutes)
+        def object_key_for(path: Path, cam=cam) -> str:
+            return f"frames/{cam.camera_id}/{frame_time(path):%Y/%m/%d/%H}/{path.name}"
+
+        verdicts = sweep_camera(
+            cam,
+            frames,
+            judge,
+            stride_minutes,
+            already_labeled=already_labeled,
+            object_key_for=object_key_for,
+        )
         records = [
-            label_record(
-                cam,
-                v,
-                f"frames/{cam.camera_id}/{v.captured_at:%Y/%m/%d/%H}/{v.path.name}",
-                vlm.version,
-            )
-            for v in verdicts
+            label_record(cam, v, object_key_for(v.path), vlm.version) for v in verdicts
         ]
         added = append_labels(records, labels)
         blocked = sum(1 for v in verdicts if v.state.value == "BLOCKED")
