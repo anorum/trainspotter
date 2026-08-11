@@ -7,6 +7,7 @@ split into a package when sessions and analytics arrive.
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -40,10 +41,23 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     feed = StateFeed(settings, state)
     images = FrameImages(settings)
 
+    pool_holder: dict = {}
+
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         await feed.start()
+        materializer = None
+        if settings.database_url:
+            from api import db as dbmod
+            from api.materializer import Materializer
+
+            pool_holder["pool"] = await dbmod.connect(settings.database_url)
+            materializer = Materializer(settings, pool_holder["pool"])
+            await materializer.start()
         yield
+        if materializer is not None:
+            await materializer.stop()
+            await pool_holder["pool"].close()
         await feed.stop()
 
     app = FastAPI(title="blockade-api", lifespan=lifespan)
@@ -106,27 +120,48 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/v1/timeline")
     async def timeline(crossing_id: str, hours: int = 24) -> dict:
-        """Phase A scope: the in-memory window only. Postgres extends this to
-        all history in Phase B."""
+        """Postgres-backed over all history when configured (latest detector
+        version wins per instant); the in-memory window otherwise."""
         from datetime import UTC, datetime, timedelta
 
         end = datetime.now(UTC)
-        start = end - timedelta(hours=min(hours, 7 * 24))
-        rows = state.recent_observations(crossing_id, start, end)
-        return {
-            "crossing_id": crossing_id,
-            "from": start.isoformat(),
-            "to": end.isoformat(),
-            "observations": [
+        start = end - timedelta(hours=hours if settings.database_url else min(hours, 7 * 24))
+        if settings.database_url and "pool" in pool_holder:
+            from api import db as dbmod
+
+            observations = await dbmod.timeline(pool_holder["pool"], crossing_id, start, end)
+        else:
+            observations = [
                 {
                     "captured_at": o.captured_at.isoformat(),
                     "state": o.state.value,
                     "object_key": o.object_key,
                     "camera_id": o.camera_id,
                 }
-                for o in rows
-            ],
+                for o in state.recent_observations(crossing_id, start, end)
+            ]
+        return {
+            "crossing_id": crossing_id,
+            "from": start.isoformat(),
+            "to": end.isoformat(),
+            "observations": observations,
         }
+
+    @app.get("/api/v1/sessions")
+    async def sessions(crossing_id: str | None = None, limit: int = 50) -> dict:
+        """Session history: Postgres (latest ingest wins) when configured,
+        the in-memory compacted view otherwise."""
+        if settings.database_url and "pool" in pool_holder:
+            from api import db as dbmod
+
+            rows = await dbmod.session_list(pool_holder["pool"], crossing_id, limit)
+        else:
+            rows = [
+                json.loads(s.model_dump_json())
+                for s in state.sessions()
+                if crossing_id is None or s.crossing_id == crossing_id
+            ][:limit]
+        return {"sessions": rows}
 
     @app.get("/api/v1/events")
     async def events() -> StreamingResponse:

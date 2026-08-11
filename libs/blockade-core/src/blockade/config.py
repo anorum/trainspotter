@@ -169,6 +169,14 @@ class Settings(BaseSettings):
             "touching the group that serves live traffic."
         ),
     )
+    database_url: str | None = Field(
+        default=None,
+        description=(
+            "Postgres DSN for the history store. None disables it entirely: the "
+            "API then serves only the in-memory window, which is Phase A "
+            "behavior. The live board never depends on the database."
+        ),
+    )
     outbox_dir: Path = Field(
         default=Path("var/outbox"),
         description=(
