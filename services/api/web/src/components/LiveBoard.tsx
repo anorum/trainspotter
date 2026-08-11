@@ -221,7 +221,11 @@ export default function LiveBoard() {
               ✕
             </button>
           </header>
-          {chosen.open_session && !scrubbing && (
+          {/* The ticker runs only while the state itself is BLOCKED. An open
+              session can outlive the blockage by design (it closes after ten
+              quiet minutes plus watermark lag), and a red "blocked for 28m"
+              beside a green CLEAR is nonsense presentation of sensible data. */}
+          {chosen.state === "BLOCKED" && chosen.open_session && !scrubbing && (
             <p class="data ticker">
               Blocked for {duration(chosen.open_session.started_at, tick)}
             </p>
