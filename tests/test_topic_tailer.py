@@ -18,8 +18,8 @@ from blockade.bus import TopicTailer
 class FakeConsumer:
     """Metadata appears only after topics() is called, as on a real broker."""
 
-    def __init__(self, *args, partitions: set[int] | None = {0, 1, 2}, **kwargs):
-        self._partitions = partitions
+    def __init__(self, *args, partitions: set[int] | None = None, **kwargs):
+        self._partitions: set[int] | None = {0, 1, 2} if partitions is None else partitions
         self._metadata_fetched = False
         self.assigned: list[TopicPartition] | None = None
         self.sought = False
@@ -65,6 +65,7 @@ async def test_start_fetches_metadata_before_assigning(
     monkeypatch: pytest.MonkeyPatch, fake_consumer_cls
 ) -> None:
     async def no_sleep(_: float) -> None: ...
+
     monkeypatch.setattr(bus.asyncio, "sleep", no_sleep)
 
     tailer = TopicTailer("broker:9092", "crossing.sessions.v1", "test")
@@ -72,9 +73,7 @@ async def test_start_fetches_metadata_before_assigning(
     await tailer.start()
 
     consumer = fake_consumer_cls[0]
-    assert consumer.assigned == [
-        TopicPartition("crossing.sessions.v1", p) for p in (0, 1, 2)
-    ]
+    assert consumer.assigned == [TopicPartition("crossing.sessions.v1", p) for p in (0, 1, 2)]
     assert consumer.sought, "seek must happen after a non-empty assignment"
     assert not tailer.caught_up, "boot end offsets captured; nothing consumed yet"
 
@@ -82,11 +81,11 @@ async def test_start_fetches_metadata_before_assigning(
 async def test_start_fails_loudly_when_the_topic_never_appears(
     monkeypatch: pytest.MonkeyPatch, fake_consumer_cls
 ) -> None:
-    monkeypatch.setattr(
-        FakeConsumer, "partitions_for_topic", lambda self, topic: None
-    )
+    monkeypatch.setattr(FakeConsumer, "partitions_for_topic", lambda self, topic: None)
+
     # No sleeping through ten real seconds in a unit test.
     async def no_sleep(_: float) -> None: ...
+
     monkeypatch.setattr(bus.asyncio, "sleep", no_sleep)
 
     tailer = TopicTailer("broker:9092", "missing.topic", "test")
