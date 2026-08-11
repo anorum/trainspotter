@@ -37,8 +37,11 @@ class FrameImages:
         if not FRAME_KEY.match(object_key):
             return None
         path = self._root / object_key
-        if path.exists():
-            return path.read_bytes()
+        try:
+            if path.exists():
+                return path.read_bytes()
+        except FileNotFoundError:
+            pass
         try:
             data = await asyncio.to_thread(self._store.get, object_key)
         except Exception:  # noqa: BLE001 - a missing frame is a 404, not a 500
