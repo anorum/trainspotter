@@ -7,9 +7,8 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+from api.images import FrameImages
 from blockade.config import Settings
-
-from api.images import FRAME_KEY, FrameImages
 
 VALID_KEY = "frames/odot-678/2026/08/11/06/1720000000000-abcd1234.jpg"
 FRAME_BYTES = b"\xff\xd8\xff\xe0fake-jpeg"
