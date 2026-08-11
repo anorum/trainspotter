@@ -22,7 +22,7 @@ from pathlib import Path
 from blockade.config import Settings
 from blockade.detect.base import Detector
 
-DETECTOR_NAMES = ("reference", "yolo", "vlm")
+DETECTOR_NAMES = ("reference", "yolo", "vlm", "classifier")
 
 
 def _build_reference(settings: Settings) -> Detector:
@@ -49,10 +49,17 @@ def _build_vlm(settings: Settings) -> Detector:
     return VlmDetector(settings)
 
 
+def _build_classifier(settings: Settings) -> Detector:
+    from blockade.detect.classifier import ClassifierDetector
+
+    return ClassifierDetector(settings)
+
+
 _BUILDERS: dict[str, Callable[[Settings], Detector]] = {
     "reference": _build_reference,
     "yolo": _build_yolo,
     "vlm": _build_vlm,
+    "classifier": _build_classifier,
 }
 
 

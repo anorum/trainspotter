@@ -28,6 +28,10 @@ kafka = ["aiokafka>=0.12"]
 # Deliberately separate: torch is ~2GB and does not belong on an 8GB ARM node.
 yolo = ["ultralytics>=8.3"]
 vlm = ["anthropic>=0.40"]
+# Training runs on a workstation only; the runtime ships ONNX and needs
+# neither torch nor these.
+train = ["torch>=2.4", "torchvision>=0.19", "onnx>=1.16"]
+classifier = ["onnxruntime>=1.18", "numpy>=1.26", "pillow>=10.0"]
 
 [build-system]
 requires = ["hatchling"]
