@@ -9,7 +9,9 @@ crossing" in any lighting - the thing pixel differencing demonstrably cannot.
 Torch lives only here, behind the [train] extra, and only on a workstation.
 The runtime ships the exported ONNX and knows nothing about torch.
 
-Plain functions. Run via `blockade-detect train-classifier`.
+Plain functions, invoked from a workstation script with the [train] extra
+installed; there is no runtime CLI, because training does not belong on the
+serving box.
 """
 
 from __future__ import annotations
@@ -32,10 +34,7 @@ def load_examples(manifest: Path, frames_roots: list[Path], split: str) -> list[
         name = Path(rec["object_key"]).name
         camera_id = rec["camera_id"]
         for root in frames_roots:
-            hits = [
-                h for h in root.rglob(name)
-                if camera_id in h.parts
-            ]
+            hits = [h for h in root.rglob(name) if camera_id in h.parts]
             if hits:
                 out.append((hits[0], LABELS.index(rec["label"])))
                 break
@@ -60,9 +59,7 @@ def train(
 
     torch.manual_seed(seed)
 
-    normalize = transforms.Normalize(
-        mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-    )
+    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     train_tf = transforms.Compose(
         [
             transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),

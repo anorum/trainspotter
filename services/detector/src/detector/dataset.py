@@ -140,7 +140,10 @@ def build_manifest(
         val_indices.update(indices[: max(1, int(len(indices) * VAL_FRACTION))])
     return [
         Example(
-            ex.object_key, ex.camera_id, ex.label, ex.source,
+            ex.object_key,
+            ex.camera_id,
+            ex.label,
+            ex.source,
             "val" if i in val_indices else "train",
         )
         for i, ex in enumerate(examples)

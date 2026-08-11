@@ -100,9 +100,7 @@ class CameraRoster(BaseModel):
 class Settings(BaseSettings):
     """Environment-driven process settings. Secrets never live in YAML."""
 
-    model_config = SettingsConfigDict(
-        env_prefix="BLOCKADE_", env_file=".env", extra="ignore"
-    )
+    model_config = SettingsConfigDict(env_prefix="BLOCKADE_", env_file=".env", extra="ignore")
 
     # --- ODOT ---------------------------------------------------------------
     odot_api_key: str | None = Field(
@@ -197,7 +195,7 @@ class Settings(BaseSettings):
     detector: str = Field(
         default="reference",
         description=(
-            "Which detector to run: reference | yolo | vlm. Interchangeable by "
+            "Which detector to run: reference | yolo | vlm | classifier. Interchangeable by "
             "design -- which one is best is an open question only real data "
             "answers, and every row records the detector_version that produced it "
             "so results from different detectors are never silently mixed."

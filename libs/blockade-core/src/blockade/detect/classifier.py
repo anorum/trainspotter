@@ -70,9 +70,7 @@ class ClassifierDetector:
             version = f"{_VERSION_BASE}-c{MIN_CONFIDENCE}-h{digest}"
             import onnxruntime
 
-            session = onnxruntime.InferenceSession(
-                str(path), providers=["CPUExecutionProvider"]
-            )
+            session = onnxruntime.InferenceSession(str(path), providers=["CPUExecutionProvider"])
             return session, version
         except Exception as exc:
             log.warning("classifier load failed for %s: %s", camera_id, exc)
@@ -84,8 +82,13 @@ class ClassifierDetector:
         session, version = self._session(camera.camera_id)
         if session is None:
             return self._record(
-                camera, captured_at, object_key, CrossingState.UNKNOWN, 0.0,
-                "no classifier trained for this camera", version,
+                camera,
+                captured_at,
+                object_key,
+                CrossingState.UNKNOWN,
+                0.0,
+                "no classifier trained for this camera",
+                version,
             )
         try:
             from PIL import Image
@@ -96,8 +99,13 @@ class ClassifierDetector:
             x = x.transpose(2, 0, 1)[None]
         except Exception as exc:
             return self._record(
-                camera, captured_at, object_key, CrossingState.UNKNOWN, 0.0,
-                f"image could not be decoded: {type(exc).__name__}", version,
+                camera,
+                captured_at,
+                object_key,
+                CrossingState.UNKNOWN,
+                0.0,
+                f"image could not be decoded: {type(exc).__name__}",
+                version,
             )
 
         try:
@@ -105,8 +113,13 @@ class ClassifierDetector:
         except Exception as exc:
             log.warning("classifier inference failed for %s: %s", object_key, exc)
             return self._record(
-                camera, captured_at, object_key, CrossingState.UNKNOWN, 0.0,
-                f"inference failed: {type(exc).__name__}", version,
+                camera,
+                captured_at,
+                object_key,
+                CrossingState.UNKNOWN,
+                0.0,
+                f"inference failed: {type(exc).__name__}",
+                version,
             )
         exp = np.exp(logits - logits.max())
         probs = exp / exp.sum()
@@ -114,17 +127,32 @@ class ClassifierDetector:
 
         if blocked_p >= MIN_CONFIDENCE:
             return self._record(
-                camera, captured_at, object_key, CrossingState.BLOCKED, blocked_p,
-                f"classifier: blocked p={blocked_p:.2f}", version,
+                camera,
+                captured_at,
+                object_key,
+                CrossingState.BLOCKED,
+                blocked_p,
+                f"classifier: blocked p={blocked_p:.2f}",
+                version,
             )
         if blocked_p <= 1 - MIN_CONFIDENCE:
             return self._record(
-                camera, captured_at, object_key, CrossingState.CLEAR, 1 - blocked_p,
-                f"classifier: clear p={1 - blocked_p:.2f}", version,
+                camera,
+                captured_at,
+                object_key,
+                CrossingState.CLEAR,
+                1 - blocked_p,
+                f"classifier: clear p={1 - blocked_p:.2f}",
+                version,
             )
         return self._record(
-            camera, captured_at, object_key, CrossingState.UNKNOWN, 0.0,
-            f"classifier undecided (blocked p={blocked_p:.2f})", version,
+            camera,
+            captured_at,
+            object_key,
+            CrossingState.UNKNOWN,
+            0.0,
+            f"classifier undecided (blocked p={blocked_p:.2f})",
+            version,
         )
 
     def _record(
