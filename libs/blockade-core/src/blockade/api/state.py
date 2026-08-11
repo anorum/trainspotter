@@ -4,11 +4,19 @@ Pure and synchronous on purpose - the tailer feeds it records, tests feed it
 records, and neither can tell the difference. All the judgment calls about
 "what is true right now" live here where they are unit-tested:
 
-- Staleness: a state older than ``stale_after`` is a memory, not a
-  measurement, and is downgraded to UNKNOWN with ``stale=True``.
-- Out-of-order tolerance: an observation older than the newest already seen
-  for its crossing updates history (the recent buffer) but never regresses
-  the current state.
+- Consensus, blocked-biased: cameras on one crossing disagree, and a camera
+  that sees a train outranks one that sees nothing. Any fresh BLOCKED holds
+  the crossing BLOCKED; CLEAR requires that no fresh camera says otherwise.
+  The rule exists because of a real incident: one camera confirmed a train at
+  05:45:37 and the other, glare-blind, said CLEAR two seconds later - and
+  latest-wins showed CLEAR while a train crossed.
+- Staleness: an observation older than ``stale_after`` is a memory, not a
+  measurement. It drops out of consensus, and a crossing with no fresh
+  observation at all reports UNKNOWN with ``stale=True`` - a dead detector
+  must never leave BLOCKED frozen on screen, and a stale BLOCKED must not
+  hold the crossing hostage either.
+- Out-of-order tolerance: per camera, an older observation never replaces a
+  newer one; it still lands in the history buffer for joins.
 - Compaction duplicates: sessions are keyed by their deterministic
   session_id, so replaying a not-yet-compacted topic converges instead of
   duplicating.
@@ -42,10 +50,15 @@ class LiveState:
         the roster, so every crossing renders its cameras even before their
         first frame arrives."""
         self._cameras_by_crossing = cameras_by_crossing
+        self._crossing_of = {
+            camera_id: crossing_id
+            for crossing_id, cams in cameras_by_crossing.items()
+            for camera_id, _ in cams
+        }
         self._stale_after = stale_after
         self._sessions: dict[str, BlockageSession] = {}
-        self._latest: dict[str, ObservationRecord] = {}
-        self._state_since: dict[str, datetime] = {}
+        self._by_camera: dict[str, ObservationRecord] = {}
+        self._state_since: dict[str, tuple[CrossingState, datetime]] = {}
         self._latest_frame: dict[str, tuple[str, datetime]] = {}
         self._recent: dict[str, deque[ObservationRecord]] = {}
         self.changed = False
@@ -59,10 +72,10 @@ class LiveState:
         buffer.append(obs)
         self._trim(buffer, obs.captured_at)
 
-        newest = self._latest.get(obs.crossing_id)
+        newest = self._by_camera.get(obs.camera_id)
         if newest is not None and obs.captured_at < newest.captured_at:
             # Late arrival: history, not news. The buffer keeps it for joins;
-            # the current state must not move backwards in time.
+            # this camera's present must not move backwards in time.
             return
 
         if obs.object_key:
@@ -71,10 +84,15 @@ class LiveState:
                 self._latest_frame[obs.camera_id] = (obs.object_key, obs.captured_at)
                 self.changed = True
 
-        if newest is None or obs.state is not newest.state:
-            self._state_since[obs.crossing_id] = obs.captured_at
+        self._by_camera[obs.camera_id] = obs
+
+        # Track consensus transitions at event time, so `since` reflects when
+        # the crossing's story changed rather than when we noticed.
+        state, _ = self._consensus(obs.crossing_id, obs.captured_at)
+        previous = self._state_since.get(obs.crossing_id)
+        if previous is None or previous[0] is not state:
+            self._state_since[obs.crossing_id] = (state, obs.captured_at)
             self.changed = True
-        self._latest[obs.crossing_id] = obs
 
     def apply_session(self, session: BlockageSession) -> None:
         previous = self._sessions.get(session.session_id)
@@ -106,14 +124,42 @@ class LiveState:
 
     # ------------------------------------------------------------ internals
 
+    def _consensus(
+        self, crossing_id: str, now: datetime
+    ) -> tuple[CrossingState, ObservationRecord | None]:
+        """Blocked-biased vote over the crossing's fresh observations.
+
+        Any fresh BLOCKED wins: a camera that sees a train outranks one that
+        sees nothing (682 cannot even resolve the tracks at night, and its
+        CLEAR must not veto 681's train). CLEAR needs at least one fresh CLEAR
+        and no fresh BLOCKED - a fresh UNKNOWN does not veto, because absence
+        of evidence is not evidence of clearance either way. No fresh
+        observations at all is UNKNOWN, and the caller marks it stale.
+        """
+        fresh = [
+            o
+            for camera_id, _ in self._cameras_by_crossing.get(crossing_id, [])
+            if (o := self._by_camera.get(camera_id)) is not None
+            and now - o.captured_at <= self._stale_after
+        ]
+        blocked = [o for o in fresh if o.state is CrossingState.BLOCKED]
+        if blocked:
+            return CrossingState.BLOCKED, max(blocked, key=lambda o: o.captured_at)
+        clear = [o for o in fresh if o.state is CrossingState.CLEAR]
+        if clear:
+            return CrossingState.CLEAR, max(clear, key=lambda o: o.captured_at)
+        if fresh:
+            return CrossingState.UNKNOWN, max(fresh, key=lambda o: o.captured_at)
+        return CrossingState.UNKNOWN, None
+
     def _crossing_status(self, crossing_id: str, now: datetime) -> CrossingStatus:
-        latest = self._latest.get(crossing_id)
-        stale = latest is None or now - latest.captured_at > self._stale_after
-        state = CrossingState.UNKNOWN if stale else latest.state
+        state, winner = self._consensus(crossing_id, now)
+        stale = winner is None
         open_session = next(
             (s for s in self._sessions.values() if s.crossing_id == crossing_id and s.is_open),
             None,
         )
+        since_entry = self._state_since.get(crossing_id)
         cameras = [
             CameraFrameInfo(
                 camera_id=camera_id,
@@ -127,8 +173,8 @@ class LiveState:
             crossing_id=crossing_id,
             state=state,
             stale=stale,
-            since=self._state_since.get(crossing_id),
-            latest_observation=latest,
+            since=since_entry and since_entry[1],
+            latest_observation=winner,
             open_session=open_session,
             cameras=cameras,
         )

@@ -74,24 +74,73 @@ def test_a_dead_detector_downgrades_to_unknown() -> None:
     clinton_dead = next(c for c in dead.crossings if c.crossing_id == "SE_12TH_CLINTON")
     assert clinton_live.state is CrossingState.BLOCKED and not clinton_live.stale
     assert clinton_dead.state is CrossingState.UNKNOWN and clinton_dead.stale
-    # The raw observation is still exposed - the downgrade is honesty, not
-    # amnesia.
-    assert clinton_dead.latest_observation is not None
-    assert clinton_dead.latest_observation.state is CrossingState.BLOCKED
+    assert clinton_dead.latest_observation is None, (
+        "no fresh observation exists; the stale flag says why"
+    )
 
 
-def test_late_arrivals_never_regress_the_present() -> None:
-    """Two cameras on one crossing drift; the older record must not overwrite
-    the newer state, but it still lands in the history buffer."""
+def test_late_arrivals_never_regress_a_camera() -> None:
+    """Per camera, an older record must not overwrite a newer one - but a
+    late BLOCKED from the *other* camera still joins consensus, because each
+    camera's latest fresh word counts."""
     state = fresh()
     state.apply_observation(obs(10, CrossingState.CLEAR, "odot-678"))
-    state.apply_observation(obs(8, CrossingState.BLOCKED, "odot-679"))  # late
+    state.apply_observation(obs(8, CrossingState.BLOCKED, "odot-679"))  # late, other camera
 
     board = state.snapshot(now=T0 + timedelta(minutes=11))
     clinton = next(c for c in board.crossings if c.crossing_id == "SE_12TH_CLINTON")
-    assert clinton.state is CrossingState.CLEAR
+    assert clinton.state is CrossingState.BLOCKED, "679's fresh BLOCKED joins the vote"
     joined = state.recent_observations("SE_12TH_CLINTON", T0, T0 + timedelta(minutes=11))
     assert len(joined) == 2, "the late record still serves history joins"
+
+    state.apply_observation(obs(6, CrossingState.BLOCKED, "odot-678"))  # older than 678's own
+    board = state.snapshot(now=T0 + timedelta(minutes=11))
+    clinton = next(c for c in board.crossings if c.crossing_id == "SE_12TH_CLINTON")
+    assert clinton.latest_observation is not None
+    assert clinton.latest_observation.captured_at == T0 + timedelta(minutes=8), (
+        "678's own older record must not replace its newer one"
+    )
+
+
+def test_one_camera_seeing_a_train_outranks_one_seeing_nothing() -> None:
+    """The 2026-08-10 incident, pinned: 678 confirmed a train at :37 and
+    679, glare-blind, said CLEAR two seconds later. Latest-wins showed CLEAR
+    while a train crossed. Blocked-biased consensus holds BLOCKED."""
+    state = fresh()
+    state.apply_observation(obs(45.62, CrossingState.BLOCKED, "odot-678"))
+    state.apply_observation(obs(45.65, CrossingState.CLEAR, "odot-679"))
+
+    board = state.snapshot(now=T0 + timedelta(minutes=46))
+    clinton = next(c for c in board.crossings if c.crossing_id == "SE_12TH_CLINTON")
+    assert clinton.state is CrossingState.BLOCKED
+    assert clinton.latest_observation is not None
+    assert clinton.latest_observation.camera_id == "odot-678"
+
+
+def test_a_stale_blocked_does_not_hold_the_crossing_hostage() -> None:
+    """A camera that said BLOCKED and then went silent drops out of the vote
+    once stale; a fresh CLEAR from the other camera then carries."""
+    state = fresh()
+    state.apply_observation(obs(0, CrossingState.BLOCKED, "odot-678"))
+    state.apply_observation(obs(9, CrossingState.CLEAR, "odot-679"))
+
+    board = state.snapshot(now=T0 + timedelta(minutes=10))
+    clinton = next(c for c in board.crossings if c.crossing_id == "SE_12TH_CLINTON")
+    assert clinton.state is CrossingState.CLEAR, "the 10-minute-old BLOCKED is a memory"
+    assert not clinton.stale, "a fresh CLEAR keeps the crossing fresh"
+
+
+def test_unknown_does_not_veto_clear() -> None:
+    """Absence of evidence from one camera is not evidence against the other:
+    682 cannot resolve the tracks at night, and its UNKNOWN must not drag a
+    fresh CLEAR down."""
+    state = fresh()
+    state.apply_observation(obs(0, CrossingState.UNKNOWN, "odot-681"))
+    state.apply_observation(obs(1, CrossingState.CLEAR, "odot-682"))
+
+    board = state.snapshot(now=T0 + timedelta(minutes=2))
+    division = next(c for c in board.crossings if c.crossing_id == "SE_8TH_DIVISION")
+    assert division.state is CrossingState.CLEAR
 
 
 def test_since_tracks_state_transitions() -> None:
