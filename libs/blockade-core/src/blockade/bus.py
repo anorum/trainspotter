@@ -125,29 +125,30 @@ class TopicTailer:
         # Constructed here rather than __init__: aiokafka requires a running
         # event loop at construction, and callers build this object from
         # synchronous app-wiring code.
+        #
+        # Subscription in the constructor with group_id=None is aiokafka's
+        # native groupless mode: it self-assigns every partition of the topic
+        # locally, no group coordination, and auto_offset_reset starts at the
+        # beginning. Manual assign() via partitions_for_topic was tried first
+        # and cannot work on a fresh consumer - topics() returns a metadata
+        # copy without updating the cache that partitions_for_topic reads,
+        # which was verified against the real broker after it killed a boot.
         self._consumer = AIOKafkaConsumer(
+            self._topic,
             bootstrap_servers=self._bootstrap,
             client_id=self._client_id,
             group_id=None,
             enable_auto_commit=False,
+            auto_offset_reset="earliest",
         )
         await self._consumer.start()
-        # partitions_for_topic reads cached metadata, and a freshly started
-        # consumer with no subscription has cached nothing - it returns None
-        # and the empty assignment fails on seek. topics() forces a metadata
-        # fetch; the retry covers a broker that is still warming up.
-        partition_ids = self._consumer.partitions_for_topic(self._topic)
-        for _ in range(10):
-            if partition_ids:
+        for _ in range(50):
+            if self._consumer.assignment():
                 break
-            await asyncio.sleep(1)
-            await self._consumer.topics()
-            partition_ids = self._consumer.partitions_for_topic(self._topic)
-        if not partition_ids:
-            raise RuntimeError(f"no partitions visible for topic {self._topic}")
-        partitions = [TopicPartition(self._topic, p) for p in sorted(partition_ids)]
-        self._consumer.assign(partitions)
-        await self._consumer.seek_to_beginning(*partitions)
+            await asyncio.sleep(0.2)
+        partitions = sorted(self._consumer.assignment(), key=lambda tp: tp.partition)
+        if not partitions:
+            raise RuntimeError(f"no partitions assigned for topic {self._topic}")
         self._boot_end_offsets = await self._consumer.end_offsets(partitions)
         self._positions = {tp: 0 for tp in partitions}
 

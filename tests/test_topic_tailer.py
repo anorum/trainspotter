@@ -1,10 +1,12 @@
-"""TopicTailer's startup metadata handling.
+"""TopicTailer's startup contract, pinned against a fake consumer.
 
-The regression this pins: partitions_for_topic reads cached metadata, and a
-freshly started consumer has cached nothing - it returns None, the assignment
-was empty, and seek_to_beginning asserted. The first in-cluster boot of the
-serving API died exactly this way. start() must force a metadata fetch and
-retry before giving up, and must fail loudly rather than assign nothing.
+History that shaped this: the first in-cluster boot died because manual
+assign() via partitions_for_topic cannot work on a fresh consumer (topics()
+returns a metadata copy without updating the cache partitions_for_topic
+reads - verified against the real broker). The tailer now subscribes in the
+constructor with group_id=None, aiokafka's native groupless mode, and waits
+for the self-assignment to appear. These tests pin that wait and the loud
+failure when assignment never arrives.
 """
 
 from __future__ import annotations
@@ -16,44 +18,35 @@ from blockade.bus import TopicTailer
 
 
 class FakeConsumer:
-    """Metadata appears only after topics() is called, as on a real broker."""
+    """Assignment appears one poll after start, as with a real broker."""
 
-    def __init__(self, *args, partitions: set[int] | None = None, **kwargs):
-        self._partitions: set[int] | None = {0, 1, 2} if partitions is None else partitions
-        self._metadata_fetched = False
-        self.assigned: list[TopicPartition] | None = None
-        self.sought = False
+    def __init__(self, topic: str | None = None, **kwargs):
+        self.topic = topic
+        self.kwargs = kwargs
+        self._assignment: set[TopicPartition] = set()
+        self._started = False
 
-    async def start(self) -> None: ...
+    async def start(self) -> None:
+        self._started = True
 
     async def stop(self) -> None: ...
 
-    async def topics(self) -> set[str]:
-        self._metadata_fetched = True
-        return {"crossing.sessions.v1"}
-
-    def partitions_for_topic(self, topic: str) -> set[int] | None:
-        if not self._metadata_fetched:
-            return None
-        return self._partitions
-
-    def assign(self, partitions: list[TopicPartition]) -> None:
-        self.assigned = partitions
-
-    async def seek_to_beginning(self, *partitions: TopicPartition) -> None:
-        assert partitions, "No partitions are currently assigned"
-        self.sought = True
+    def assignment(self) -> set[TopicPartition]:
+        if self._started and self.topic is not None:
+            # Simulates metadata resolving shortly after start.
+            self._assignment = {TopicPartition(self.topic, p) for p in (0, 1, 2)}
+        return self._assignment
 
     async def end_offsets(self, partitions: list[TopicPartition]) -> dict:
         return {tp: 5 for tp in partitions}
 
 
 @pytest.fixture
-def fake_consumer_cls(monkeypatch: pytest.MonkeyPatch):
+def fake_consumers(monkeypatch: pytest.MonkeyPatch) -> list[FakeConsumer]:
     created: list[FakeConsumer] = []
 
-    def factory(*args, **kwargs):
-        consumer = FakeConsumer()
+    def factory(topic: str | None = None, **kwargs) -> FakeConsumer:
+        consumer = FakeConsumer(topic, **kwargs)
         created.append(consumer)
         return consumer
 
@@ -61,34 +54,30 @@ def fake_consumer_cls(monkeypatch: pytest.MonkeyPatch):
     return created
 
 
-async def test_start_fetches_metadata_before_assigning(
-    monkeypatch: pytest.MonkeyPatch, fake_consumer_cls
+async def test_start_subscribes_groupless_and_waits_for_assignment(
+    fake_consumers: list[FakeConsumer],
 ) -> None:
-    async def no_sleep(_: float) -> None: ...
-
-    monkeypatch.setattr(bus.asyncio, "sleep", no_sleep)
-
     tailer = TopicTailer("broker:9092", "crossing.sessions.v1", "test")
 
     await tailer.start()
 
-    consumer = fake_consumer_cls[0]
-    assert consumer.assigned == [TopicPartition("crossing.sessions.v1", p) for p in (0, 1, 2)]
-    assert consumer.sought, "seek must happen after a non-empty assignment"
+    consumer = fake_consumers[0]
+    assert consumer.topic == "crossing.sessions.v1", "subscription via constructor"
+    assert consumer.kwargs["group_id"] is None
+    assert consumer.kwargs["auto_offset_reset"] == "earliest"
     assert not tailer.caught_up, "boot end offsets captured; nothing consumed yet"
 
 
-async def test_start_fails_loudly_when_the_topic_never_appears(
-    monkeypatch: pytest.MonkeyPatch, fake_consumer_cls
+async def test_start_fails_loudly_when_assignment_never_arrives(
+    monkeypatch: pytest.MonkeyPatch, fake_consumers: list[FakeConsumer]
 ) -> None:
-    monkeypatch.setattr(FakeConsumer, "partitions_for_topic", lambda self, topic: None)
+    monkeypatch.setattr(FakeConsumer, "assignment", lambda self: set())
 
-    # No sleeping through ten real seconds in a unit test.
     async def no_sleep(_: float) -> None: ...
 
     monkeypatch.setattr(bus.asyncio, "sleep", no_sleep)
 
     tailer = TopicTailer("broker:9092", "missing.topic", "test")
 
-    with pytest.raises(RuntimeError, match="no partitions visible"):
+    with pytest.raises(RuntimeError, match="no partitions assigned"):
         await tailer.start()
