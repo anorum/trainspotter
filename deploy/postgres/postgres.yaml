@@ -1,0 +1,121 @@
+---
+# The history store: sessions and observations, versioned by detector, so a
+# better detector's backfill retroactively corrects the time slider while the
+# live board keeps reading Kafka. Everything in here is derived and replayable
+# from Kafka + S3; losing this volume is an inconvenience, never data loss.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: blockade-postgres-pv
+  labels:
+    app: postgres
+spec:
+  capacity:
+    storage: 20Gi
+  accessModes: [ReadWriteOnce]
+  # Retain, like every stateful volume here: a deleted claim must never take
+  # the data with it, even data that is technically rebuildable.
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-hdd-storage
+  local:
+    path: /mnt/hd/blockade/postgres
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values: [swagman-2]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: blockade
+  labels:
+    app: postgres
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      securityContext:
+        fsGroup: 999
+      containers:
+        - name: postgres
+          image: postgres:16
+          ports:
+            - name: pg
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: blockade
+            - name: POSTGRES_USER
+              value: blockade
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          args:
+            # Tuned for a Pi sharing 8GB with a broker: tiny shared buffers,
+            # WAL kept modest. At dozens of session rows and ~3k observation
+            # rows a day, none of Postgres's appetite is needed.
+            - -c
+            - shared_buffers=32MB
+            - -c
+            - max_connections=20
+            - -c
+            - max_wal_size=512MB
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              memory: 256Mi
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "blockade"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "blockade"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: local-hdd-storage
+        resources:
+          requests:
+            storage: 20Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: blockade
+  labels:
+    app: postgres
+spec:
+  clusterIP: None
+  selector:
+    app: postgres
+  ports:
+    - name: pg
+      port: 5432

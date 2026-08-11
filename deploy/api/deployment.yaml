@@ -60,6 +60,13 @@ spec:
             # The frame LRU cache. Ephemeral on purpose: it refills from S3.
             - name: BLOCKADE_LOCAL_CACHE_DIR
               value: /tmp/cache
+            # The history store. Absent, the API serves only the in-memory
+            # window - the live board never depends on the database.
+            - name: BLOCKADE_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: url
           volumeMounts:
             - name: tmp
               mountPath: /tmp

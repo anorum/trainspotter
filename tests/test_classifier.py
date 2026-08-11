@@ -15,10 +15,10 @@ import numpy as np
 import pytest
 from blockade.config import Camera, CameraSource, Settings
 from blockade.detect.classifier import (
+    _VERSION_BASE,
     LABELS,
     MIN_CONFIDENCE,
     ClassifierDetector,
-    _VERSION_BASE,
 )
 from blockade.schemas import CrossingState
 from PIL import Image
