@@ -1,0 +1,57 @@
+/* Blockade design tokens: a dispatcher's board.
+   The page commits to one dark look deliberately - signal boards are dark so
+   the aspects carry. State colors are semantic information, never decoration. */
+
+@import "@fontsource/barlow-condensed/500.css";
+@import "@fontsource/barlow-condensed/600.css";
+@import "@fontsource/public-sans/400.css";
+@import "@fontsource/public-sans/600.css";
+
+:root {
+  --ink: #10141b;          /* night asphalt ground */
+  --panel: #1a212c;        /* raised surfaces */
+  --hairline: #2a3442;     /* rules, rail ties, borders */
+  --crossbuck: #f2f3f0;    /* primary text, the white of the X sign */
+  --muted: #8b96a5;        /* secondary text */
+  --signal-red: #e5484d;   /* BLOCKED */
+  --signal-green: #46a758; /* CLEAR */
+  --signal-amber: #f5a524; /* UNKNOWN / stale */
+
+  --display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --body: "Public Sans", system-ui, sans-serif;
+  --data: ui-monospace, "SF Mono", "Cascadia Mono", monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ink);
+  color: var(--crossbuck);
+  font-family: var(--body);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+h1, h2, .display {
+  font-family: var(--display);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.data { font-family: var(--data); font-variant-numeric: tabular-nums; }
+
+a { color: var(--crossbuck); }
+
+:focus-visible {
+  outline: 2px solid var(--signal-amber);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

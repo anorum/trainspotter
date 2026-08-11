@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Iterable
 
-from aiokafka import AIOKafkaConsumer, AIOKafkaProducer, ConsumerRecord
+from aiokafka import AIOKafkaConsumer, AIOKafkaProducer, ConsumerRecord, TopicPartition
 
 
 class RecordProducer:
@@ -96,3 +96,68 @@ class RecordConsumer:
 
     async def commit(self) -> None:
         await self._consumer.commit()
+
+
+class TopicTailer:
+    """Read a whole topic from the beginning and keep following it, groupless.
+
+    For consumers whose state is a pure function of the log - the serving
+    API rebuilds its world by replaying, every boot. Committed offsets would
+    be dead weight (there is nothing to resume; the replay *is* the recovery),
+    and a consumer group would split partitions across replicas when every
+    replica needs the full log. So: no group, explicit assignment of every
+    partition, seek to the beginning.
+
+    ``caught_up`` reports whether the tail has passed the end offsets captured
+    at start - the readiness signal that keeps a freshly booted server from
+    answering with a half-rebuilt world.
+    """
+
+    def __init__(self, bootstrap: str, topic: str, client_id: str) -> None:
+        self._bootstrap = bootstrap
+        self._topic = topic
+        self._client_id = client_id
+        self._consumer: AIOKafkaConsumer | None = None
+        self._boot_end_offsets: dict[TopicPartition, int] = {}
+        self._positions: dict[TopicPartition, int] = {}
+
+    async def start(self) -> None:
+        # Constructed here rather than __init__: aiokafka requires a running
+        # event loop at construction, and callers build this object from
+        # synchronous app-wiring code.
+        self._consumer = AIOKafkaConsumer(
+            bootstrap_servers=self._bootstrap,
+            client_id=self._client_id,
+            group_id=None,
+            enable_auto_commit=False,
+        )
+        await self._consumer.start()
+        partitions = [
+            TopicPartition(self._topic, p)
+            for p in sorted(self._consumer.partitions_for_topic(self._topic) or ())
+        ]
+        self._consumer.assign(partitions)
+        await self._consumer.seek_to_beginning(*partitions)
+        self._boot_end_offsets = await self._consumer.end_offsets(partitions)
+        self._positions = {tp: 0 for tp in partitions}
+
+    async def stop(self) -> None:
+        if self._consumer is not None:
+            await self._consumer.stop()
+
+    async def get_batch(
+        self, timeout_ms: int = 1000, max_records: int = 500
+    ) -> list[ConsumerRecord]:
+        assert self._consumer is not None, "start() first"
+        batches = await self._consumer.getmany(timeout_ms=timeout_ms, max_records=max_records)
+        records = [record for chunk in batches.values() for record in chunk]
+        for record in records:
+            self._positions[TopicPartition(record.topic, record.partition)] = record.offset + 1
+        return records
+
+    @property
+    def caught_up(self) -> bool:
+        """True once every partition has passed the end offset seen at start."""
+        return all(
+            self._positions.get(tp, 0) >= end for tp, end in self._boot_end_offsets.items()
+        )
