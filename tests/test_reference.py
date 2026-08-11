@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 
 import numpy as np
 import pytest
+from blockade.config import Camera
 from blockade.detect.reference import (
     CHROME_BOTTOM,
     CHROME_TOP,
@@ -242,3 +243,36 @@ def test_distant_reference_is_refused(camera):
 
     assert obs.state is CrossingState.UNKNOWN
     assert "no reference" in obs.reason
+
+
+def test_model_thresholds_round_trip_and_win_over_defaults(tmp_path):
+    """Per-camera calibration is a property of the model: it survives save/load,
+    the detector prefers it over the global defaults, and each observation's
+    detector_version names the calibration that actually judged it."""
+    from blockade.detect.reference import (
+        ReferenceDetector,
+        ReferenceModel,
+        Thresholds,
+        TrackBand,
+    )
+
+    calibrated = Thresholds(pixel_delta=20, spread_multiple=2.0, band_row_fraction=0.35)
+    model = build_model()
+    model.band = TrackBand(6, 95)
+    model.thresholds = calibrated
+    model.save(tmp_path)
+
+    loaded = ReferenceModel.load(tmp_path, model.camera_id)
+    assert loaded.thresholds == calibrated
+    assert loaded.band == TrackBand(6, 95)
+
+    camera = Camera(
+        camera_id=model.camera_id, name="t", crossing_id="X", image_url="http://x"
+    )
+    detector = ReferenceDetector({model.camera_id: loaded})
+    obs = detector.classify(frame(empty_scene()), camera, CAPTURED, KEY)
+    assert "d20-" in obs.detector_version, "the record names the calibration used"
+
+    bare_detector = ReferenceDetector({model.camera_id: build_model()})
+    obs_default = bare_detector.classify(frame(empty_scene()), camera, CAPTURED, KEY)
+    assert "d40-" in obs_default.detector_version

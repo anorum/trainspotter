@@ -15,6 +15,10 @@ data/frames/
 # produce, and the thing every accuracy claim rests on. It belongs in git.
 !data/labels/*.jsonl
 
+# Model weight downloads: eval artifacts, never committed. Pulled on demand.
+*.pt
+weights/
+
 # Credentials
 .env
 .env.*

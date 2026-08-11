@@ -29,7 +29,7 @@ from __future__ import annotations
 import io
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -158,6 +158,7 @@ class ReferenceModel:
         bins: dict[int, Reference],
         sample_counts: dict[int, int],
         band: TrackBand | None = None,
+        thresholds: Thresholds | None = None,
     ):
         self.camera_id = camera_id
         self.bins = bins
@@ -166,6 +167,14 @@ class ReferenceModel:
         """None until this camera has been seen blocked. Until then the whole
         frame counts, which is the permissive setting -- a new camera should risk
         a false positive rather than silently miss its first blockage."""
+        self.thresholds = thresholds
+        """Per-camera calibration, or None for the global defaults. Cameras
+        differ too much for one set of numbers - odot-681's dim night scenes
+        need pixel_delta 20 where 678's brighter view wants 40 - and a
+        hand-maintained table of exceptions is exactly what stops scaling.
+        Calibrated from the camera's own labeled frames (maximize catches
+        subject to zero false positives) and carried with the model, so
+        calibration is a property of the data."""
 
     @classmethod
     def build_refined(
@@ -278,6 +287,8 @@ class ReferenceModel:
         meta = {"camera_id": self.camera_id, "samples": self.sample_counts}
         if self.band is not None:
             meta["band"] = {"top": self.band.top, "bottom": self.band.bottom}
+        if self.thresholds is not None:
+            meta["thresholds"] = asdict(self.thresholds)
         (directory / f"{self.camera_id}.json").write_text(json.dumps(meta, indent=2))
 
     @classmethod
@@ -294,7 +305,11 @@ class ReferenceModel:
         counts = meta.get("samples", {})
         raw_band = meta.get("band")
         band = TrackBand(raw_band["top"], raw_band["bottom"]) if raw_band else None
-        return cls(camera_id, bins, {int(k): v for k, v in counts.items()}, band)
+        raw_thresholds = meta.get("thresholds")
+        thresholds = Thresholds(**raw_thresholds) if raw_thresholds else None
+        return cls(
+            camera_id, bins, {int(k): v for k, v in counts.items()}, band, thresholds
+        )
 
 
 @dataclass(frozen=True)
@@ -362,6 +377,13 @@ class Evidence:
     luminance: float
 
 
+def _version_for(t: Thresholds) -> str:
+    return (
+        f"reference/d{t.pixel_delta}-r{t.band_row_fraction}-"
+        f"b{t.min_band_rows}-c{t.clear_max_changed}"
+    )
+
+
 class ReferenceDetector:
     """Judges frames by comparing them to an empty-crossing reference."""
 
@@ -372,24 +394,23 @@ class ReferenceDetector:
     ) -> None:
         self._models = models
         self.thresholds = thresholds or Thresholds()
-        t = self.thresholds
-        self.version = (
-            f"reference/d{t.pixel_delta}-r{t.band_row_fraction}-"
-            f"b{t.min_band_rows}-c{t.clear_max_changed}"
-        )
+        self.version = _version_for(self.thresholds)
 
     def examine(
-        self, scene: np.ndarray, reference: Reference, band: TrackBand | None = None
+        self,
+        scene: np.ndarray,
+        reference: Reference,
+        band: TrackBand | None = None,
+        thresholds: Thresholds | None = None,
     ) -> Evidence:
+        t = thresholds or self.thresholds
         diff = np.abs(scene.astype(np.float32) - reference.median.astype(np.float32))
         # Each pixel is judged against its own history: the flat floor where the
         # scene is dependable, a multiple of its usual deviation where it is not.
-        bar = np.maximum(
-            self.thresholds.pixel_delta, self.thresholds.spread_multiple * reference.spread
-        )
+        bar = np.maximum(t.pixel_delta, t.spread_multiple * reference.spread)
         changed = diff > bar
         row_coverage = changed.mean(axis=1)
-        obstructed = row_coverage > self.thresholds.band_row_fraction
+        obstructed = row_coverage > t.band_row_fraction
         if band is not None:
             # Only obstruction at track level counts. Everything below the rails
             # is road traffic, and counting it is how a bus becomes a train.
@@ -408,21 +429,28 @@ class ReferenceDetector:
             return self._record(camera, captured_at, object_key, CrossingState.UNKNOWN, 0.0,
                                 "image could not be decoded")
 
-        if scene.mean() < self.thresholds.min_luminance:
-            return self._record(camera, captured_at, object_key, CrossingState.UNKNOWN, 0.0,
-                                f"frame too dark to judge (luminance {scene.mean():.0f})")
-
         model = self._models.get(camera.camera_id)
+        # The model's own calibration wins over the global defaults: cameras
+        # differ too much for one set of numbers, and the calibration was
+        # measured on this camera's labeled frames.
+        t = (model.thresholds if model and model.thresholds else None) or self.thresholds
+        version = _version_for(t)
+        if scene.mean() < t.min_luminance:
+            return self._record(camera, captured_at, object_key, CrossingState.UNKNOWN, 0.0,
+                                f"frame too dark to judge (luminance {scene.mean():.0f})",
+                                version)
+
         reference = model.nearest(_brightness_bin(scene)) if model else None
         if reference is None:
             return self._record(camera, captured_at, object_key, CrossingState.UNKNOWN, 0.0,
-                                "no reference image for this camera and lighting")
+                                "no reference image for this camera and lighting",
+                                version)
         if reference.median.shape != scene.shape:
             return self._record(camera, captured_at, object_key, CrossingState.UNKNOWN, 0.0,
-                                "frame size differs from reference")
+                                "frame size differs from reference",
+                                version)
 
-        ev = self.examine(scene, reference, model.band)
-        t = self.thresholds
+        ev = self.examine(scene, reference, model.band, t)
 
         if ev.band_rows >= t.min_band_rows:
             # Confidence scales with how far past the bar it is, so a marginal
@@ -431,12 +459,14 @@ class ReferenceDetector:
             return self._record(
                 camera, captured_at, object_key, CrossingState.BLOCKED, confidence,
                 f"mass spans {ev.band_rows} rows, {ev.changed_fraction:.0%} of frame differs",
+                version,
             )
 
         if ev.changed_fraction <= t.clear_max_changed:
             return self._record(
                 camera, captured_at, object_key, CrossingState.CLEAR, 0.85,
                 f"matches empty reference ({ev.changed_fraction:.0%} differs)",
+                version,
             )
 
         # Something is there, but it is not a frame-spanning mass - most likely
@@ -445,6 +475,7 @@ class ReferenceDetector:
         return self._record(
             camera, captured_at, object_key, CrossingState.UNKNOWN, 0.0,
             f"{ev.changed_fraction:.0%} differs but no spanning mass ({ev.band_rows} rows)",
+            version,
         )
 
     def _record(
@@ -455,6 +486,7 @@ class ReferenceDetector:
         state: CrossingState,
         confidence: float,
         reason: str,
+        version: str | None = None,
     ) -> ObservationRecord:
         return ObservationRecord(
             crossing_id=camera.crossing_id,
@@ -465,5 +497,5 @@ class ReferenceDetector:
             confidence=0.0 if state is CrossingState.UNKNOWN else confidence,
             reason=reason[:200],
             object_key=object_key,
-            detector_version=self.version,
+            detector_version=version or self.version,
         )

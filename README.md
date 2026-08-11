@@ -88,7 +88,7 @@ Three confirmed blockages, all on one camera, all reported by one observer.
 Two of the three validations turned out to contain luck, documented in the commit history rather than quietly dropped.
 
 **Per-camera calibration does not scale by hand.**
-Cameras differ enough to need different settings, which is why references and the track band are derived from data rather than configured.
+Cameras differ enough to need different settings, which is why the reference, the track band, and the thresholds are derived from the camera's own labeled frames and carried with the model rather than configured.
 
 ## What this deliberately does not do
 
