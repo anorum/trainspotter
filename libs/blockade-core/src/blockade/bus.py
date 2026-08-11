@@ -132,10 +132,20 @@ class TopicTailer:
             enable_auto_commit=False,
         )
         await self._consumer.start()
-        partitions = [
-            TopicPartition(self._topic, p)
-            for p in sorted(self._consumer.partitions_for_topic(self._topic) or ())
-        ]
+        # partitions_for_topic reads cached metadata, and a freshly started
+        # consumer with no subscription has cached nothing - it returns None
+        # and the empty assignment fails on seek. topics() forces a metadata
+        # fetch; the retry covers a broker that is still warming up.
+        partition_ids = self._consumer.partitions_for_topic(self._topic)
+        for _ in range(10):
+            if partition_ids:
+                break
+            await asyncio.sleep(1)
+            await self._consumer.topics()
+            partition_ids = self._consumer.partitions_for_topic(self._topic)
+        if not partition_ids:
+            raise RuntimeError(f"no partitions visible for topic {self._topic}")
+        partitions = [TopicPartition(self._topic, p) for p in sorted(partition_ids)]
         self._consumer.assign(partitions)
         await self._consumer.seek_to_beginning(*partitions)
         self._boot_end_offsets = await self._consumer.end_offsets(partitions)
