@@ -50,11 +50,6 @@ class LiveState:
         the roster, so every crossing renders its cameras even before their
         first frame arrives."""
         self._cameras_by_crossing = cameras_by_crossing
-        self._crossing_of = {
-            camera_id: crossing_id
-            for crossing_id, cams in cameras_by_crossing.items()
-            for camera_id, _ in cams
-        }
         self._stale_after = stale_after
         self._sessions: dict[str, BlockageSession] = {}
         self._by_camera: dict[str, ObservationRecord] = {}
