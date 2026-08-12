@@ -351,12 +351,18 @@ const css = `
 .pulse { animation: pulse 2.4s ease-in-out infinite; }
 @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.45 } }
 
-.scrub { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0 1rem; }
-.scrub .track { flex: 1; }
+.scrub { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; padding: 0.5rem 0 1rem; }
+.scrub .track { flex: 1; min-width: 0; }
 .scrub input { width: 100%; display: block; accent-color: var(--signal-amber); }
 .scrub button { background: var(--panel); color: var(--crossbuck); border: 1px solid var(--hairline); border-radius: 4px; padding: 0.3rem 0.8rem; cursor: pointer; font-family: var(--display); letter-spacing: 0.05em; }
 .scrub button.live { color: var(--signal-green); }
 .scrub .when { color: var(--muted); min-width: 11ch; text-align: right; font-size: 0.85rem; }
+/* Under ~640px the single row cannot hold Live + track + windows + timestamp;
+   drop the track onto its own row so the slider stays draggable. */
+@media (max-width: 640px) {
+  .scrub .track { flex-basis: 100%; order: 10; }
+  .scrub .when { min-width: 0; }
+}
 .lanes { display: grid; gap: 2px; padding: 2px 8px 0; }
 .lane { position: relative; height: 3px; background: var(--panel); border-radius: 2px; }
 .blocked-seg { position: absolute; top: 0; height: 100%; background: var(--signal-red); border-radius: 2px; }
