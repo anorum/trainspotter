@@ -2,27 +2,54 @@
 
 Routes are deliberately small enough to live in one file; they split into a
 package when analytics endpoints outgrow it.
+
+Two storage worlds, one rule: the live board (/status, /events, frames) reads
+only the in-memory LiveState and never depends on the database; every history
+surface (/timeline, /sessions, /analytics) reads only Postgres and refuses
+rather than guessing when it is not configured - the deployment always
+configures it, and a half-true history from a memory buffer is worse than an
+honest error. Refusing is a 503, except on /analytics, where the UI needs to
+know to hide the stats surface entirely rather than render an error.
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
-import re
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import asyncpg
 from blockade.api.state import LiveState
 from blockade.config import Settings, get_settings, load_roster
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from api import db
 from api.images import FrameImages
+from api.materializer import Materializer
 from api.tailer import StateFeed
 
-LATLON = re.compile(r"lat=(-?[\d.]+)\s+lon=(-?[\d.]+)")
 HEARTBEAT_SECONDS = 20
+
+
+def parse_stamp(stamp: str) -> datetime:
+    """ISO timestamp to aware UTC datetime; a malformed one is caller error."""
+    try:
+        parsed = datetime.fromisoformat(stamp)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=f"bad timestamp: {stamp}") from exc
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def resolve_range(from_: str | None, to: str | None, hours: int) -> tuple[datetime, datetime]:
+    """`from`/`to` bound the range exactly - the sessions page uses them to pull
+    the frames inside one session - and take precedence over `hours`, which
+    remains the trailing-window shorthand the scrubber uses."""
+    end = parse_stamp(to) if to else datetime.now(UTC)
+    start = parse_stamp(from_) if from_ else end - timedelta(hours=hours)
+    return start, end
 
 
 def build_app(settings: Settings | None = None) -> FastAPI:
@@ -34,31 +61,35 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         cameras_by_crossing.setdefault(camera.crossing_id, []).append(
             (camera.camera_id, camera.name)
         )
-        if camera.notes and (m := LATLON.search(camera.notes)):
-            coords.setdefault(camera.crossing_id, (float(m.group(1)), float(m.group(2))))
+        if camera.lat is not None and camera.lon is not None:
+            coords.setdefault(camera.crossing_id, (camera.lat, camera.lon))
 
     state = LiveState(cameras_by_crossing)
     feed = StateFeed(settings, state)
     images = FrameImages(settings)
 
-    pool_holder: dict = {}
+    pool: asyncpg.Pool | None = None
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
+        nonlocal pool
         await feed.start()
         materializer = None
         if settings.database_url:
-            from api import db as dbmod
-            from api.materializer import Materializer
-
-            pool_holder["pool"] = await dbmod.connect(settings.database_url)
-            materializer = Materializer(settings, pool_holder["pool"])
+            pool = await db.connect(settings.database_url)
+            materializer = Materializer(settings, pool)
             await materializer.start()
         yield
         if materializer is not None:
             await materializer.stop()
-            await pool_holder["pool"].close()
+        if pool is not None:
+            await pool.close()
         await feed.stop()
+
+    def history_pool() -> asyncpg.Pool:
+        if pool is None:
+            raise HTTPException(status_code=503, detail="history store not configured")
+        return pool
 
     app = FastAPI(title="blockade-api", lifespan=lifespan)
 
@@ -125,42 +156,9 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         from_: str | None = Query(default=None, alias="from"),
         to: str | None = Query(default=None, alias="to"),
     ) -> dict:
-        """Postgres-backed over all history when configured (latest detector
-        version wins per instant); the in-memory window otherwise.
-
-        `from`/`to` (ISO timestamps) bound the range exactly - the sessions
-        page uses them to pull the frames inside one session - and take
-        precedence over `hours`, which remains the trailing-window shorthand
-        the scrubber uses.
-        """
-        from datetime import UTC, datetime, timedelta
-
-        def parse(stamp: str) -> datetime:
-            try:
-                parsed = datetime.fromisoformat(stamp)
-            except ValueError as exc:
-                raise HTTPException(status_code=422, detail=f"bad timestamp: {stamp}") from exc
-            return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
-
-        end = parse(to) if to else datetime.now(UTC)
-        if from_:
-            start = parse(from_)
-        else:
-            start = end - timedelta(hours=hours if settings.database_url else min(hours, 7 * 24))
-        if settings.database_url and "pool" in pool_holder:
-            from api import db as dbmod
-
-            observations = await dbmod.timeline(pool_holder["pool"], crossing_id, start, end)
-        else:
-            observations = [
-                {
-                    "captured_at": o.captured_at.isoformat(),
-                    "state": o.state.value,
-                    "object_key": o.object_key,
-                    "camera_id": o.camera_id,
-                }
-                for o in state.recent_observations(crossing_id, start, end)
-            ]
+        """Latest detector version wins per instant, over all history."""
+        start, end = resolve_range(from_, to, hours)
+        observations = await db.timeline(history_pool(), crossing_id, start, end)
         return {
             "crossing_id": crossing_id,
             "from": start.isoformat(),
@@ -170,34 +168,20 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/v1/sessions")
     async def sessions(crossing_id: str | None = None, limit: int = 50) -> dict:
-        """Session history: Postgres (latest ingest wins) when configured,
-        the in-memory compacted view otherwise."""
-        if settings.database_url and "pool" in pool_holder:
-            from api import db as dbmod
-
-            rows = await dbmod.session_list(pool_holder["pool"], crossing_id, limit)
-        else:
-            rows = [
-                json.loads(s.model_dump_json())
-                for s in state.sessions()
-                if crossing_id is None or s.crossing_id == crossing_id
-            ][:limit]
-        return {"sessions": rows}
+        """Session history, latest ingest wins per session_id."""
+        return {"sessions": await db.session_list(history_pool(), crossing_id, limit)}
 
     @app.get("/api/v1/analytics")
     async def analytics() -> dict:
-        """Temporal patterns per crossing, Postgres-backed. Without the
-        database there is no history worth aggregating, and the UI hides the
-        stats rather than showing numbers derived from a seven-day tail."""
-        if settings.database_url and "pool" in pool_holder:
-            from api import db as dbmod
-
-            return {
-                "available": True,
-                "local_tz": dbmod.LOCAL_TZ,
-                "crossings": await dbmod.analytics(pool_holder["pool"]),
-            }
-        return {"available": False, "crossings": {}}
+        """Temporal patterns per crossing. The `available` flag lets the UI
+        hide the stats surface entirely when there is no history store."""
+        if pool is None:
+            return {"available": False, "crossings": {}}
+        return {
+            "available": True,
+            "local_tz": db.LOCAL_TZ,
+            "crossings": await db.analytics(pool),
+        }
 
     @app.get("/api/v1/events")
     async def events() -> StreamingResponse:

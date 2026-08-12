@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from blockade.config import Camera
@@ -65,8 +65,6 @@ def stride_indices(frames: list[Path], stride_minutes: int) -> list[int]:
         t = frame_time(path)
         if t >= next_at:
             picks.append(i)
-            from datetime import timedelta
-
             next_at = t + timedelta(minutes=stride_minutes)
     return picks
 

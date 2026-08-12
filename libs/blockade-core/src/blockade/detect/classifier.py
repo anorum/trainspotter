@@ -15,11 +15,12 @@ from __future__ import annotations
 import hashlib
 import io
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 
 import numpy as np
 
 from blockade.config import Camera, Settings
+from blockade.detect.base import observation
 from blockade.schemas import CrossingState, ObservationRecord
 
 log = logging.getLogger(__name__)
@@ -76,14 +77,14 @@ class ClassifierDetector:
     ) -> ObservationRecord:
         session, version = self._session(camera.camera_id)
         if session is None:
-            return self._record(
+            return observation(
                 camera,
                 captured_at,
                 object_key,
-                CrossingState.UNKNOWN,
-                0.0,
-                "no classifier trained for this camera",
-                version,
+                state=CrossingState.UNKNOWN,
+                confidence=0.0,
+                reason="no classifier trained for this camera",
+                version=version,
             )
         try:
             from PIL import Image
@@ -93,81 +94,59 @@ class ClassifierDetector:
             x = (np.asarray(rgb, dtype=np.float32) / 255.0 - MEAN) / STD
             x = x.transpose(2, 0, 1)[None]
         except Exception as exc:
-            return self._record(
+            return observation(
                 camera,
                 captured_at,
                 object_key,
-                CrossingState.UNKNOWN,
-                0.0,
-                f"image could not be decoded: {type(exc).__name__}",
-                version,
+                state=CrossingState.UNKNOWN,
+                confidence=0.0,
+                reason=f"image could not be decoded: {type(exc).__name__}",
+                version=version,
             )
 
         try:
             logits = session.run(["logits"], {"image": x})[0][0]
         except Exception as exc:
             log.warning("classifier inference failed for %s: %s", object_key, exc)
-            return self._record(
+            return observation(
                 camera,
                 captured_at,
                 object_key,
-                CrossingState.UNKNOWN,
-                0.0,
-                f"inference failed: {type(exc).__name__}",
-                version,
+                state=CrossingState.UNKNOWN,
+                confidence=0.0,
+                reason=f"inference failed: {type(exc).__name__}",
+                version=version,
             )
         exp = np.exp(logits - logits.max())
         probs = exp / exp.sum()
         blocked_p = float(probs[_BLOCKED_INDEX])
 
         if blocked_p >= MIN_CONFIDENCE:
-            return self._record(
+            return observation(
                 camera,
                 captured_at,
                 object_key,
-                CrossingState.BLOCKED,
-                blocked_p,
-                f"classifier: blocked p={blocked_p:.2f}",
-                version,
+                state=CrossingState.BLOCKED,
+                confidence=blocked_p,
+                reason=f"classifier: blocked p={blocked_p:.2f}",
+                version=version,
             )
         if blocked_p <= 1 - MIN_CONFIDENCE:
-            return self._record(
+            return observation(
                 camera,
                 captured_at,
                 object_key,
-                CrossingState.CLEAR,
-                1 - blocked_p,
-                f"classifier: clear p={1 - blocked_p:.2f}",
-                version,
+                state=CrossingState.CLEAR,
+                confidence=1 - blocked_p,
+                reason=f"classifier: clear p={1 - blocked_p:.2f}",
+                version=version,
             )
-        return self._record(
+        return observation(
             camera,
             captured_at,
             object_key,
-            CrossingState.UNKNOWN,
-            0.0,
-            f"classifier undecided (blocked p={blocked_p:.2f})",
-            version,
-        )
-
-    def _record(
-        self,
-        camera: Camera,
-        captured_at: datetime,
-        object_key: str,
-        state: CrossingState,
-        confidence: float,
-        reason: str,
-        version: str,
-    ) -> ObservationRecord:
-        return ObservationRecord(
-            crossing_id=camera.crossing_id,
-            camera_id=camera.camera_id,
-            captured_at=captured_at,
-            observed_at=datetime.now(UTC),
-            state=state,
-            confidence=0.0 if state is CrossingState.UNKNOWN else confidence,
-            reason=reason[:200],
-            object_key=object_key,
-            detector_version=version,
+            state=CrossingState.UNKNOWN,
+            confidence=0.0,
+            reason=f"classifier undecided (blocked p={blocked_p:.2f})",
+            version=version,
         )

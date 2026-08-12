@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -139,13 +139,7 @@ def build_manifest(
         rng.shuffle(indices)
         val_indices.update(indices[: max(1, int(len(indices) * VAL_FRACTION))])
     return [
-        Example(
-            ex.object_key,
-            ex.camera_id,
-            ex.label,
-            ex.source,
-            "val" if i in val_indices else "train",
-        )
+        replace(ex, split="val" if i in val_indices else "train")
         for i, ex in enumerate(examples)
     ]
 

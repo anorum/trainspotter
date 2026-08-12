@@ -16,7 +16,7 @@ records, and neither can tell the difference. All the judgment calls about
   must never leave BLOCKED frozen on screen, and a stale BLOCKED must not
   hold the crossing hostage either.
 - Out-of-order tolerance: per camera, an older observation never replaces a
-  newer one; it still lands in the history buffer for joins.
+  newer one.
 - Compaction duplicates: sessions are keyed by their deterministic
   session_id, so replaying a not-yet-compacted topic converges instead of
   duplicating.
@@ -24,7 +24,6 @@ records, and neither can tell the difference. All the judgment calls about
 
 from __future__ import annotations
 
-from collections import deque
 from datetime import UTC, datetime, timedelta
 
 from blockade.api.models import CameraFrameInfo, CrossingStatus, StatusResponse
@@ -32,10 +31,6 @@ from blockade.schemas import BlockageSession, CrossingState, ObservationRecord
 
 DEFAULT_STALE_AFTER = timedelta(minutes=6)
 """Three times the ~2 minute worst observed camera cadence."""
-
-RECENT_BUFFER = timedelta(days=7)
-"""How much observation history the in-memory buffer keeps - matches the
-observations topic's retention, because that is all a replay can restore."""
 
 
 class LiveState:
@@ -55,7 +50,6 @@ class LiveState:
         self._by_camera: dict[str, ObservationRecord] = {}
         self._state_since: dict[str, tuple[CrossingState, datetime]] = {}
         self._latest_frame: dict[str, tuple[str, datetime]] = {}
-        self._recent: dict[str, deque[ObservationRecord]] = {}
         self.changed = False
         """Set by the apply methods when the visible board changed; the caller
         (the SSE fan-out) reads and clears it. A heartbeat is not a change."""
@@ -63,13 +57,9 @@ class LiveState:
     # ------------------------------------------------------------- reducers
 
     def apply_observation(self, obs: ObservationRecord) -> None:
-        buffer = self._recent.setdefault(obs.crossing_id, deque())
-        buffer.append(obs)
-        self._trim(buffer, obs.captured_at)
-
         newest = self._by_camera.get(obs.camera_id)
         if newest is not None and obs.captured_at < newest.captured_at:
-            # Late arrival: history, not news. The buffer keeps it for joins;
+            # Late arrival: history, not news. Postgres keeps it for joins;
             # this camera's present must not move backwards in time.
             return
 
@@ -104,15 +94,6 @@ class LiveState:
             for crossing_id in sorted(self._cameras_by_crossing)
         ]
         return StatusResponse(generated_at=now, crossings=crossings)
-
-    def recent_observations(
-        self, crossing_id: str, start: datetime, end: datetime
-    ) -> list[ObservationRecord]:
-        """The session-imagery join, over the in-memory window."""
-        return sorted(
-            (o for o in self._recent.get(crossing_id, ()) if start <= o.captured_at <= end),
-            key=lambda o: o.captured_at,
-        )
 
     def sessions(self) -> list[BlockageSession]:
         return sorted(self._sessions.values(), key=lambda s: s.started_at, reverse=True)
@@ -173,9 +154,3 @@ class LiveState:
             open_session=open_session,
             cameras=cameras,
         )
-
-    @staticmethod
-    def _trim(buffer: deque[ObservationRecord], newest: datetime) -> None:
-        cutoff = newest - RECENT_BUFFER
-        while buffer and buffer[0].captured_at < cutoff:
-            buffer.popleft()

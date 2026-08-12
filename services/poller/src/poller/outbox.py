@@ -49,33 +49,29 @@ BACKLOG_BYTES = Gauge(
 )
 
 
-class Position:
-    """Per-camera progress marker: which manifest file, and how far into it.
+def read_position(path: Path) -> tuple[str, int]:
+    """A camera's progress marker: which manifest file, and how far into it.
 
-    Stored as a small JSON file, written atomically (tmp then rename) so a
-    crash cannot leave a torn marker. Losing one is safe - the camera's
-    backlog republishes and downstream absorbs the duplicates - but it should
-    take a disk failure, not a pod restart.
+    Missing or unreadable means republish from the earliest manifest on disk -
+    safe, because downstream absorbs the duplicates. Same JSON file the
+    previous per-camera marker used, so a deploy changes no on-disk state.
     """
+    try:
+        state = json.loads(path.read_text())
+        return state["file"], int(state["offset"])
+    except FileNotFoundError:
+        return "", 0
+    except (json.JSONDecodeError, KeyError, ValueError):
+        log.warning("unreadable position file %s; republishing from the start", path)
+        return "", 0
 
-    def __init__(self, path: Path) -> None:
-        self._path = path
-        self.file: str = ""
-        self.offset: int = 0
-        try:
-            state = json.loads(path.read_text())
-            self.file, self.offset = state["file"], int(state["offset"])
-        except FileNotFoundError:
-            pass  # First run: start from the earliest manifest on disk.
-        except (json.JSONDecodeError, KeyError, ValueError):
-            log.warning("unreadable position file %s; republishing from the start", path)
 
-    def advance(self, file: str, offset: int) -> None:
-        self.file, self.offset = file, offset
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self._path.with_suffix(".tmp")
-        tmp.write_text(json.dumps({"file": file, "offset": offset}))
-        tmp.replace(self._path)
+def write_position(path: Path, file: str, offset: int) -> None:
+    """Atomic (tmp then rename), so a crash cannot leave a torn marker."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"file": file, "offset": offset}))
+    tmp.replace(path)
 
 
 class ManifestOutbox:
@@ -91,32 +87,30 @@ class ManifestOutbox:
         self._manifest_root = settings.manifest_dir
         self._outbox_dir = settings.outbox_dir
         self._topic = settings.kafka_frames_topic
-        self._producer = producer or RecordProducer(
-            settings.kafka_bootstrap or "", client_id="blockade-outbox"
-        )
+        self._bootstrap = settings.kafka_bootstrap or ""
+        self._injected_producer = producer
+        self._producer: RecordProducer | None = producer
         self._idle_delay = idle_delay
         # Position persists at least every max_batch records, so a crash during
         # a large backlog drain re-publishes one batch, not the whole backlog.
         self._max_batch = max_batch
-        self._positions: dict[str, Position] = {}
+
+    def _open_producer(self) -> RecordProducer:
+        """One producer per connection attempt, built when the attempt starts.
+
+        A producer is single-use: stopping one closes its send buffer for good
+        (aiokafka's lifecycle, which bus.py wraps rather than changes), so the
+        attempt after an outage has to build a new producer instead of
+        restarting the one it just closed - restarting a closed producer
+        connects and then refuses every send, which is publishing dead until
+        the pod restarts. An injected producer is handed back unchanged, so a
+        caller that supplies one keeps watching exactly that object.
+        """
+        if self._injected_producer is not None:
+            return self._injected_producer
+        return RecordProducer(self._bootstrap, client_id="blockade-outbox")
 
     # -- file mechanics ------------------------------------------------------
-
-    def _position(self, camera_id: str) -> Position:
-        if camera_id not in self._positions:
-            self._positions[camera_id] = Position(self._outbox_dir / f"{camera_id}.json")
-        return self._positions[camera_id]
-
-    def _pending_files(self, camera_dir: Path, pos: Position) -> list[Path]:
-        """Manifest files at or after the position, oldest first.
-
-        Hourly filenames (YYYY-MM-DD-HH.jsonl) sort lexicographically in time
-        order, which is what makes "the next file" a simple string comparison.
-        """
-        files = sorted(p for p in camera_dir.glob("*.jsonl"))
-        if not pos.file:
-            return files
-        return [p for p in files if p.name >= pos.file]
 
     @staticmethod
     def _complete_lines(path: Path, offset: int) -> tuple[list[bytes], int]:
@@ -141,6 +135,7 @@ class ManifestOutbox:
         """Validate, send, and wait for every ack; returns the count actually
         published, which excludes skipped lines. The caller advances the
         position only after this returns - that ordering is at-least-once."""
+        assert self._producer is not None, "run() opens the producer"
         futures = []
         for line in lines:
             try:
@@ -162,10 +157,17 @@ class ManifestOutbox:
 
     async def _drain_camera(self, camera_dir: Path) -> int:
         camera_id = camera_dir.name
-        pos = self._position(camera_id)
+        position_path = self._outbox_dir / f"{camera_id}.json"
+        pos_file, pos_offset = read_position(position_path)
         published = 0
-        for path in self._pending_files(camera_dir, pos):
-            offset = pos.offset if path.name == pos.file else 0
+        # Hourly filenames (YYYY-MM-DD-HH.jsonl) sort lexicographically in time
+        # order, which is what makes "the next file" a simple string comparison.
+        # One glob serves both the drain and the backlog gauge below.
+        files = sorted(p for p in camera_dir.glob("*.jsonl"))
+        for path in files:
+            if pos_file and path.name < pos_file:
+                continue
+            offset = pos_offset if path.name == pos_file else 0
             while True:
                 lines, new_offset = self._complete_lines(path, offset)
                 if not lines:
@@ -176,11 +178,13 @@ class ManifestOutbox:
                 # Offsets are recomputed from byte positions rather than summed
                 # from line lengths, so a final unterminated fragment is never
                 # counted as consumed.
-                pos.advance(path.name, new_offset)
+                write_position(position_path, path.name, new_offset)
+                pos_file, pos_offset = path.name, new_offset
                 offset = new_offset
         backlog = sum(
-            max(0, p.stat().st_size - (pos.offset if p.name == pos.file else 0))
-            for p in self._pending_files(camera_dir, pos)
+            max(0, p.stat().st_size - (pos_offset if p.name == pos_file else 0))
+            for p in files
+            if not pos_file or p.name >= pos_file
         )
         BACKLOG_BYTES.labels(camera_id).set(backlog)
         return published
@@ -200,6 +204,7 @@ class ManifestOutbox:
         sacred - an outbox crash must cost publish latency, not frames."""
         backoff = 1.0
         while True:
+            self._producer = self._open_producer()
             try:
                 await self._producer.start()
                 log.info("outbox connected; draining %s", self._manifest_root)
@@ -216,16 +221,15 @@ class ManifestOutbox:
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 60.0)
             finally:
-                # Suppress errors here: stop() flushes, and if the broker is the
-                # thing that failed, the flush fails too - that is the retry
-                # path's problem, not shutdown's.
+                # A failing stop() must never mask shutdown: stop() flushes, and
+                # if the broker is the thing that failed, the flush fails too.
+                # Unacked records simply republish. Cancellation is the one thing
+                # that has to survive - swallowing it here would send the loop
+                # back into start() and hang shutdown until the pod is killed.
                 try:
                     await self._producer.stop()
+                except asyncio.CancelledError:
+                    log.warning("producer close cancelled; unacked records will republish")
+                    raise
                 except Exception:  # noqa: BLE001
                     log.warning("producer close failed; unacked records will republish")
-
-    async def close(self) -> None:
-        try:
-            await self._producer.stop()
-        except Exception:  # noqa: BLE001
-            log.warning("producer close failed; unacked records will republish")

@@ -26,10 +26,11 @@ import logging
 import signal
 from collections.abc import Callable
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 
 import typer
-from blockade.config import Settings, get_settings, load_roster
+from blockade.config import Camera, Settings, get_settings, load_roster
 from blockade.detect.registry import build_detector
 from blockade.schemas import CrossingState, FrameRecord, ObservationRecord
 from prometheus_client import Counter, start_http_server
@@ -390,30 +391,31 @@ def spotcheck(
                 already_labeled.add(json.loads(line)["object_key"])
 
     total_added = total_calls = 0
+
+    def judge(path: Path, cam: Camera) -> Judged:
+        nonlocal total_calls
+        total_calls += 1
+        obs = vlm.classify(path.read_bytes(), cam, frame_time(path), path.name)
+        return Judged(path, obs.captured_at, obs.state, obs.confidence, obs.reason)
+
+    def object_key_for(path: Path, cam: Camera) -> str:
+        return f"frames/{cam.camera_id}/{frame_time(path):%Y/%m/%d/%H}/{path.name}"
+
     for cam in roster:
         camera_dir = frames_dir / cam.camera_id
         frames = list_frames(camera_dir) if camera_dir.exists() else []
         if not frames:
             continue
 
-        def judge(path: Path, cam=cam):
-            nonlocal total_calls
-            total_calls += 1
-            obs = vlm.classify(path.read_bytes(), cam, frame_time(path), path.name)
-            return Judged(path, obs.captured_at, obs.state, obs.confidence, obs.reason)
-
-        def object_key_for(path: Path, cam=cam) -> str:
-            return f"frames/{cam.camera_id}/{frame_time(path):%Y/%m/%d/%H}/{path.name}"
-
         verdicts = sweep_camera(
             cam,
             frames,
-            judge,
+            partial(judge, cam=cam),
             stride_minutes,
             already_labeled=already_labeled,
-            object_key_for=object_key_for,
+            object_key_for=partial(object_key_for, cam=cam),
         )
-        records = [label_record(cam, v, object_key_for(v.path), vlm.version) for v in verdicts]
+        records = [label_record(cam, v, object_key_for(v.path, cam), vlm.version) for v in verdicts]
         added = append_labels(records, labels)
         blocked = sum(1 for v in verdicts if v.state.value == "BLOCKED")
         typer.echo(

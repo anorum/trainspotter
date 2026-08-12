@@ -7,46 +7,52 @@ cameras:
   crossing_id: SE_11TH_MILWAUKIE
   image_url: https://www.TripCheck.com/roadcams/cams/11th at Milwaukie N_pid3169.JPG
   source: odot_inventory
+  lat: 45.50329
+  lon: -122.65457
   poll_interval_seconds: 30.0
   enabled: true
-  notes: lat=45.50329 lon=-122.65457
 - camera_id: odot-677
   name: Portland - 11th at Milwaukie S
   crossing_id: SE_11TH_MILWAUKIE
   image_url: https://www.TripCheck.com/roadcams/cams/11th at Milwaukie S_pid3173.JPG
   source: odot_inventory
+  lat: 45.50314
+  lon: -122.65414
   poll_interval_seconds: 30.0
   enabled: true
-  notes: lat=45.50314 lon=-122.65414
 - camera_id: odot-678
   name: Portland - 12th at Clinton
   crossing_id: SE_12TH_CLINTON
   image_url: https://www.TripCheck.com/roadcams/cams/12th at Clinton_pid3177.JPG
   source: odot_inventory
+  lat: 45.5036
+  lon: -122.65381
   poll_interval_seconds: 30.0
   enabled: true
-  notes: lat=45.5036 lon=-122.65381
 - camera_id: odot-679
   name: Portland - 12th at Division
   crossing_id: SE_12TH_CLINTON
   image_url: https://www.TripCheck.com/roadcams/cams/12th at Division_pid3181.JPG
   source: odot_inventory
+  lat: 45.50494
+  lon: -122.6536
   poll_interval_seconds: 30.0
   enabled: true
-  notes: lat=45.50494 lon=-122.6536
 - camera_id: odot-681
   name: Portland - 8th at Division
   crossing_id: SE_8TH_DIVISION
   image_url: https://www.TripCheck.com/roadcams/cams/8th at Division_pid3189.JPG
   source: odot_inventory
+  lat: 45.50573
+  lon: -122.65745
   poll_interval_seconds: 30.0
   enabled: true
-  notes: lat=45.50573 lon=-122.65745
 - camera_id: odot-682
   name: Portland - 8th at Division Place
   crossing_id: SE_8TH_DIVISION
   image_url: https://www.TripCheck.com/roadcams/cams/8th at Division Place_pid3193.JPG
   source: odot_inventory
+  lat: 45.50476
+  lon: -122.65796
   poll_interval_seconds: 30.0
   enabled: true
-  notes: lat=45.50476 lon=-122.65796
