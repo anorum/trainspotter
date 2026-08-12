@@ -239,7 +239,11 @@ export default function LiveBoard() {
               aria-pressed={windowHours === hours}
               onClick={async () => {
                 setWindowHours(hours);
-                if (scrubbing) await loadTimelines(hours);
+                if (scrubbing) {
+                  const newStart = Date.now() - hours * 3600 * 1000;
+                  if (scrubT !== null && scrubT < newStart) setScrubT(newStart);
+                  await loadTimelines(hours);
+                }
               }}
             >
               {label}
