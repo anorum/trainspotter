@@ -36,6 +36,17 @@ kubectl create configmap blockade-cameras -n blockade \
   --from-file=cameras.yaml=config/cameras.yaml
 ```
 
+### Roster schema changes are ordered
+
+Adding or removing a *camera* is just a ConfigMap edit.
+Changing the roster's *shape* is not, because `Camera` forbids unknown keys and Reloader restarts the pod the moment the ConfigMap changes - so a mismatched pair stops capture outright, and ODOT overwrites images within the minute.
+
+When the roster gains a field (as `lat`/`lon` did), roll the new image first and recreate the ConfigMap second.
+A new image reads an old roster fine because the new field defaults; an old image reads a new roster as a ValidationError and CrashLoopBackOffs.
+The same rule governs rollback: re-apply the old roster before rolling the image back, or the old image meets a roster it cannot parse.
+
+When a field is removed, the order reverses - recreate the ConfigMap without it first, then roll the image.
+
 ## AWS access
 
 No stored credential. The pod runs as the `poller` ServiceAccount and mounts a

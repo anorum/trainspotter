@@ -210,6 +210,60 @@ async def test_cameras_are_independent(
     assert {key for _, key, _ in producer.sent} == {"odot-678", "odot-681"}
 
 
+async def test_a_broker_outage_publishes_again_on_the_next_attempt(
+    settings: Settings,
+) -> None:
+    """The retry path has to survive an outage that reached a live producer.
+
+    A producer is single-use - stopping one closes its send buffer for good -
+    so an attempt that restarted the producer it just closed would connect and
+    then refuse every send, leaving publishing dead until the pod restarts
+    while the manifest backlog grows.
+    """
+
+    class OneShotProducer(FakeProducer):
+        """Models the lifecycle that matters: no sending after a close."""
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.stopped = False
+
+        async def stop(self) -> None:
+            self.stopped = True
+            await super().stop()
+
+        async def send(self, topic: str, key: str, value: bytes) -> asyncio.Future:
+            if self.stopped:
+                raise RuntimeError("producer closed")
+            return await super().send(topic, key, value)
+
+    opened: list[OneShotProducer] = []
+
+    class OutageThenRecovery(ManifestOutbox):
+        def _open_producer(self) -> OneShotProducer:
+            producer = OneShotProducer()
+            producer.fail_acks = not opened  # the broker dies during attempt one
+            opened.append(producer)
+            return producer
+
+    write_manifest(settings.manifest_dir, "odot-678", "2026-08-10-18", [record("odot-678", 0)])
+    task = asyncio.create_task(OutageThenRecovery(settings, idle_delay=0.01).run())
+    try:
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + 10
+        while loop.time() < deadline and not any(p.sent for p in opened[1:]):
+            await asyncio.sleep(0.05)
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+    assert len(opened) >= 2, "the failed attempt was never retried"
+    assert opened[0].stopped, "the failed attempt left its producer open"
+    # The record the outage swallowed republishes, through the second producer:
+    # a retry that reused the first would raise instead of sending.
+    assert [key for _, key, _ in opened[1].sent] == ["odot-678"]
+
+
 async def test_cancellation_while_closing_a_dead_producer_ends_the_task(
     settings: Settings,
 ) -> None:

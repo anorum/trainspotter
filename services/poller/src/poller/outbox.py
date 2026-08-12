@@ -87,13 +87,28 @@ class ManifestOutbox:
         self._manifest_root = settings.manifest_dir
         self._outbox_dir = settings.outbox_dir
         self._topic = settings.kafka_frames_topic
-        self._producer = producer or RecordProducer(
-            settings.kafka_bootstrap or "", client_id="blockade-outbox"
-        )
+        self._bootstrap = settings.kafka_bootstrap or ""
+        self._injected_producer = producer
+        self._producer: RecordProducer | None = producer
         self._idle_delay = idle_delay
         # Position persists at least every max_batch records, so a crash during
         # a large backlog drain re-publishes one batch, not the whole backlog.
         self._max_batch = max_batch
+
+    def _open_producer(self) -> RecordProducer:
+        """One producer per connection attempt, built when the attempt starts.
+
+        A producer is single-use: stopping one closes its send buffer for good
+        (aiokafka's lifecycle, which bus.py wraps rather than changes), so the
+        attempt after an outage has to build a new producer instead of
+        restarting the one it just closed - restarting a closed producer
+        connects and then refuses every send, which is publishing dead until
+        the pod restarts. An injected producer is handed back unchanged, so a
+        caller that supplies one keeps watching exactly that object.
+        """
+        if self._injected_producer is not None:
+            return self._injected_producer
+        return RecordProducer(self._bootstrap, client_id="blockade-outbox")
 
     # -- file mechanics ------------------------------------------------------
 
@@ -120,6 +135,7 @@ class ManifestOutbox:
         """Validate, send, and wait for every ack; returns the count actually
         published, which excludes skipped lines. The caller advances the
         position only after this returns - that ordering is at-least-once."""
+        assert self._producer is not None, "run() opens the producer"
         futures = []
         for line in lines:
             try:
@@ -188,6 +204,7 @@ class ManifestOutbox:
         sacred - an outbox crash must cost publish latency, not frames."""
         backoff = 1.0
         while True:
+            self._producer = self._open_producer()
             try:
                 await self._producer.start()
                 log.info("outbox connected; draining %s", self._manifest_root)
