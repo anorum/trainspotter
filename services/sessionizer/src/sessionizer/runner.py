@@ -26,6 +26,17 @@ exactly what arrived while the pod was down - emit as usual, so an outage's
 closes and alerts are not lost. The offset advances only after the broker has
 acked the batch's output.
 
+The gap deadlines the replay rebuilds need the same line drawn, and offsets
+cannot draw it: a session closes on silence, so its close belongs to no record.
+Event time can. The newest observation the previous life had published is how
+far its wall clock provably reached, so on the first sweep of a boot a deadline
+that fell before that mark was already announced then and is closed silently
+here, while a deadline beyond it is the session that was open when the pod died
+and is this life's to announce. The residual: a deadline that fell in the last
+couple of minutes before shutdown can be announced twice. Nothing else can
+have claimed that window - a backfill refuses to come within a session gap of
+now - so the duplicate lands on its own row and idempotently.
+
 Two timing rules replace the watermark:
 
 - **Close on silence only when silence is provable.** A gap deadline fires
@@ -91,9 +102,19 @@ class Processor:
         self.alerter = RisingEdgeAlerter()
         self.states: dict[str, SessionizerState | None] = {}
         self.deadlines: dict[str, int] = {}
+        self.replayed_through_ms: int | None = None
+        """Newest event time among the records an earlier life had published -
+        a lower bound on how far its wall clock ran. None if this life has
+        replayed nothing, which is also the answer for a topic with no history
+        behind it."""
+        self._inherits_deadlines = True
 
     def observe(
-        self, obs: ObservationRecord, caught_up: bool, now: datetime
+        self,
+        obs: ObservationRecord,
+        already_published: bool,
+        caught_up: bool,
+        now: datetime,
     ) -> tuple[list[BlockageSession], Alert | None]:
         state, sessions, timer = self.sessionizer.observe(self.states.get(obs.crossing_id), obs)
         self.states[obs.crossing_id] = state
@@ -101,6 +122,12 @@ class Processor:
             # Only the latest deadline matters; observe() ignores stale timers.
             self.deadlines[obs.crossing_id] = timer
         alert = self.alerter.observe(obs)
+        if already_published:
+            # State is rebuilt from this record; its consequences were announced
+            # by whoever was running when it first arrived.
+            at = int(obs.captured_at.timestamp() * 1000)
+            self.replayed_through_ms = max(self.replayed_through_ms or at, at)
+            return [], None
         if alert is not None and not caught_up and now - alert.started_at > ALERT_FRESHNESS:
             alert = None
         return sessions, alert
@@ -110,17 +137,33 @@ class Processor:
 
         Callers invoke this only at the head of the topic; the out-of-orderness
         margin here covers camera drift, and head-of-topic covers backlog lag.
+
+        The first sweep of a boot inherits every deadline the replay rebuilt,
+        and most of those an earlier life already announced - a crossing quiet
+        since yesterday closed yesterday. A deadline that came due before
+        ``replayed_through_ms`` is one of those: that life was demonstrably
+        still running past it, so the close is dropped and only the state is
+        cleared. A deadline beyond the mark is the session that was open when
+        the pod died, and announcing it is the restart property this service
+        exists for. Later sweeps are all this life's own.
         """
         now_ms = int(now.timestamp() * 1000)
         margin_ms = int(OUT_OF_ORDERNESS.total_seconds() * 1000)
         emissions: list[BlockageSession] = []
         for crossing_id, deadline in list(self.deadlines.items()):
-            if now_ms >= deadline + margin_ms:
-                state, sessions = self.sessionizer.on_timer(self.states.get(crossing_id), deadline)
-                self.states[crossing_id] = state
-                del self.deadlines[crossing_id]
-                emissions.extend(sessions)
+            if now_ms < deadline + margin_ms:
+                continue
+            state, sessions = self.sessionizer.on_timer(self.states.get(crossing_id), deadline)
+            self.states[crossing_id] = state
+            del self.deadlines[crossing_id]
+            if self._inherits_deadlines and self._announced_before(deadline + margin_ms):
+                continue
+            emissions.extend(sessions)
+        self._inherits_deadlines = False
         return emissions
+
+    def _announced_before(self, fires_at_ms: int) -> bool:
+        return self.replayed_through_ms is not None and fires_at_ms <= self.replayed_through_ms
 
     @property
     def open_count(self) -> int:
@@ -149,9 +192,10 @@ async def run_loop(
     """Tail, decide, produce, commit, repeat.
 
     The tail is the whole log every boot; the group offset says how much of it
-    this service has already published. Both halves of a record's consequences
-    - the session records and the alert - are suppressed below that line, and
-    the line moves only once the broker has acked what the batch produced.
+    this service has already published. What that means for a record is the
+    Processor's to decide - both halves of its consequences are suppressed
+    below the line, and so are the gap closes an earlier life already made.
+    The line moves only once the broker has acked what the batch produced.
     """
     while not stop.is_set():
         # Sampled before the fetch, because get_batch() advances the tailer's
@@ -169,9 +213,7 @@ async def run_loop(
             except ValueError:
                 log.error("unparseable observation at %s:%s", message.partition, message.offset)
                 continue
-            emitted, alert = processor.observe(obs, was_caught_up, now)
-            if progress.published(message):
-                continue
+            emitted, alert = processor.observe(obs, progress.published(message), was_caught_up, now)
             sessions.extend(emitted)
             if alert is not None:
                 alerts.append(alert)

@@ -14,6 +14,10 @@ So a committed group offset rides alongside the tail - it decides nothing about 
 Records below it rebuild state in silence; records at or past it emit as usual, which is exactly what arrived while the pod was down.
 The offset advances only after the broker acks the batch's output, the same at-least-once barrier as everywhere else on the bus.
 
+A session closes on silence, so its close belongs to no record and offsets cannot place it - event time can.
+The newest observation the previous life had published bounds how far its wall clock ran, so on a boot's first sweep a deadline that fell before that mark was announced back then and is closed silently, while a deadline past it is the session that was open when the pod died.
+The residual is a deadline in the last couple of minutes before shutdown, which can be announced twice; a backfill cannot have claimed that window, since it refuses to come within a session gap of now.
+
 Timing discipline, replacing Flink's watermark:
 
 - A session closes only when wall clock has passed its gap deadline plus the out-of-orderness allowance, and the consumer is at the head of the topic - so a backlog drain can never close a session while older frames are still in flight.

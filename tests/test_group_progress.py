@@ -113,6 +113,23 @@ async def test_commits_advance_the_boundary_and_never_walk_it_back(
     assert consumer.commits[-1] == {PARTITION: 7}
 
 
+async def test_a_partition_added_after_boot_is_published_but_not_committed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The tailer is groupless and self-assigns whatever the topic grows to, so
+    it can hand back a partition this bookkeeper was never assigned. Committing
+    one of those raises IllegalStateError on the real consumer and would take
+    the caller's loop down with it. The record still publishes - an unknown
+    partition has no boundary behind it - and the next boot assigns it."""
+    progress, consumer = await bookkeeper(monkeypatch, head=10, committed=4)
+    grown = FakeRecord(offset=0, partition=7)
+
+    assert not progress.published(grown)
+    await progress.commit([grown, FakeRecord(5)])
+
+    assert consumer.commits == [{PARTITION: 6}]
+
+
 async def test_the_bookkeeper_takes_the_tailers_partitions_without_joining_the_group(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

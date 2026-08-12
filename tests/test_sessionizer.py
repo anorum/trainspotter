@@ -10,7 +10,8 @@ this file pins is the hosting discipline that used to be Flink's job:
   stateless upgrades did NOT have,
 - replayed history never re-alerts, but an edge fresh enough to matter does,
 - records below the published-offset boundary build state and emit nothing,
-  so a boot cannot restore sessions a backfill deleted,
+  and neither does the sweep of a deadline the previous life outlived, so a
+  boot cannot restore sessions a backfill deleted,
 - the loop produces sessions keyed by session_id and survives poison messages.
 """
 
@@ -52,12 +53,13 @@ def drive(
     observations: list[ObservationRecord],
     caught_up: bool = True,
     now: datetime | None = None,
+    already_published: bool = False,
 ) -> tuple[list[BlockageSession], list[Alert]]:
     """Feed observations in event order; collect all emissions."""
     sessions: list[BlockageSession] = []
     alerts: list[Alert] = []
     for o in sorted(observations, key=lambda o: o.captured_at):
-        emitted, alert = processor.observe(o, caught_up, now or o.captured_at)
+        emitted, alert = processor.observe(o, already_published, caught_up, now or o.captured_at)
         sessions.extend(emitted)
         if alert is not None:
             alerts.append(alert)
@@ -127,6 +129,52 @@ def test_replayed_history_does_not_realert_but_a_fresh_edge_does() -> None:
              for m in (0, 3)]
     _, alerts = drive(processor, fresh, caught_up=False, now=now)
     assert [a.crossing_id for a in alerts] == ["SE_8TH_DIVISION"]
+
+
+def test_the_first_sweep_drops_closes_the_previous_life_outlived() -> None:
+    """A boot inherits a deadline for every crossing the replay touched, and a
+    crossing quiet since this morning was closed this morning - by whoever was
+    running then. Re-announcing it would put back a row a backfill may since
+    have superseded, which is the whole point of the published boundary.
+
+    The mark is the newest event time the replay carried: the previous life ran
+    at least that far, so it had passed the quiet crossing's deadline and had
+    not reached the deadline of the run still blocked when the log ends. Only
+    the second close is this life's to make - the state behind the first is
+    still cleared, or the sweep would retry it forever."""
+    quiet = [obs(m, CrossingState.BLOCKED) for m in range(0, 9, 3)]
+    blocked_at_shutdown = [
+        obs(240 + m, CrossingState.BLOCKED, crossing="SE_8TH_DIVISION") for m in range(0, 9, 3)
+    ]
+
+    processor = Processor()
+    emitted, alerts = drive(processor, quiet + blocked_at_shutdown, already_published=True)
+    assert (emitted, alerts) == ([], []), "the replay itself announces nothing"
+
+    swept = processor.sweep(now=T0 + timedelta(hours=8))
+
+    assert [(s.crossing_id, s.is_open) for s in swept] == [("SE_8TH_DIVISION", False)]
+    assert processor.deadlines == {}, "both deadlines fired, announced or not"
+    assert processor.open_count == 0, "the silent close still cleared its state"
+
+
+def test_sweeps_after_the_first_announce_unconditionally() -> None:
+    """The mark describes the deadlines a boot inherited and nothing else. A
+    session this life saw from first frame to close is its own to announce even
+    when its event times sit behind the mark - a camera whose clock lags, or a
+    frame delivered late - because nobody else ever held it."""
+    replayed = [obs(240 + m, CrossingState.BLOCKED) for m in range(0, 9, 3)]
+    processor = Processor()
+    drive(processor, replayed, already_published=True)
+    processor.sweep(now=T0 + timedelta(hours=8))
+
+    behind_the_mark = [
+        obs(100 + m, CrossingState.BLOCKED, crossing="SE_8TH_DIVISION") for m in range(0, 9, 3)
+    ]
+    drive(processor, behind_the_mark)
+
+    swept = processor.sweep(now=T0 + timedelta(hours=8))
+    assert [(s.crossing_id, s.is_open) for s in swept] == [("SE_8TH_DIVISION", False)]
 
 
 TOPIC = "crossing.observations.v1"
@@ -286,17 +334,20 @@ async def test_records_below_the_boundary_build_state_but_publish_nothing() -> N
 async def test_a_fresh_group_republishes_no_history() -> None:
     """First deployment against a topic full of retained observations. Someone
     published those sessions already - the boundary starts at the head, so the
-    replay rebuilds state in silence and pages nobody. All that reaches the bus
-    is the close of the run still open at the head, which is the live edge this
-    service owns."""
-    blocked = [obs(m, CrossingState.BLOCKED) for m in range(0, 15, 3)]
+    replay rebuilds state in silence and pages nobody. The sweep it inherits is
+    held to the same line: the crossing that went quiet four hours before the
+    log ends was closed and announced back then, and only the run still blocked
+    at the head reaches the bus."""
+    quiet = [obs(m, CrossingState.BLOCKED) for m in range(0, 9, 3)]
+    blocked_at_shutdown = [
+        obs(240 + m, CrossingState.BLOCKED, crossing="SE_8TH_DIVISION") for m in range(0, 9, 3)
+    ]
+    records = messages(quiet + blocked_at_shutdown)
     producer = FakeProducer()
     settings = Settings(kafka_bootstrap="test:9092")
 
-    await drain(
-        FakeTailer([messages(blocked), []]), producer, FakeProgress(boundary=len(blocked)), settings
-    )
+    await drain(FakeTailer([records, []]), producer, FakeProgress(boundary=len(records)), settings)
 
     assert produced(producer, settings.kafka_alerts_topic) == []
     sessions = produced(producer, settings.kafka_sessions_topic)
-    assert [s["is_open"] for s in sessions] == [False]
+    assert [(s["crossing_id"], s["is_open"]) for s in sessions] == [("SE_8TH_DIVISION", False)]

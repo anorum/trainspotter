@@ -254,10 +254,19 @@ class GroupProgress:
 
         Monotonic: replaying a record from below the boundary cannot walk the
         committed offset backwards.
+
+        Records from a partition this bookkeeper was not given are skipped
+        rather than committed. A groupless tailer picks up a partition added
+        after boot on its next metadata refresh, but committing one that was
+        never assigned is an error that would take the caller's loop down; the
+        records publish anyway, and the next boot assigns the partition
+        properly.
         """
         advanced: dict[TopicPartition, int] = {}
         for record in records:
             tp = TopicPartition(record.topic, record.partition)
+            if tp not in self._boundary:
+                continue
             position = record.offset + 1
             if position > self._positions.get(tp, 0):
                 self._positions[tp] = position
