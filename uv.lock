@@ -228,14 +228,14 @@ name = "blockade-detector"
 version = "0.1.0"
 source = { editable = "services/detector" }
 dependencies = [
-    { name = "blockade-core", extra = ["kafka", "vision"] },
+    { name = "blockade-core", extra = ["classifier", "kafka", "vision"] },
     { name = "prometheus-client" },
     { name = "typer" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "blockade-core", extras = ["vision", "kafka"], editable = "libs/blockade-core" },
+    { name = "blockade-core", extras = ["vision", "kafka", "classifier"], editable = "libs/blockade-core" },
     { name = "prometheus-client", specifier = ">=0.20" },
     { name = "typer", specifier = ">=0.12" },
 ]

@@ -22,7 +22,7 @@ from pathlib import Path
 from blockade.config import Settings
 from blockade.detect.base import Detector
 
-DETECTOR_NAMES = ("reference", "yolo", "vlm", "classifier")
+DETECTOR_NAMES = ("reference", "yolo", "vlm", "classifier", "auto")
 
 
 def _build_reference(settings: Settings) -> Detector:
@@ -55,11 +55,45 @@ def _build_classifier(settings: Settings) -> Detector:
     return ClassifierDetector(settings)
 
 
+class AutoDetector:
+    """Route per camera: the trained classifier where a model exists, the
+    reference detector everywhere else.
+
+    The detector choice is per camera in truth - 678 has a trained classifier
+    while 681 runs a hand-calibrated reference - but the config knob is
+    global, and flipping it wholesale would turn every untrained camera into
+    permanent UNKNOWN. Each observation is stamped by the detector that
+    actually scored it, so mixed fleets stay auditable row by row.
+    """
+
+    def __init__(self, classifier: Detector, reference: Detector, trained: set[str]) -> None:
+        self._classifier = classifier
+        self._reference = reference
+        self._trained = trained
+        self.version = f"auto({classifier.version}|{reference.version})"
+
+    def classify(self, image, camera, captured_at, object_key):  # noqa: ANN001
+        chosen = self._classifier if camera.camera_id in self._trained else self._reference
+        return chosen.classify(image, camera, captured_at, object_key)
+
+
+def _build_auto(settings: Settings) -> Detector:
+    trained = {
+        p.stem.removeprefix("classifier-")
+        for p in settings.references_dir.glob("classifier-*.onnx")
+    }
+    reference = _build_reference(settings)
+    if not trained:
+        return reference
+    return AutoDetector(_build_classifier(settings), reference, trained)
+
+
 _BUILDERS: dict[str, Callable[[Settings], Detector]] = {
     "reference": _build_reference,
     "yolo": _build_yolo,
     "vlm": _build_vlm,
     "classifier": _build_classifier,
+    "auto": _build_auto,
 }
 
 

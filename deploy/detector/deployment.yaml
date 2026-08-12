@@ -55,6 +55,11 @@ spec:
               value: /var/run/secrets/eks.amazonaws.com/serviceaccount/token
             - name: AWS_REGION
               value: us-west-2
+            # auto: the trained classifier where a per-camera model exists in
+            # references/, the reference detector everywhere else. Every
+            # observation is stamped by the detector that scored it.
+            - name: BLOCKADE_DETECTOR
+              value: auto
             - name: BLOCKADE_S3_BUCKET
               value: pdx-trainspotter
             - name: BLOCKADE_S3_REGION
