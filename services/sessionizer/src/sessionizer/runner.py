@@ -33,9 +33,10 @@ emission it produced are acked - never mid-drain. So a committed offset does
 not just say "these records were read", it says "at some wall clock later than
 every event in them, this service stood at the head and fired every deadline
 then due". Event time turns that into a test: the newest observation below the
-boundary is a lower bound on that wall clock, so on a boot's first sweep a
-deadline that fell before it was announced back then and is closed silently
-here, while a deadline beyond it is the session that was open when the pod died
+boundary is a lower bound on that wall clock, so a deadline this boot inherited
+that fell before it was announced back then and is retired silently here -
+whether the sweep is what fires it or a later train supersedes it in the record
+path. A deadline beyond the mark is the session that was open when the pod died
 and is this life's to announce.
 
 A life that dies mid-drain therefore commits nothing, and its successor replays
@@ -125,6 +126,7 @@ class Processor:
         caught_up: bool,
         now: datetime,
     ) -> tuple[list[BlockageSession], Alert | None]:
+        inherited = self.deadlines.get(obs.crossing_id)
         state, sessions, timer = self.sessionizer.observe(self.states.get(obs.crossing_id), obs)
         self.states[obs.crossing_id] = state
         if timer is not None:
@@ -139,6 +141,11 @@ class Processor:
             return [], None
         if alert is not None and not caught_up and now - alert.started_at > ALERT_FRESHNESS:
             alert = None
+        if self._already_announced(inherited):
+            # A BLOCKED arriving past the gap closes the run before it in the
+            # record path rather than waiting for the timer. When that run is
+            # one the boot inherited, its close was made by whoever held it.
+            sessions = [s for s in sessions if s.is_open]
         return sessions, alert
 
     def sweep(self, now: datetime) -> list[BlockageSession]:
@@ -146,15 +153,6 @@ class Processor:
 
         Callers invoke this only at the head of the topic; the out-of-orderness
         margin here covers camera drift, and head-of-topic covers backlog lag.
-
-        The first sweep of a boot inherits every deadline the replay rebuilt,
-        and most of those an earlier life already announced - a crossing quiet
-        since yesterday closed yesterday. A deadline that came due before
-        ``replayed_through_ms`` is one of those: that life was demonstrably
-        still running past it, so the close is dropped and only the state is
-        cleared. A deadline beyond the mark is the session that was open when
-        the pod died, and announcing it is the restart property this service
-        exists for. Later sweeps are all this life's own.
         """
         now_ms = int(now.timestamp() * 1000)
         margin_ms = int(OUT_OF_ORDERNESS.total_seconds() * 1000)
@@ -165,13 +163,30 @@ class Processor:
             state, sessions = self.sessionizer.on_timer(self.states.get(crossing_id), deadline)
             self.states[crossing_id] = state
             del self.deadlines[crossing_id]
-            if self._inherits_deadlines and self._announced_before(deadline + margin_ms):
+            if self._already_announced(deadline):
                 continue
             emissions.extend(sessions)
         self._inherits_deadlines = False
         return emissions
 
-    def _announced_before(self, fires_at_ms: int) -> bool:
+    def _already_announced(self, deadline_ms: int | None) -> bool:
+        """Did an earlier life provably close the run this deadline belongs to?
+
+        A boot inherits a deadline for every crossing the replay touched, and
+        most of them closed long ago - a crossing quiet since yesterday closed
+        yesterday. The commit point is the proof: offsets move only at the head
+        of the topic, after a sweep, so a committed offset says that life's
+        wall clock had passed every deadline then due. ``replayed_through_ms``
+        is a lower bound on that clock.
+
+        Two paths retire an inherited deadline - the sweep, and a later BLOCKED
+        arriving past the gap - and both ask here, so the rule cannot drift
+        between them. It applies only until the first sweep of the boot: after
+        that every deadline is this life's own.
+        """
+        if deadline_ms is None or not self._inherits_deadlines:
+            return False
+        fires_at_ms = deadline_ms + int(OUT_OF_ORDERNESS.total_seconds() * 1000)
         return self.replayed_through_ms is not None and fires_at_ms <= self.replayed_through_ms
 
     @property

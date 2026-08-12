@@ -10,8 +10,8 @@ this file pins is the hosting discipline that used to be Flink's job:
   stateless upgrades did NOT have,
 - replayed history never re-alerts, but an edge fresh enough to matter does,
 - records below the published-offset boundary build state and emit nothing,
-  and neither does the sweep of a deadline the previous life outlived, so a
-  boot cannot restore sessions a backfill deleted,
+  and neither does retiring a deadline the previous life outlived - by sweep
+  or by the next train - so a boot cannot restore sessions a backfill deleted,
 - the loop produces sessions keyed by session_id and survives poison messages.
 """
 
@@ -175,6 +175,46 @@ def test_sweeps_after_the_first_announce_unconditionally() -> None:
 
     swept = processor.sweep(now=T0 + timedelta(hours=8))
     assert [(s.crossing_id, s.is_open) for s in swept] == [("SE_8TH_DIVISION", False)]
+
+
+def test_the_next_train_does_not_reclose_a_session_the_boot_inherited() -> None:
+    """The sweep is not the only thing that closes a run. A BLOCKED arriving
+    past the gap closes the one before it right there in the record path, and
+    that path runs during the drain - before any sweep could have retired the
+    deadline quietly.
+
+    So: a train at 06:00, closed and announced by the life that saw it, then
+    two hours of CLEAR frames, then the pod dies. It comes back to find a train
+    that blocked at 09:00 waiting above the boundary. That record must announce
+    its own session and nothing else; re-announcing the 06:00 close would put
+    back a row a backfill may have superseded during the downtime."""
+    old_train = [obs(m, CrossingState.BLOCKED) for m in range(0, 9, 3)]
+    then_quiet = [obs(m, CrossingState.CLEAR) for m in range(9, 123, 3)]
+    next_train = [obs(180 + m, CrossingState.BLOCKED) for m in range(0, 9, 3)]
+
+    processor = Processor()
+    drive(processor, old_train + then_quiet, already_published=True)
+    emitted, _ = drive(processor, next_train)
+
+    assert [s.is_open for s in emitted] == [True]
+    assert emitted[0].started_at == next_train[0].captured_at
+
+
+def test_the_next_train_does_close_a_session_that_was_open_at_shutdown() -> None:
+    """The other half of the same rule. Here the pod died while the train was
+    still standing on the crossing, so its deadline fell after everything the
+    replay carries and nobody ever announced that close. The next train's first
+    frame is what finally supersedes it, and the close must go out - dropping
+    it would leave the row open forever."""
+    open_at_shutdown = [obs(m, CrossingState.BLOCKED) for m in range(0, 9, 3)]
+    next_train = [obs(180 + m, CrossingState.BLOCKED) for m in range(0, 9, 3)]
+
+    processor = Processor()
+    drive(processor, open_at_shutdown, already_published=True)
+    emitted, _ = drive(processor, next_train)
+
+    assert [s.is_open for s in emitted] == [False, True]
+    assert emitted[0].started_at == open_at_shutdown[0].captured_at
 
 
 TOPIC = "crossing.observations.v1"

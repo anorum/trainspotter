@@ -15,7 +15,7 @@ Records below it rebuild state in silence; records at or past it emit as usual, 
 
 A session closes on silence, so its close belongs to no record and an offset alone cannot place it.
 The commit point supplies the rest: offsets move only on the empty poll at the head, after that poll's sweep and its emissions are acked, never mid-drain.
-A committed offset therefore means "at some wall clock past every event below it, this service stood at the head and fired every deadline then due" - so on a boot's first sweep a deadline that fell before the newest replayed observation was announced back then and is closed silently, while a deadline past it is the session that was open when the pod died.
+A committed offset therefore means "at some wall clock past every event below it, this service stood at the head and fired every deadline then due" - so a deadline the boot inherited that fell before the newest replayed observation was announced back then and is retired silently, whether the sweep fires it or a later train supersedes it in the record path, while a deadline past it is the session that was open when the pod died.
 A life that dies mid-drain commits nothing and its successor simply redoes it, duplicates and all, rather than losing a close and leaving a row open forever.
 The residual is a deadline that came due between the newest replayed observation and the commit, which can be announced twice; a backfill cannot have claimed that window, since it refuses to come within a session gap of now.
 
