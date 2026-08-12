@@ -49,11 +49,8 @@ class AlertPolicy:
 
 @dataclass
 class CrossingAlertState:
-    """What the alerter remembers about one crossing.
-
-    Keyed state per crossing, exactly as it will be in Flink -- this class is the
-    single-process version of that operator, so the two can be diffed.
-    """
+    """What the alerter remembers about one crossing. Keyed state, owned by
+    whatever hosts the alerter."""
 
     alerted: bool = False
     blocked_streak: int = 0
@@ -62,7 +59,7 @@ class CrossingAlertState:
     alerted_at: datetime | None = None
 
     def to_json_dict(self) -> dict:
-        """Primitives only - this crosses a Flink checkpoint boundary."""
+        """Primitives only - this must survive serialization by any host."""
         return {
             "alerted": self.alerted,
             "blocked_streak": self.blocked_streak,

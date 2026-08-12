@@ -146,6 +146,7 @@ class Settings(BaseSettings):
     kafka_frames_topic: str = "crossing.frames.v1"
     kafka_observations_topic: str = "crossing.observations.v1"
     kafka_sessions_topic: str = "crossing.sessions.v1"
+    kafka_alerts_topic: str = "crossing.alerts.v1"
     kafka_group_id: str = Field(
         default="blockade-detector",
         description=(

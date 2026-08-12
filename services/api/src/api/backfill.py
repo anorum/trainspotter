@@ -2,10 +2,10 @@
 
 The other half of "streaming owns now, batch owns history": after a detector
 improves, `blockade-detect scan` re-scores the kept frames, and this module
-takes that JSONL, derives sessions with the same parameters the streaming job
-uses, and loads both into the history store. Nothing here touches Kafka or
-Flink - replaying history through the live job would corrupt its keyed state,
-which is why the batch path exists at all.
+takes that JSONL, derives sessions with the same parameters the streaming
+sessionizer uses, and loads both into the history store. Nothing here touches
+Kafka - replaying history through the live sessionizer would corrupt its
+keyed state, which is why the batch path exists at all.
 
 Observations join the store as a new versioned layer and the timeline
 resolves latest-ingest-wins per instant. Sessions are a projection of them

@@ -1,0 +1,84 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sessionizer
+  namespace: blockade
+  labels:
+    app: sessionizer
+spec:
+  replicas: 1
+  # Recreate, deliberately: two sessionizers would both fire the same rising
+  # edge, and a duplicate alert is exactly what the alerter exists to prevent.
+  # Session output would stay correct (idempotent), so the only cost of the
+  # brief gap is latency, which replay-on-boot absorbs.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: sessionizer
+  template:
+    metadata:
+      labels:
+        app: sessionizer
+    spec:
+      imagePullSecrets:
+        - name: regcred
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      containers:
+        - name: sessionizer
+          image: ghcr.io/anorum/trainspotter/sessionizer:latest
+          args: ["run"]
+          ports:
+            - name: metrics
+              containerPort: 9102
+          env:
+            - name: BLOCKADE_KAFKA_BOOTSTRAP
+              value: blockade-kafka-bootstrap.kafka.svc.cluster.local:9092
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sessionizer
+  namespace: blockade
+  labels:
+    app: sessionizer
+spec:
+  selector:
+    app: sessionizer
+  ports:
+    - name: metrics
+      port: 9102
+      targetPort: metrics
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: sessionizer
+  namespace: blockade
+spec:
+  selector:
+    matchLabels:
+      app: sessionizer
+  endpoints:
+    - port: metrics
+      interval: 30s

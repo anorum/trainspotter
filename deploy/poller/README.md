@@ -9,7 +9,7 @@ Each pod reads `AWS_ROLE_ARN` from the imperative `aws-roles` Secret, so the AWS
 kubectl create secret generic aws-roles -n blockade \
   --from-literal=poller=<blockade-poller role arn> \
   --from-literal=detector=<blockade-detector role arn> \
-  --from-literal=flink=<blockade-flink role arn>
+  --from-literal=api=<blockade-api role arn>
 ```
 
 ArgoCD syncs `deploy/` directly; there is no substitution step.
