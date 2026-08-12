@@ -135,6 +135,11 @@ async def run_loop(
 ) -> None:
     """Tail, decide, produce, repeat. No offset commits: replay is the recovery."""
     while not stop.is_set():
+        # Sampled before the fetch, because get_batch() advances the tailer's
+        # positions as it returns records: the batch that crosses the boot end
+        # offsets is the tail of the replay, and reading the flag afterwards
+        # would call up to 500 records of history live.
+        was_caught_up = tailer.caught_up
         batch = await tailer.get_batch(timeout_ms=1000)
         now = datetime.now(UTC)
         sessions: list[BlockageSession] = []
@@ -145,13 +150,13 @@ async def run_loop(
             except ValueError:
                 log.error("unparseable observation at %s:%s", message.partition, message.offset)
                 continue
-            emitted, alert = processor.observe(obs, tailer.caught_up, now)
+            emitted, alert = processor.observe(obs, was_caught_up, now)
             sessions.extend(emitted)
             if alert is not None:
                 alerts.append(alert)
         # An empty poll means we are at the head right now: silence is real,
         # not a backlog, so gap deadlines may be judged against wall clock.
-        if not batch and tailer.caught_up:
+        if not batch and was_caught_up:
             sessions.extend(processor.sweep(now))
 
         futures = [

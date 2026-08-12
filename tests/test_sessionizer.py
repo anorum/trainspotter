@@ -188,3 +188,58 @@ async def test_loop_produces_sessions_keyed_by_session_id_and_skips_poison() -> 
     emissions = [json.loads(v)["is_open"] for _, _, v in session_records]
     assert emissions[0] is True, "the session is announced open as soon as it qualifies"
     assert emissions[-1] is False, "the head-of-topic sweep closes the stale session"
+
+
+class HeadCrossingTailer:
+    """A tailer that reaches the head *inside* a batch, like the real one.
+
+    ``TopicTailer.get_batch`` advances its positions as it returns records, so
+    the batch that crosses the boot end offsets already reports ``caught_up``
+    by the time it lands - while every record in it is still replayed history.
+    """
+
+    def __init__(self, batches: list[list[FakeMessage]]) -> None:
+        self._batches = batches
+        self.caught_up = False
+
+    async def get_batch(self, timeout_ms: int = 1000):  # noqa: ARG002
+        await asyncio.sleep(0)
+        batch = self._batches.pop(0) if self._batches else []
+        self.caught_up = True
+        return batch
+
+
+@pytest.mark.asyncio
+async def test_the_batch_that_crosses_the_head_is_still_replay() -> None:
+    """The last replayed batch must not page. Both crossings below carry an
+    equally ancient rising edge; the only difference is that one arrived in the
+    batch that crossed the head and the other after it. Judging freshness
+    against the flag as it reads *after* the fetch would announce a train from
+    days ago to everyone holding a pager."""
+    replayed = [obs(m, CrossingState.BLOCKED) for m in (0, 3)]
+    live = [obs(m, CrossingState.BLOCKED, crossing="SE_8TH_DIVISION") for m in (0, 3)]
+    tailer = HeadCrossingTailer(
+        [
+            [FakeMessage(o.model_dump_json().encode()) for o in replayed],
+            [FakeMessage(o.model_dump_json().encode()) for o in live],
+        ]
+    )
+    producer = FakeProducer()
+    stop = asyncio.Event()
+
+    async def stop_soon():
+        await asyncio.sleep(0.05)
+        stop.set()
+
+    settings = Settings(kafka_bootstrap="test:9092")
+    await asyncio.gather(
+        run_loop(tailer, producer, Processor(), settings, stop),  # type: ignore[arg-type]
+        stop_soon(),
+    )
+
+    alerted = [
+        json.loads(v)["crossing_id"]
+        for topic, _, v in producer.sent
+        if topic == settings.kafka_alerts_topic
+    ]
+    assert alerted == ["SE_8TH_DIVISION"]

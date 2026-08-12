@@ -1,13 +1,15 @@
 # AWS setup
 
-One bucket, four prefixes:
+One bucket, three prefixes:
 
 | Prefix | Contents |
 | --- | --- |
 | `frames/` | JPEGs, `frames/{camera_id}/{yyyy}/{mm}/{dd}/{HH}/{epoch_ms}.jpg` |
 | `manifests/` | Hourly gzipped JSONL, the backfill corpus |
 | `warehouse/` | Iceberg tables (Phase 3) |
-| `checkpoints/` | Flink state (Phase 2) |
+
+`checkpoints/` used to hold Flink state. The sessionizer that replaced the Flink job
+rebuilds its state by replaying Kafka, so nothing writes that prefix any more.
 
 ```bash
 BUCKET=blockade-$(aws sts get-caller-identity --query Account --output text)
