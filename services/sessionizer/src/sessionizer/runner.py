@@ -37,7 +37,10 @@ boundary is a lower bound on that wall clock, so a deadline this boot inherited
 that fell before it was announced back then and is retired silently here -
 whether the sweep is what fires it or a later train supersedes it in the record
 path. A deadline beyond the mark is the session that was open when the pod died
-and is this life's to announce.
+and is this life's to announce - and so is one whose run any record from above
+the boundary joined, however old that run looks: a train that blocked and
+cleared entirely during the outage is behind the mark on event time but was
+never seen by the life the mark describes.
 
 A life that dies mid-drain therefore commits nothing, and its successor replays
 from the same line and re-emits everything it emitted - duplicates, which are
@@ -117,6 +120,11 @@ class Processor:
         a lower bound on how far its wall clock ran. None if this life has
         replayed nothing, which is also the answer for a topic with no history
         behind it."""
+        self._unpublished_runs: set[str] = set()
+        """Crossings whose currently open run took in a record from at or past
+        the published boundary. Nobody announced that run's close, whatever the
+        mark says: the previous life never saw the run. Cleared when the run
+        does."""
         self._inherits_deadlines = True
 
     def observe(
@@ -127,11 +135,16 @@ class Processor:
         now: datetime,
     ) -> tuple[list[BlockageSession], Alert | None]:
         inherited = self.deadlines.get(obs.crossing_id)
-        state, sessions, timer = self.sessionizer.observe(self.states.get(obs.crossing_id), obs)
+        # Both about the run as it stands *before* this record: it is that run
+        # the record may be closing.
+        inherited_run_was_published = obs.crossing_id not in self._unpublished_runs
+        previous = self.states.get(obs.crossing_id)
+        state, sessions, timer = self.sessionizer.observe(previous, obs)
         self.states[obs.crossing_id] = state
         if timer is not None:
             # Only the latest deadline matters; observe() ignores stale timers.
             self.deadlines[obs.crossing_id] = timer
+            self._note_contribution(obs.crossing_id, previous, state, already_published)
         alert = self.alerter.observe(obs)
         if already_published:
             # State is rebuilt from this record; its consequences were announced
@@ -141,12 +154,32 @@ class Processor:
             return [], None
         if alert is not None and not caught_up and now - alert.started_at > ALERT_FRESHNESS:
             alert = None
-        if self._already_announced(inherited):
+        if self._already_announced(inherited, inherited_run_was_published):
             # A BLOCKED arriving past the gap closes the run before it in the
             # record path rather than waiting for the timer. When that run is
             # one the boot inherited, its close was made by whoever held it.
             sessions = [s for s in sessions if s.is_open]
         return sessions, alert
+
+    def _note_contribution(
+        self,
+        crossing_id: str,
+        previous: SessionizerState | None,
+        state: SessionizerState | None,
+        already_published: bool,
+    ) -> None:
+        """Record where the run now open on this crossing came from.
+
+        A BLOCKED past the gap ends the run before it and starts a fresh one in
+        the same call, so a new run inherits nothing from the old one's origin.
+        """
+        started_a_new_run = previous is None or (
+            state is not None and state.started_at_ms != previous.started_at_ms
+        )
+        if not already_published:
+            self._unpublished_runs.add(crossing_id)
+        elif started_a_new_run:
+            self._unpublished_runs.discard(crossing_id)
 
     def sweep(self, now: datetime) -> list[BlockageSession]:
         """Fire every gap deadline that wall clock has safely passed.
@@ -163,13 +196,18 @@ class Processor:
             state, sessions = self.sessionizer.on_timer(self.states.get(crossing_id), deadline)
             self.states[crossing_id] = state
             del self.deadlines[crossing_id]
-            if self._already_announced(deadline):
+            announced = self._already_announced(
+                deadline, crossing_id not in self._unpublished_runs
+            )
+            if state is None:
+                self._unpublished_runs.discard(crossing_id)
+            if announced:
                 continue
             emissions.extend(sessions)
         self._inherits_deadlines = False
         return emissions
 
-    def _already_announced(self, deadline_ms: int | None) -> bool:
+    def _already_announced(self, deadline_ms: int | None, run_was_published: bool) -> bool:
         """Did an earlier life provably close the run this deadline belongs to?
 
         A boot inherits a deadline for every crossing the replay touched, and
@@ -179,12 +217,19 @@ class Processor:
         wall clock had passed every deadline then due. ``replayed_through_ms``
         is a lower bound on that clock.
 
+        That proof covers only a run the previous life actually saw, so it is
+        offered only for runs built entirely from published records. A run any
+        record from at or past the boundary contributed to is one this life
+        assembled - a train that blocked and cleared while the pod was down, its
+        event times still behind the newest published record on some other
+        partition - and its close is this life's to make, however old it looks.
+
         Two paths retire an inherited deadline - the sweep, and a later BLOCKED
         arriving past the gap - and both ask here, so the rule cannot drift
         between them. It applies only until the first sweep of the boot: after
         that every deadline is this life's own.
         """
-        if deadline_ms is None or not self._inherits_deadlines:
+        if deadline_ms is None or not self._inherits_deadlines or not run_was_published:
             return False
         fires_at_ms = deadline_ms + int(OUT_OF_ORDERNESS.total_seconds() * 1000)
         return self.replayed_through_ms is not None and fires_at_ms <= self.replayed_through_ms
@@ -307,6 +352,14 @@ async def _serve(settings: Settings) -> None:
         await progress.stop()
         await tailer.stop()
     log.info("shutdown complete")
+
+
+@app.callback()
+def cli() -> None:
+    """Keeps `run` a real subcommand: with a single command and no callback,
+    typer collapses the app into the root command and `blockade-sessionizer
+    run` - the argv the Dockerfile and the deployment both pass - fails with
+    "unexpected extra argument", which is how the API's first pod died."""
 
 
 @app.command()

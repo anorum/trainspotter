@@ -12,7 +12,10 @@ this file pins is the hosting discipline that used to be Flink's job:
 - records below the published-offset boundary build state and emit nothing,
   and neither does retiring a deadline the previous life outlived - by sweep
   or by the next train - so a boot cannot restore sessions a backfill deleted,
-- the loop produces sessions keyed by session_id and survives poison messages.
+- but a run any record above the boundary contributed to is closed on both
+  paths regardless: no earlier life saw it, so none can have announced it,
+- the loop produces sessions keyed by session_id and survives poison messages,
+- the argv the deployment passes the container reaches the `run` command.
 """
 
 from __future__ import annotations
@@ -23,11 +26,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 import pytest
+import yaml
 from blockade.alerts import Alert
-from blockade.config import Settings
+from blockade.config import REPO_ROOT, Settings
 from blockade.schemas import BlockageSession, CrossingState, ObservationRecord
 from blockade.sessions import derive_sessions
-from sessionizer.runner import ALERT_FRESHNESS, OUT_OF_ORDERNESS, Processor, run_loop
+from sessionizer.runner import ALERT_FRESHNESS, OUT_OF_ORDERNESS, Processor, app, run_loop
+from typer.testing import CliRunner
 
 T0 = datetime(2026, 8, 10, 6, 0, tzinfo=UTC)
 
@@ -215,6 +220,77 @@ def test_the_next_train_does_close_a_session_that_was_open_at_shutdown() -> None
 
     assert [s.is_open for s in emitted] == [False, True]
     assert emitted[0].started_at == open_at_shutdown[0].captured_at
+
+
+def outage_backlog() -> tuple[list[ObservationRecord], list[ObservationRecord]]:
+    """A train that blocked and cleared entirely while the pod was down, and
+    published history that ends *after* it.
+
+    The mark is a max over event times, and the topic is partitioned by
+    crossing: a busy crossing's frames stay published right up to the crash
+    while a quieter one's whole blockage sits unread behind them. So the
+    backlog's train is older than the mark even though nobody ever saw it.
+    """
+    published = [obs(30 + m, CrossingState.BLOCKED) for m in range(0, 9, 3)]
+    buried = [obs(m, CrossingState.BLOCKED, crossing="SE_POWELL") for m in range(0, 9, 3)]
+    return published, buried
+
+
+def test_the_sweep_closes_a_session_the_previous_life_never_saw() -> None:
+    """The mark proves what the previous life announced only for runs it read.
+    This train arrived above the published boundary, so no earlier life ever
+    held it, and its close is this life's to make however far behind the mark
+    its deadline falls. Dropping it would leave the row open forever - missing
+    from analytics, pinned to the live board as blocked."""
+    published, buried = outage_backlog()
+
+    processor = Processor()
+    drive(processor, published, already_published=True)
+    opened, _ = drive(processor, buried)
+    swept = processor.sweep(now=T0 + timedelta(hours=8))
+
+    assert [(s.crossing_id, s.is_open) for s in opened] == [("SE_POWELL", True)]
+    assert ("SE_POWELL", False) in [(s.crossing_id, s.is_open) for s in swept]
+    assert processor.open_count == 0
+
+
+def test_the_next_train_closes_a_session_the_previous_life_never_saw() -> None:
+    """The same rule on the record path: the backlog's train is superseded by a
+    later one before any sweep judges its deadline, and that close must go out
+    for the same reason."""
+    published, buried = outage_backlog()
+    next_train = [obs(120 + m, CrossingState.BLOCKED, crossing="SE_POWELL") for m in range(0, 9, 3)]
+
+    processor = Processor()
+    drive(processor, published, already_published=True)
+    drive(processor, buried)
+    emitted, _ = drive(processor, next_train)
+
+    assert [s.is_open for s in emitted] == [False, True]
+    assert emitted[0].started_at == buried[0].captured_at
+
+
+def test_the_deployments_argv_reaches_the_run_command() -> None:
+    """The container's argv is a contract between the manifest and this CLI. A
+    single-command typer app collapses into the root command, and then the
+    `run` the deployment passes is an unexpected extra argument (exit 2) - the
+    pod CrashLoopBackOffs before it opens a socket. Exit 1 with the missing-
+    bootstrap complaint is `run`'s own body talking, which is the proof."""
+    deployment = next(
+        doc
+        for doc in yaml.safe_load_all((REPO_ROOT / "deploy/sessionizer/deployment.yaml").read_text())
+        if doc.get("kind") == "Deployment"
+    )
+    container = next(
+        c
+        for c in deployment["spec"]["template"]["spec"]["containers"]
+        if c["name"] == "sessionizer"
+    )
+
+    result = CliRunner().invoke(app, container["args"], env={"BLOCKADE_KAFKA_BOOTSTRAP": ""})
+
+    assert result.exit_code == 1, f"argv {container['args']} did not reach `run`: {result.output}"
+    assert "BLOCKADE_KAFKA_BOOTSTRAP" in result.output
 
 
 TOPIC = "crossing.observations.v1"
