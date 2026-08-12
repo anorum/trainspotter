@@ -204,11 +204,15 @@ class ManifestOutbox:
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 60.0)
             finally:
-                # Suppress everything here, including the cancellation this
-                # very await can raise when shutdown cancels the task mid-stop:
-                # stop() flushes, and if the broker is the thing that failed,
-                # the flush fails too. Unacked records simply republish.
+                # A failing stop() must never mask shutdown: stop() flushes, and
+                # if the broker is the thing that failed, the flush fails too.
+                # Unacked records simply republish. Cancellation is the one thing
+                # that has to survive - swallowing it here would send the loop
+                # back into start() and hang shutdown until the pod is killed.
                 try:
                     await self._producer.stop()
-                except (Exception, asyncio.CancelledError):  # noqa: BLE001
+                except asyncio.CancelledError:
+                    log.warning("producer close cancelled; unacked records will republish")
+                    raise
+                except Exception:  # noqa: BLE001
                     log.warning("producer close failed; unacked records will republish")

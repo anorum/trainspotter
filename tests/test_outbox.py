@@ -210,6 +210,50 @@ async def test_cameras_are_independent(
     assert {key for _, key, _ in producer.sent} == {"odot-678", "odot-681"}
 
 
+async def test_cancellation_while_closing_a_dead_producer_ends_the_task(
+    settings: Settings,
+) -> None:
+    """Shutdown lands mid-retry, while the finally is closing a dead producer.
+
+    Swallowing that cancellation would send run() back into start() and loop
+    forever, so the poller's `await outbox_task` would never return and the
+    manifest would never be flushed before SIGKILL.
+    """
+
+    class Restarted(BaseException):
+        """Not an Exception, so run()'s retry handler cannot absorb it too."""
+
+    class StuckClosingProducer(FakeProducer):
+        """Fails to connect, then blocks in the close the retry path runs."""
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.closing = asyncio.Event()
+            self.starts = 0
+
+        async def start(self) -> None:
+            self.starts += 1
+            if self.starts > 1:
+                raise Restarted
+            raise ConnectionError("broker gone")
+
+        async def stop(self) -> None:
+            # Only the first close blocks: a retry must end the task, not hang
+            # this test, so the swallowed-cancellation failure stays legible.
+            if not self.closing.is_set():
+                self.closing.set()
+                await asyncio.sleep(3600)
+
+    producer = StuckClosingProducer()
+    task = asyncio.create_task(ManifestOutbox(settings, producer=producer).run())
+    await asyncio.wait_for(producer.closing.wait(), timeout=10)
+
+    task.cancel()
+    done, _ = await asyncio.wait({task}, timeout=10)
+    assert done, "run() never finished after cancellation"
+    assert task.cancelled(), "run() swallowed the cancellation and restarted the producer"
+
+
 async def test_no_bootstrap_configured_means_no_publisher(tmp_path: Path) -> None:
     """The capture-only mode: Settings default is kafka_bootstrap=None, and the
     poller only constructs an outbox when it is set. This pins the default."""

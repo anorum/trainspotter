@@ -162,8 +162,9 @@ class Settings(BaseSettings):
         default=None,
         description=(
             "Postgres DSN for the history store. None disables it entirely: the "
-            "API then serves only the in-memory window, which is Phase A "
-            "behavior. The live board never depends on the database."
+            "history endpoints then refuse (503, or available: false from "
+            "/api/v1/analytics) rather than answering from memory. The live "
+            "board never depends on the database."
         ),
     )
     outbox_dir: Path = Field(
