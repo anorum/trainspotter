@@ -5,7 +5,7 @@ import re
 from datetime import UTC, datetime
 from pathlib import Path
 
-from blockade.config import Camera, CameraSource, CameraUsability
+from blockade.config import Camera, CameraSource
 from blockade.detect.reference import ReferenceDetector, ReferenceModel, _brightness_bin, _decode
 from blockade.schemas import ObservationRecord
 
@@ -37,7 +37,6 @@ def load_camera(camera_id: str) -> Camera:
         crossing_id="manual",
         image_url="https://example.invalid/",
         source=CameraSource.MANUAL,
-        usability=CameraUsability.UNKNOWN,
     )
 
 
@@ -166,10 +165,7 @@ def main() -> None:
     print(f"detector_version={observation.detector_version}")
     print("debug:")
     for key, value in debug.items():
-        if isinstance(value, dict):
-            print(f"  {key}={value}")
-        else:
-            print(f"  {key}={value}")
+        print(f"  {key}={value}")
 
 
 if __name__ == "__main__":

@@ -16,7 +16,6 @@ cameras:
     crossing_id: SE_11TH_MILWAUKIE
     image_url: https://tripcheck.com/RoadCams/cams/PLACEHOLDER.jpg
     source: manual
-    usability: unknown
     poll_interval_seconds: 30.0
     enabled: true
     notes: 11th northbound approach
@@ -26,7 +25,6 @@ cameras:
     crossing_id: SE_11TH_MILWAUKIE
     image_url: https://tripcheck.com/RoadCams/cams/PLACEHOLDER.jpg
     source: manual
-    usability: unknown
     poll_interval_seconds: 30.0
     enabled: true
     notes: 11th southbound approach
@@ -36,7 +34,6 @@ cameras:
     crossing_id: SE_12TH_CLINTON
     image_url: https://tripcheck.com/RoadCams/cams/PLACEHOLDER.jpg
     source: manual
-    usability: unknown
     poll_interval_seconds: 30.0
     enabled: true
     notes: closest to the rails
@@ -46,7 +43,6 @@ cameras:
     crossing_id: SE_12TH_CLINTON
     image_url: https://tripcheck.com/RoadCams/cams/PLACEHOLDER.jpg
     source: manual
-    usability: unknown
     poll_interval_seconds: 30.0
     enabled: true
     notes: 12th northern approach
@@ -56,7 +52,6 @@ cameras:
     crossing_id: SE_8TH_DIVISION
     image_url: https://tripcheck.com/RoadCams/cams/PLACEHOLDER.jpg
     source: manual
-    usability: unknown
     poll_interval_seconds: 30.0
     enabled: true
     notes: 8th approach
@@ -66,7 +61,6 @@ cameras:
     crossing_id: SE_8TH_DIVISION
     image_url: https://tripcheck.com/RoadCams/cams/PLACEHOLDER.jpg
     source: manual
-    usability: unknown
     poll_interval_seconds: 30.0
     enabled: true
     notes: 8th approach

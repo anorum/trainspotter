@@ -48,15 +48,6 @@ class CameraSource(StrEnum):
     """Hand-entered before the API key arrived. Re-verify against the inventory."""
 
 
-class CameraUsability(StrEnum):
-    """Phase 0 survey verdict. Drives which cameras Phase 1 trusts."""
-
-    UNKNOWN = "unknown"
-    USABLE = "usable"
-    MARGINAL = "marginal"
-    UNUSABLE = "unusable"
-
-
 class Camera(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -67,7 +58,6 @@ class Camera(BaseModel):
     )
     image_url: HttpUrl
     source: CameraSource = CameraSource.MANUAL
-    usability: CameraUsability = CameraUsability.UNKNOWN
     poll_interval_seconds: float = Field(
         default=30.0,
         ge=15.0,
@@ -110,10 +100,6 @@ class Settings(BaseSettings):
             "Needed only for the camera inventory, which refreshes every 24h -- so "
             "this is roughly one API call per day, not one per frame."
         ),
-    )
-    odot_api_key_secondary: str | None = Field(
-        default=None,
-        description="Second key issued with the first; alternated to stay under rate limits.",
     )
     odot_inventory_url: str = "https://api.odot.state.or.us/tripcheck/Cctv/Inventory"
 
@@ -194,7 +180,6 @@ class Settings(BaseSettings):
         "30s intervals is how a key gets revoked.",
     )
     request_timeout_seconds: float = 10.0
-    max_retries: int = 4
     metrics_port: int = 9102
 
     camera_config_path: Path = DEFAULT_CAMERA_CONFIG
@@ -245,16 +230,6 @@ class Settings(BaseSettings):
             "a reasoning problem."
         ),
     )
-    detect_interval_seconds: float = Field(
-        default=120.0,
-        ge=30.0,
-        description=(
-            "How often each crossing is judged. This sets the resolution of every "
-            "duration in the dataset, but not permanently -- frames are kept, so "
-            "history can be re-derived at finer resolution later."
-        ),
-    )
-    observations_dir: Path = Path("var/observations")
 
     @property
     def has_odot_key(self) -> bool:

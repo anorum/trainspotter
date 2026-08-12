@@ -17,7 +17,6 @@ Imports are deferred: choosing `reference` must not drag in torch.
 from __future__ import annotations
 
 from collections.abc import Callable
-from pathlib import Path
 
 from blockade.config import Settings
 from blockade.detect.base import Detector
@@ -120,9 +119,3 @@ def build_detector(name: str | None = None, settings: Settings | None = None) ->
     if name not in _BUILDERS:
         raise ValueError(f"Unknown detector {name!r}. Available: {', '.join(DETECTOR_NAMES)}")
     return _BUILDERS[name](settings)
-
-
-def references_dir_default() -> Path:
-    from blockade.config import REPO_ROOT
-
-    return REPO_ROOT / "var" / "references"

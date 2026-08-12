@@ -42,11 +42,6 @@ _BLOCKED_INDEX = LABELS.index("BLOCKED")
 _VERSION_BASE = "classifier/mobilenetv3s-v1"
 
 
-def model_key(camera_id: str) -> str:
-    """S3 key for a camera's classifier, next to its reference model."""
-    return f"references/classifier-{camera_id}.onnx"
-
-
 class ClassifierDetector:
     """Blocked/clear via a per-camera ONNX model."""
 

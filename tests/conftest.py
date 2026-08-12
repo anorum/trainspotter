@@ -32,7 +32,6 @@ def settings(tmp_path: Path) -> Settings:
         local_cache_dir=tmp_path / "frames",
         manifest_dir=tmp_path / "manifests",
         camera_config_path=tmp_path / "cameras.yaml",
-        max_retries=2,
     )
 
 
