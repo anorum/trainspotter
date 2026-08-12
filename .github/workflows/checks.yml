@@ -8,6 +8,21 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # The history-store tests need a real Postgres; without the URL they skip
+    # silently, which is how they went unexercised in CI until the backfill work.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: blockade
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      BLOCKADE_TEST_DATABASE_URL: postgresql://postgres:test@localhost:5432/blockade
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5

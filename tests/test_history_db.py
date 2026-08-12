@@ -1,10 +1,11 @@
 """The Postgres history store: versioned rows, latest-ingest-wins reads.
 
 Exercises db.py against a real Postgres. The whole point of the store is
-that a better detector's backfill can override an earlier version's word for
-the same (camera, instant) or (session_id) without editing anything - so
-these tests write two layers, in the wrong order, and pin that the newer
-ingest always wins the read.
+that a better detector's word can override an earlier version's: observation
+layers resolve latest-ingest-wins per (camera, instant), and a backfill
+rebuilds the session projection over the window it re-scored. These tests
+write the layers in the wrong order and pin that the newer word always wins
+the read.
 
 The Postgres URL comes from BLOCKADE_TEST_DATABASE_URL. Without it the
 suite is skipped so the tests never fail on a workstation that lacks the
@@ -100,9 +101,7 @@ async def test_a_newer_detector_ingest_overrides_the_older_one_per_instant(pool)
     await asyncio.sleep(0.05)
     await db.upsert_batch(pool, [_obs(5, state="CLEAR", detector_version="motion/2")], [])
 
-    rows = await db.timeline(
-        pool, "SE_12TH_CLINTON", T0, T0 + timedelta(hours=1)
-    )
+    rows = await db.timeline(pool, "SE_12TH_CLINTON", T0, T0 + timedelta(hours=1))
     assert len(rows) == 1, "one instant, one resolved row"
     assert rows[0]["state"] == "CLEAR"
     assert rows[0]["detector_version"] == "motion/2"
@@ -128,15 +127,15 @@ async def test_timeline_filters_by_crossing_and_time_range(pool) -> None:
             _obs(0, state="CLEAR", detector_version="motion/1"),
             _obs(30, state="BLOCKED", detector_version="motion/1"),
             _obs(120, state="CLEAR", detector_version="motion/1"),  # outside range
-            {**_obs(15, state="CLEAR", detector_version="motion/1"),
-             "crossing_id": "SE_8TH_DIVISION"},  # other crossing
+            {
+                **_obs(15, state="CLEAR", detector_version="motion/1"),
+                "crossing_id": "SE_8TH_DIVISION",
+            },  # other crossing
         ],
         [],
     )
 
-    rows = await db.timeline(
-        pool, "SE_12TH_CLINTON", T0, T0 + timedelta(minutes=60)
-    )
+    rows = await db.timeline(pool, "SE_12TH_CLINTON", T0, T0 + timedelta(minutes=60))
     minutes = [(r["captured_at"], r["state"]) for r in rows]
     assert len(rows) == 2
     assert rows[0]["captured_at"] < rows[1]["captured_at"], "ascending by captured_at"
@@ -148,13 +147,9 @@ async def test_session_latest_ingest_wins_and_can_reopen_history(pool) -> None:
     later closed it (correcting a missed CLEAR). session_list must return
     v2's word - closed, with the duration and version recorded."""
     sid = f"session-{uuid.uuid4()}"
-    await db.upsert_batch(
-        pool, [], [_sess(sid, detector_version="motion/1", is_open=True)]
-    )
+    await db.upsert_batch(pool, [], [_sess(sid, detector_version="motion/1", is_open=True)])
     await asyncio.sleep(0.05)
-    await db.upsert_batch(
-        pool, [], [_sess(sid, detector_version="motion/2", is_open=False)]
-    )
+    await db.upsert_batch(pool, [], [_sess(sid, detector_version="motion/2", is_open=False)])
 
     rows = await db.session_list(pool, "SE_12TH_CLINTON", limit=10)
     ours = [r for r in rows if r["session_id"] == sid]
@@ -175,8 +170,11 @@ async def test_session_list_filters_by_crossing_and_orders_newest_first(pool) ->
             _sess(older, detector_version="motion/1", is_open=False, started_min=0),
             _sess(newer, detector_version="motion/1", is_open=True, started_min=90),
             _sess(
-                other, detector_version="motion/1", is_open=False,
-                started_min=45, crossing_id="SE_8TH_DIVISION",
+                other,
+                detector_version="motion/1",
+                is_open=False,
+                started_min=45,
+                crossing_id="SE_8TH_DIVISION",
             ),
         ],
     )
@@ -190,12 +188,105 @@ async def test_session_list_filters_by_crossing_and_orders_newest_first(pool) ->
     assert {r["session_id"] for r in unfiltered} >= {older, newer, other}
 
 
+def _window(start_min: float, end_min: float, crossing_id: str = "SE_12TH_CLINTON") -> dict:
+    return {
+        "crossing_id": crossing_id,
+        "window_start": T0 + timedelta(minutes=start_min),
+        "window_end": T0 + timedelta(minutes=end_min),
+    }
+
+
+async def test_backfill_replaces_a_changed_boundary_session(pool) -> None:
+    """The reason the load deletes: a better detector moved the session's
+    start, which changes its deterministic id, so an upsert alone would leave
+    the old wrong row standing next to the new one."""
+    await db.upsert_batch(
+        pool, [], [_sess("old-boundary", detector_version="motion/1", is_open=False)]
+    )
+    await asyncio.sleep(0.05)
+    await db.load_backfill(
+        pool,
+        [],
+        [_sess("new-boundary", detector_version="motion/2", is_open=False, started_min=2)],
+        [_window(-60, 120)],
+    )
+
+    rows = await db.session_list(pool, "SE_12TH_CLINTON", limit=10)
+    ids = {r["session_id"] for r in rows}
+    assert ids == {"new-boundary"}, "the superseded boundary is gone, not co-listed"
+
+
+async def test_backfill_removes_a_phantom_outright(pool) -> None:
+    """The 678 dawn-inversion case: the old detector invented a session, the
+    new scan of the same window finds nothing, and the phantom must vanish
+    rather than survive as the window's only record."""
+    await db.upsert_batch(pool, [], [_sess("phantom", detector_version="motion/1", is_open=False)])
+    await db.load_backfill(pool, [], [], [_window(-60, 120)])
+
+    rows = await db.session_list(pool, "SE_12TH_CLINTON", limit=10)
+    assert rows == []
+
+
+async def test_backfill_touches_only_its_window_and_crossing(pool) -> None:
+    await db.upsert_batch(
+        pool,
+        [],
+        [
+            _sess("before-window", detector_version="motion/1", is_open=False, started_min=-120),
+            _sess(
+                "other-crossing",
+                detector_version="motion/1",
+                is_open=False,
+                crossing_id="SE_8TH_DIVISION",
+            ),
+        ],
+    )
+    await db.load_backfill(pool, [], [], [_window(-60, 120)])
+
+    survivors = {r["session_id"] for r in await db.session_list(pool, None, limit=10)}
+    assert survivors == {"before-window", "other-crossing"}
+
+
+async def test_backfill_observations_join_as_a_new_layer(pool) -> None:
+    """Observations are never deleted - the load adds the new version's word
+    and the timeline resolves latest-ingest-wins, same as the streaming path."""
+    await db.upsert_batch(pool, [_obs(5, state="BLOCKED", detector_version="motion/1")], [])
+    await asyncio.sleep(0.05)
+    await db.load_backfill(
+        pool, [_obs(5, state="CLEAR", detector_version="motion/2")], [], [_window(0, 10)]
+    )
+
+    rows = await db.timeline(pool, "SE_12TH_CLINTON", T0, T0 + timedelta(hours=1))
+    assert [(r["state"], r["detector_version"]) for r in rows] == [("CLEAR", "motion/2")]
+    async with pool.acquire() as conn:
+        count = await conn.fetchval("SELECT count(*) FROM observations")
+    assert count == 2, "both layers kept; resolution happens at read time"
+
+
+async def test_backfill_is_idempotent(pool) -> None:
+    """Re-running the same load must land in the same place: the delete
+    claims the window again and the same rows go back in."""
+    sessions = [_sess("stable", detector_version="motion/2", is_open=False)]
+    await db.load_backfill(pool, [], sessions, [_window(-60, 120)])
+    await db.load_backfill(pool, [], sessions, [_window(-60, 120)])
+
+    rows = await db.session_list(pool, "SE_12TH_CLINTON", limit=10)
+    assert [r["session_id"] for r in rows] == ["stable"]
+
+
 async def test_session_list_limit_caps_the_result(pool) -> None:
     for i in range(5):
         await db.upsert_batch(
-            pool, [],
-            [_sess(f"s-{uuid.uuid4()}", detector_version="motion/1",
-                   is_open=False, started_min=float(i))],
+            pool,
+            [],
+            [
+                _sess(
+                    f"s-{uuid.uuid4()}",
+                    detector_version="motion/1",
+                    is_open=False,
+                    started_min=float(i),
+                )
+            ],
         )
     rows = await db.session_list(pool, "SE_12TH_CLINTON", limit=3)
     assert len(rows) == 3

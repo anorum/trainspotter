@@ -43,6 +43,7 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 "services/poller/src/poller/poller.py" = ["B008"]
 "services/poller/src/poller/sync.py" = ["B008"]
 "services/detector/src/detector/runner.py" = ["B008"]
+"services/api/src/api/main.py" = ["B008"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
