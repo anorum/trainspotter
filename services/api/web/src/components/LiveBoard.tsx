@@ -10,9 +10,10 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import {
   type AnalyticsResponse,
   fetchAnalytics,
+  heat,
+  hourLabel,
   hourOfDay,
   percent,
-  share,
   worstHours,
 } from "../lib/analytics";
 import { COLORS, GEOMETRY, type State } from "../lib/crossings";
@@ -66,27 +67,38 @@ export default function LiveBoard() {
   const [scrubT, setScrubT] = useState<number | null>(null); // null = live
   const [windowHours, setWindowHours] = useState(24);
   const [timelines, setTimelines] = useState<Record<string, TimelineObs[]>>({});
-  const [loadedHours, setLoadedHours] = useState(0);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null);
-  const [tick, setTick] = useState(0);
-  const sourceRef = useRef<EventSource | null>(null);
+  // The value is never read; each tick just re-renders the live durations.
+  const [, setTick] = useState(0);
+  // Refs, not state: the guard must be visible to concurrent calls
+  // *synchronously*, before any await - the scrubber fires loadTimelines on
+  // every input event, and a state-based guard let every one of them race
+  // through and refetch all three crossings. The generation counter keeps an
+  // overlapping narrower load (drag, then widen immediately) from landing
+  // late and clobbering the wider data.
+  const loadedHours = useRef(0);
+  const loadGeneration = useRef(0);
 
   // The panel's habit line loads the first time any crossing is selected.
   useEffect(() => {
-    if (selected && !analytics) fetchAnalytics().then(setAnalytics);
+    if (selected && !analytics) fetchAnalytics().then(setAnalytics, () => {});
   }, [selected]);
 
   useEffect(() => {
-    fetch("/api/v1/status").then((r) => r.json()).then(setStatus);
+    // If the first status fetch fails the page stays on "Contacting the
+    // board..." and the EventSource below retries into the same state.
+    fetch("/api/v1/status")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body) => body && setStatus(body), () => {});
     // The lanes under the scrubber: blockages findable by eye before
-    // scrubbing, so the history is worth a drag in the first place.
+    // scrubbing, so the history is worth a drag in the first place. Without
+    // the history store the lanes are simply empty.
     fetch("/api/v1/sessions?limit=500")
-      .then((r) => r.json())
-      .then((body) => setSessions(body.sessions));
+      .then((r) => (r.ok ? r.json() : { sessions: [] }))
+      .then((body) => setSessions(body.sessions), () => {});
     const source = new EventSource("/api/v1/events");
     source.addEventListener("status", (e) => setStatus(JSON.parse((e as MessageEvent).data)));
-    sourceRef.current = source;
     const timer = setInterval(() => setTick((t) => t + 1), 1000);
     return () => {
       source.close();
@@ -97,14 +109,24 @@ export default function LiveBoard() {
   // Scrub data loads lazily the first time the slider moves off "now", and
   // reloads when the window widens past what has been fetched.
   const loadTimelines = async (hours: number) => {
-    if (loadedHours >= hours) return;
-    const loaded: Record<string, TimelineObs[]> = {};
-    for (const id of Object.keys(GEOMETRY)) {
-      const r = await fetch(`/api/v1/timeline?crossing_id=${id}&hours=${hours}`);
-      loaded[id] = (await r.json()).observations;
+    if (loadedHours.current >= hours) return;
+    const previous = loadedHours.current;
+    loadedHours.current = hours;
+    const generation = ++loadGeneration.current;
+    try {
+      const entries = await Promise.all(
+        Object.keys(GEOMETRY).map(async (id) => {
+          const r = await fetch(`/api/v1/timeline?crossing_id=${id}&hours=${hours}`);
+          if (!r.ok) throw new Error(`timeline ${r.status}`);
+          return [id, (await r.json()).observations] as const;
+        }),
+      );
+      if (generation === loadGeneration.current) setTimelines(Object.fromEntries(entries));
+    } catch {
+      // Fall back to the window already on screen so a later scrub retries;
+      // a superseding load owns the guard now and must not be rolled back.
+      if (generation === loadGeneration.current) loadedHours.current = previous;
     }
-    setTimelines(loaded);
-    setLoadedHours(hours);
   };
 
   const scrubbing = scrubT !== null;
@@ -138,7 +160,7 @@ export default function LiveBoard() {
         };
       }),
     };
-  }, [status, scrubbing, scrubT, timelines]);
+  }, [status, scrubT, timelines]);
 
   if (!board) return <p class="loading">Contacting the board...</p>;
 
@@ -279,7 +301,7 @@ export default function LiveBoard() {
             >
               <span class="dot" style={`background:${COLORS[c.state]}`} />
               <span class="display name">{g?.label ?? c.crossing_id}</span>
-              <span class="data">{stateLine(c, tick)}</span>
+              <span class="data">{stateLine(c)}</span>
             </button>
           );
         })}
@@ -299,67 +321,21 @@ export default function LiveBoard() {
           {/* The ticker runs only while the state itself is BLOCKED. An open
               session can outlive the blockage by design (it closes after ten
               quiet minutes plus watermark lag), and a red "blocked for 28m"
-              beside a green CLEAR is nonsense presentation of sensible data. */}
-          {chosen.state === "BLOCKED" && chosen.open_session && !scrubbing && (
+              beside a green CLEAR is nonsense presentation of sensible data.
+              No scrub guard here: the board memo already nulls open_session
+              and latest_observation while scrubbing. */}
+          {chosen.state === "BLOCKED" && chosen.open_session && (
             <p class="data ticker">
-              Blocked for {duration(chosen.open_session.started_at, tick)}
+              Blocked for {duration(chosen.open_session.started_at)}
             </p>
           )}
-          {chosen.latest_observation && !scrubbing && (
+          {chosen.latest_observation && (
             <p class="reason">
               {chosen.latest_observation.reason} (confidence{" "}
               {Math.round(chosen.latest_observation.confidence * 100)}%)
             </p>
           )}
-          {(() => {
-            const a = analytics?.available
-              ? analytics.crossings[chosen.crossing_id]
-              : undefined;
-            if (!a || a.blocked_share === null) return null;
-            const worst = worstHours(a);
-            const day = hourOfDay(a);
-            const localHour = Number(
-              new Date().toLocaleString("en-US", {
-                timeZone: analytics!.local_tz ?? "America/Los_Angeles",
-                hour: "numeric",
-                hour12: false,
-              }),
-            ) % 24;
-            return (
-              <div class="habits">
-                <p class="data habit-line">
-                  blocked {percent(a.blocked_share)} of checks · ~
-                  {Math.round(a.minutes_per_day)} min/day
-                  {worst && <> · worst {worst}</>}
-                  {" · "}
-                  <a href="/patterns/">patterns</a>
-                </p>
-                {/* One day in 24 cells: the crossing's habit at a glance. */}
-                <div class="hourstrip" aria-label="Typical blockage share by hour">
-                  {day.map((slot, h) => (
-                    <span
-                      class={`hs-cell ${h === localHour ? "hs-now" : ""}`}
-                      style={
-                        share(slot) > 0
-                          ? `background: color-mix(in srgb, var(--signal-red) ${Math.round(
-                              18 + 82 * Math.min(1, share(slot) * 2),
-                            )}%, var(--panel))`
-                          : undefined
-                      }
-                      title={`${h}:00 - ${
-                        slot.scoreable
-                          ? `train in ${slot.blocked} of ${slot.scoreable} checks`
-                          : "no checks yet"
-                      }`}
-                    />
-                  ))}
-                </div>
-                <div class="hourticks data" aria-hidden="true">
-                  <span>12A</span><span>6A</span><span>12P</span><span>6P</span><span>12A</span>
-                </div>
-              </div>
-            );
-          })()}
+          <Habits crossingId={chosen.crossing_id} analytics={analytics} />
           <div class="cameras">
             {chosen.cameras.map((cam) => (
               <figure key={cam.camera_id}>
@@ -389,10 +365,62 @@ export default function LiveBoard() {
   );
 }
 
-function stateLine(c: Crossing, _tick: number): string {
+/** The crossing's habit at a glance: the summary line and one day in 24 cells. */
+function Habits({
+  crossingId,
+  analytics,
+}: {
+  crossingId: string;
+  analytics: AnalyticsResponse | null;
+}) {
+  if (!analytics?.available) return null;
+  const a = analytics.crossings[crossingId];
+  if (!a || a.blocked_share === null) return null;
+  const worst = worstHours(a);
+  const day = hourOfDay(a);
+  const localHour =
+    Number(
+      new Date().toLocaleString("en-US", {
+        timeZone: analytics.local_tz ?? "America/Los_Angeles",
+        hour: "numeric",
+        hour12: false,
+      }),
+    ) % 24;
+  return (
+    <div class="habits">
+      <p class="data habit-line">
+        blocked {percent(a.blocked_share)} of checks · ~
+        {Math.round(a.minutes_per_day)} min/day
+        {worst && <> · worst {worst}</>}
+        {" · "}
+        <a href="/patterns/">patterns</a>
+      </p>
+      <div class="hourstrip" aria-label="Typical blockage share by hour">
+        {day.map((slot, h) => (
+          <span
+            class={`hs-cell ${h === localHour ? "hs-now" : ""}`}
+            style={heat(slot)}
+            title={`${h}:00 - ${
+              slot.scoreable
+                ? `train in ${slot.blocked} of ${slot.scoreable} checks`
+                : "no checks yet"
+            }`}
+          />
+        ))}
+      </div>
+      <div class="hourticks data" aria-hidden="true">
+        {[0, 6, 12, 18, 24].map((h) => (
+          <span>{hourLabel(h)}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function stateLine(c: Crossing): string {
   if (c.stale) return "no recent signal";
   if (c.state === "BLOCKED" && c.open_session) {
-    return `blocked ${duration(c.open_session.started_at, _tick)}`;
+    return `blocked ${duration(c.open_session.started_at)}`;
   }
   if (c.since) {
     return `${c.state.toLowerCase()} since ${new Date(c.since).toLocaleTimeString()}`;
@@ -400,7 +428,7 @@ function stateLine(c: Crossing, _tick: number): string {
   return c.state.toLowerCase();
 }
 
-function duration(startIso: string, _tick: number): string {
+function duration(startIso: string): string {
   const seconds = Math.max(0, Math.floor((Date.now() - new Date(startIso).getTime()) / 1000));
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
@@ -411,8 +439,6 @@ const css = `
 .board svg { width: 100%; height: auto; display: block; }
 .board .street { fill: var(--muted); font-family: var(--data); font-size: 11px; letter-spacing: 0.1em; }
 .board .label { fill: var(--crossbuck); font-family: var(--display); font-size: 20px; letter-spacing: 0.04em; text-transform: uppercase; }
-.pulse { animation: pulse 2.4s ease-in-out infinite; }
-@keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.45 } }
 
 .scrub { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; padding: 0.5rem 0 1rem; }
 .scrub .track { flex: 1; min-width: 0; }
@@ -459,5 +485,4 @@ const css = `
 .cameras img { width: 100%; border-radius: 4px; border: 1px solid var(--hairline); }
 .cameras .noframe { aspect-ratio: 4/3; display: grid; place-items: center; color: var(--muted); border: 1px dashed var(--hairline); border-radius: 4px; }
 .cameras figcaption { color: var(--muted); font-size: 0.85rem; margin-top: 0.35rem; }
-.loading { color: var(--muted); }
 `;

@@ -1,46 +1,12 @@
 ---
-import "../styles/global.css";
-import Masthead from "../components/Masthead.astro";
 import LiveBoard from "../components/LiveBoard";
+import Page from "../layouts/Page.astro";
 ---
 
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Blockade - SE Portland crossings</title>
-    <meta
-      name="description"
-      content="Is a train blocking the crossing right now? Live status for the SE Portland rail crossings at 8th, Clinton, and Milwaukie."
-    />
-  </head>
-  <body>
-    <Masthead active="board" />
-    <main>
-      <LiveBoard client:load />
-    </main>
-    <footer>
-      <p>
-        Detection from public ODOT/PBOT traffic cameras on the Brooklyn
-        Subdivision. States are automated estimates, not official information.
-      </p>
-    </footer>
-
-    <style>
-      main {
-        max-width: 1100px;
-        margin: 0 auto;
-        padding: 1rem 1.5rem;
-      }
-      footer {
-        max-width: 1100px;
-        margin: 2rem auto 0;
-        padding: 1rem 1.5rem;
-        border-top: 1px solid var(--hairline);
-        color: var(--muted);
-        font-size: 0.8rem;
-      }
-    </style>
-  </body>
-</html>
+<Page
+  title="Blockade - SE Portland crossings"
+  description="Is a train blocking the crossing right now? Live status for the SE Portland rail crossings at 8th, Clinton, and Milwaukie."
+  active="board"
+>
+  <LiveBoard client:load />
+</Page>
