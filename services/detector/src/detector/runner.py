@@ -47,6 +47,14 @@ app = typer.Typer(help="Detection: frames to observations.", no_args_is_help=Tru
 DEFAULT_OUTPUT = Path("var/observations/observations.jsonl")
 
 
+def _utc(stamp: str) -> datetime:
+    """Frame timestamps are always UTC-aware. A naive bound would raise on
+    comparison, and silently assuming local time would quietly select the
+    wrong window."""
+    cutoff = datetime.fromisoformat(stamp)
+    return cutoff if cutoff.tzinfo else cutoff.replace(tzinfo=UTC)
+
+
 class Scorer:
     """One scoring path for both entrypoints.
 
@@ -113,24 +121,24 @@ def read_manifests(manifest_dir: Path, camera_id: str | None = None) -> list[Fra
 def scan(
     camera: str = typer.Option("", help="Limit to one camera id."),
     since: str = typer.Option("", help="ISO timestamp; only frames at or after it."),
+    until: str = typer.Option("", help="ISO timestamp; only frames strictly before it."),
     output: Path = typer.Option(DEFAULT_OUTPUT, help="Where to write observations."),
 ) -> None:
     """Score frames from the manifest and write observations as JSONL.
 
     The replay path: rerun this after any detector change to regenerate the
     record from frames that were kept precisely so it could be regenerated.
+    --since/--until bound the window, which is what makes the output loadable
+    as a backfill: `blockade-api backfill` refuses windows that reach into
+    the live streaming edge.
     """
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     settings = get_settings()
     records = read_manifests(settings.manifest_dir, camera or None)
     if since:
-        cutoff = datetime.fromisoformat(since)
-        if cutoff.tzinfo is None:
-            # Frame timestamps are always UTC-aware. A naive --since would raise
-            # on comparison, and silently assuming local time would quietly
-            # select the wrong window.
-            cutoff = cutoff.replace(tzinfo=UTC)
-        records = [r for r in records if r.captured_at >= cutoff]
+        records = [r for r in records if r.captured_at >= _utc(since)]
+    if until:
+        records = [r for r in records if r.captured_at < _utc(until)]
 
     observations = score_frames(records, settings)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -251,9 +259,7 @@ def spotcheck(
     frames_dir: Path = typer.Option(..., help="Root holding {camera_id}/**/*.jpg frames."),
     stride_minutes: int = typer.Option(15, help="Coarse sampling stride per camera."),
     camera: str = typer.Option("", help="Limit to one camera id."),
-    labels: Path = typer.Option(
-        Path("data/labels/labels.jsonl"), help="Label file to append to."
-    ),
+    labels: Path = typer.Option(Path("data/labels/labels.jsonl"), help="Label file to append to."),
 ) -> None:
     """Grow the label set: VLM spot-checks at a stride, walks blockage edges.
 
@@ -310,9 +316,7 @@ def spotcheck(
             already_labeled=already_labeled,
             object_key_for=object_key_for,
         )
-        records = [
-            label_record(cam, v, object_key_for(v.path), vlm.version) for v in verdicts
-        ]
+        records = [label_record(cam, v, object_key_for(v.path), vlm.version) for v in verdicts]
         added = append_labels(records, labels)
         blocked = sum(1 for v in verdicts if v.state.value == "BLOCKED")
         typer.echo(
