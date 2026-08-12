@@ -10,7 +10,7 @@ What lives here and why:
 - `sessions.py` - the batch sessionizer, kept as the oracle the streaming path is diffed against.
 - `stream_sessions.py` - the streaming sessionizer the sessionizer service hosts; proven equivalent to the oracle.
 - `alerts.py` - rising-edge alerting: fire once at the front of a train, stay quiet after.
-- `storage.py`, `bus.py`, `config.py` - S3/manifests, Kafka producer/consumer/tailer, settings.
+- `storage.py`, `bus.py`, `config.py` - S3/manifests, Kafka producer/consumer/tailer/offsets, settings.
 - `api/` - serving-layer logic: response models and the live-state reducer (`LiveState`) that the API service hosts.
 
 Logic lives here, plain and unit-tested; the services stay thin shells around it.

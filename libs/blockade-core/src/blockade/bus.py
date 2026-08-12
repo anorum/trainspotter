@@ -9,7 +9,7 @@ only reason a consumer may assume it sees a camera's frames in order.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer, ConsumerRecord, TopicPartition
 
@@ -151,7 +151,12 @@ class TopicTailer:
         if not partitions:
             raise RuntimeError(f"no partitions assigned for topic {self._topic}")
         self._boot_end_offsets = await self._consumer.end_offsets(partitions)
-        self._positions = {tp: 0 for tp in partitions}
+        # Seeded from the log start rather than from zero. A partition whose
+        # records have all aged out of retention has log-start == log-end and
+        # will never hand back a record to advance a zero seed, so ``caught_up``
+        # would stay False forever - for the whole tailer, since it is an
+        # ``all()``. One silent crossing must not hold the others hostage.
+        self._positions = await self._consumer.beginning_offsets(partitions)
 
     async def stop(self) -> None:
         if self._consumer is not None:
@@ -168,6 +173,94 @@ class TopicTailer:
         return records
 
     @property
+    def boot_end_offsets(self) -> dict[TopicPartition, int]:
+        """The head of each partition as it stood at start.
+
+        The line ``caught_up`` measures against, and the only description of
+        "everything that already existed when this process began" any consumer
+        of the tail can get.
+        """
+        return dict(self._boot_end_offsets)
+
+    @property
     def caught_up(self) -> bool:
         """True once every partition has passed the end offset seen at start."""
         return all(self._positions.get(tp, 0) >= end for tp, end in self._boot_end_offsets.items())
+
+
+class GroupProgress:
+    """How far a replaying consumer has already published, kept as group offsets.
+
+    A ``TopicTailer`` re-reads its whole topic every boot, which is how state
+    rebuilds - but re-deriving history and re-announcing it are different acts.
+    A service that produces downstream records from what it tails needs to know
+    which of the records it is replaying it has already acted on, or every
+    restart republishes the past over whatever has since corrected it: the
+    backfill path re-derives history and deletes the sessions it supersedes,
+    and a boot that republished them would put the superseded rows back.
+
+    A consumer group's committed offset is exactly that bookkeeping, so this
+    keeps one without joining the group. Partitions are handed in by the tailer
+    that already self-assigned them, so there is no coordination, no rebalance,
+    and no second copy of the partition-discovery problem ``TopicTailer``
+    documents. The offset describes published output only; what to read is
+    still the whole log.
+
+    A group with no committed offsets starts at the boot end offsets. A first
+    deployment inherits a topic whose history was already published by whatever
+    ran before it, so none of that history is this process's to announce.
+    """
+
+    def __init__(self, bootstrap: str, group_id: str, client_id: str) -> None:
+        self._bootstrap = bootstrap
+        self._group_id = group_id
+        self._client_id = client_id
+        self._consumer: AIOKafkaConsumer | None = None
+        self._boundary: dict[TopicPartition, int] = {}
+        self._positions: dict[TopicPartition, int] = {}
+
+    async def start(self, boot_end_offsets: Mapping[TopicPartition, int]) -> None:
+        """Assign the tailer's partitions and read where the group left off."""
+        self._consumer = AIOKafkaConsumer(
+            bootstrap_servers=self._bootstrap,
+            client_id=self._client_id,
+            group_id=self._group_id,
+            enable_auto_commit=False,
+        )
+        await self._consumer.start()
+        # assign() rather than subscribe(): with a group_id this is aiokafka's
+        # simple-consumer mode - offsets are stored and fetched, but the
+        # consumer never joins the group, so it cannot be rebalanced away from
+        # the partitions the tailer is actually reading.
+        self._consumer.assign(list(boot_end_offsets))
+        for tp, end in boot_end_offsets.items():
+            committed = await self._consumer.committed(tp)
+            self._boundary[tp] = end if committed is None else committed
+        self._positions = dict(self._boundary)
+
+    async def stop(self) -> None:
+        if self._consumer is not None:
+            await self._consumer.stop()
+
+    def published(self, record: ConsumerRecord) -> bool:
+        """True if an earlier life already emitted this record's consequences."""
+        tp = TopicPartition(record.topic, record.partition)
+        return record.offset < self._boundary.get(tp, 0)
+
+    async def commit(self, records: Iterable[ConsumerRecord]) -> None:
+        """Mark a batch as published. Callers await their producer acks first,
+        so the committed offset never runs ahead of durable output - the same
+        barrier ``RecordConsumer`` documents.
+
+        Monotonic: replaying a record from below the boundary cannot walk the
+        committed offset backwards.
+        """
+        advanced: dict[TopicPartition, int] = {}
+        for record in records:
+            tp = TopicPartition(record.topic, record.partition)
+            position = record.offset + 1
+            if position > self._positions.get(tp, 0):
+                self._positions[tp] = position
+                advanced[tp] = position
+        if advanced and self._consumer is not None:
+            await self._consumer.commit(advanced)

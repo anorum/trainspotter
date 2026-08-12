@@ -15,6 +15,17 @@ split any session that spanned it. Session emissions are idempotent
 (deterministic session_id, compacted topic, upserts downstream), so replay
 converges rather than duplicating.
 
+Replaying is not republishing, though. Batch owns history: a re-scored window
+is loaded by deleting the sessions it supersedes and inserting the new
+derivation, so a boot that re-announced every session it re-derived would put
+the superseded ones straight back. So a ``GroupProgress`` bookkeeper carries a
+committed offset alongside the tail - not to decide what to read, which is
+always everything, but to mark what this service has already published.
+Records below it rebuild state in silence; records at or past it - which is
+exactly what arrived while the pod was down - emit as usual, so an outage's
+closes and alerts are not lost. The offset advances only after the broker has
+acked the batch's output.
+
 Two timing rules replace the watermark:
 
 - **Close on silence only when silence is provable.** A gap deadline fires
@@ -23,9 +34,10 @@ Two timing rules replace the watermark:
   Wall clock alone would close sessions early while draining a backlog whose
   event times lag; head-of-topic alone would never close a quiet night.
 - **Replayed history must not re-alert.** During boot replay, a rising edge
-  is produced only if it is fresher than the alert freshness window - so a
-  restart never re-announces last week, but a train that arrived during the
-  outage still gets its alert.
+  is produced only if it is fresher than the alert freshness window. This sits
+  on top of the published-offset boundary and catches what that cannot: after
+  a long outage every buried edge is unpublished and past the boundary, and
+  only the recent one is still worth a page.
 """
 
 from __future__ import annotations
@@ -39,7 +51,7 @@ from datetime import UTC, datetime, timedelta
 
 import typer
 from blockade.alerts import Alert, RisingEdgeAlerter
-from blockade.bus import RecordProducer, TopicTailer
+from blockade.bus import GroupProgress, RecordProducer, TopicTailer
 from blockade.config import Settings, get_settings
 from blockade.schemas import BlockageSession, ObservationRecord
 from blockade.stream_sessions import SessionizerState, StreamingSessionizer
@@ -130,10 +142,17 @@ async def run_loop(
     tailer: TopicTailer,
     producer: RecordProducer,
     processor: Processor,
+    progress: GroupProgress,
     settings: Settings,
     stop: asyncio.Event,
 ) -> None:
-    """Tail, decide, produce, repeat. No offset commits: replay is the recovery."""
+    """Tail, decide, produce, commit, repeat.
+
+    The tail is the whole log every boot; the group offset says how much of it
+    this service has already published. Both halves of a record's consequences
+    - the session records and the alert - are suppressed below that line, and
+    the line moves only once the broker has acked what the batch produced.
+    """
     while not stop.is_set():
         # Sampled before the fetch, because get_batch() advances the tailer's
         # positions as it returns records: the batch that crosses the boot end
@@ -151,6 +170,8 @@ async def run_loop(
                 log.error("unparseable observation at %s:%s", message.partition, message.offset)
                 continue
             emitted, alert = processor.observe(obs, was_caught_up, now)
+            if progress.published(message):
+                continue
             sessions.extend(emitted)
             if alert is not None:
                 alerts.append(alert)
@@ -170,6 +191,7 @@ async def run_loop(
             for a in alerts
         ]
         await RecordProducer.await_acks(futures)
+        await progress.commit(batch)
         EMITTED.labels("session").inc(len(sessions))
         EMITTED.labels("alert").inc(len(alerts))
         OPEN_SESSIONS.set(processor.open_count)
@@ -183,6 +205,11 @@ async def _serve(settings: Settings) -> None:
         settings.kafka_observations_topic,
         client_id="blockade-sessionizer",
     )
+    progress = GroupProgress(
+        settings.kafka_bootstrap,
+        group_id="blockade-sessionizer",
+        client_id="blockade-sessionizer-offsets",
+    )
     producer = RecordProducer(settings.kafka_bootstrap, client_id="blockade-sessionizer")
 
     stop = asyncio.Event()
@@ -192,6 +219,7 @@ async def _serve(settings: Settings) -> None:
             loop.add_signal_handler(sig, stop.set)
 
     await tailer.start()
+    await progress.start(tailer.boot_end_offsets)
     await producer.start()
     log.info(
         "replaying %s -> %s + %s",
@@ -200,9 +228,10 @@ async def _serve(settings: Settings) -> None:
         settings.kafka_alerts_topic,
     )
     try:
-        await run_loop(tailer, producer, Processor(), settings, stop)
+        await run_loop(tailer, producer, Processor(), progress, settings, stop)
     finally:
         await producer.stop()
+        await progress.stop()
         await tailer.stop()
     log.info("shutdown complete")
 

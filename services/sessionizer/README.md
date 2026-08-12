@@ -9,7 +9,12 @@ At three crossings and one observation every couple of minutes, Flink's price - 
 State is a pure function of the observations log, so recovery is replay: every boot re-reads the topic from the beginning (groupless, the same `TopicTailer` pattern the API uses) and rebuilds open sessions with their original `started_at`.
 Session emissions are idempotent - deterministic `session_id`, compacted topic, upserted in Postgres - so replay converges instead of duplicating.
 
+Replaying the log is not the same as republishing it, though, and the difference matters because batch owns history: loading a re-scored window deletes the sessions it supersedes, and a boot that re-announced every session it re-derived would put those back.
+So a committed group offset rides alongside the tail - it decides nothing about what to read, only about what has already been published.
+Records below it rebuild state in silence; records at or past it emit as usual, which is exactly what arrived while the pod was down.
+The offset advances only after the broker acks the batch's output, the same at-least-once barrier as everywhere else on the bus.
+
 Timing discipline, replacing Flink's watermark:
 
 - A session closes only when wall clock has passed its gap deadline plus the out-of-orderness allowance, and the consumer is at the head of the topic - so a backlog drain can never close a session while older frames are still in flight.
-- Alerts are suppressed during boot replay unless the rising edge is fresh, so a restart never re-announces history but still announces a train that arrived during the outage.
+- Alerts are suppressed during boot replay unless the rising edge is fresh. That sits on top of the published-offset boundary and catches what it cannot: after a long outage every buried edge is unpublished, and only the recent one is still worth a page.

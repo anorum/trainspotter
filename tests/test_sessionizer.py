@@ -9,6 +9,8 @@ this file pins is the hosting discipline that used to be Flink's job:
   original started_at and session_id - the property the Flink deployment's
   stateless upgrades did NOT have,
 - replayed history never re-alerts, but an edge fresh enough to matter does,
+- records below the published-offset boundary build state and emit nothing,
+  so a boot cannot restore sessions a backfill deleted,
 - the loop produces sessions keyed by session_id and survives poison messages.
 """
 
@@ -127,23 +129,43 @@ def test_replayed_history_does_not_realert_but_a_fresh_edge_does() -> None:
     assert [a.crossing_id for a in alerts] == ["SE_8TH_DIVISION"]
 
 
+TOPIC = "crossing.observations.v1"
+
+
 @dataclass
 class FakeMessage:
     value: bytes
-    partition: int = 0
     offset: int = 0
+    topic: str = TOPIC
+    partition: int = 0
+
+
+def messages(observations: list[ObservationRecord], first_offset: int = 0) -> list[FakeMessage]:
+    return [
+        FakeMessage(o.model_dump_json().encode(), offset)
+        for offset, o in enumerate(observations, start=first_offset)
+    ]
 
 
 class FakeTailer:
-    def __init__(self, batches: list[list[FakeMessage]]) -> None:
+    """Reaches the head *inside* a batch, exactly like the real one.
+
+    ``TopicTailer.get_batch`` advances its positions as it returns records, so
+    the batch that crosses the boot end offsets already reports ``caught_up``
+    by the time it lands - while every record in it is still replayed history.
+    """
+
+    def __init__(self, batches: list[list[FakeMessage]], caught_up: bool = True) -> None:
         self._batches = batches
-        self.caught_up = True
+        self.caught_up = caught_up
 
     async def get_batch(self, timeout_ms: int = 1000):  # noqa: ARG002
         # The real tailer awaits the broker; without this yield the loop under
         # test would spin without ever letting the stop task run.
         await asyncio.sleep(0)
-        return self._batches.pop(0) if self._batches else []
+        batch = self._batches.pop(0) if self._batches else []
+        self.caught_up = True
+        return batch
 
 
 class FakeProducer:
@@ -157,29 +179,54 @@ class FakeProducer:
         return fut
 
 
-@pytest.mark.asyncio
-async def test_loop_produces_sessions_keyed_by_session_id_and_skips_poison() -> None:
-    """One qualified session flows out keyed for compaction; a poison message
-    is logged and skipped rather than wedging the loop; and the empty poll at
-    the head sweeps the long-stale deadline closed - these observations are
-    days old against wall clock, exactly like a boot replay."""
-    blocked = [obs(m, CrossingState.BLOCKED) for m in range(0, 9, 3)]
-    messages = [FakeMessage(o.model_dump_json().encode()) for o in blocked]
-    messages.insert(1, FakeMessage(b"not json"))
+class FakeProgress:
+    """The published-offset boundary. ``GroupProgress`` and its derivation from
+    committed offsets are pinned in test_group_progress.py; here it is just the
+    line the loop is expected to respect."""
 
-    tailer = FakeTailer([messages, []])
-    producer = FakeProducer()
+    def __init__(self, boundary: int = 0) -> None:
+        self._boundary = boundary
+        self.committed: int | None = None
+
+    def published(self, record: FakeMessage) -> bool:
+        return record.offset < self._boundary
+
+    async def commit(self, records: list[FakeMessage]) -> None:
+        for record in records:
+            self.committed = max(self.committed or 0, record.offset + 1)
+
+
+async def drain(
+    tailer: FakeTailer, producer: FakeProducer, progress: FakeProgress, settings: Settings
+) -> None:
     stop = asyncio.Event()
 
     async def stop_soon():
         await asyncio.sleep(0.05)
         stop.set()
 
-    settings = Settings(kafka_bootstrap="test:9092")
     await asyncio.gather(
-        run_loop(tailer, producer, Processor(), settings, stop),  # type: ignore[arg-type]
+        run_loop(tailer, producer, Processor(), progress, settings, stop),  # type: ignore[arg-type]
         stop_soon(),
     )
+
+
+def produced(producer: FakeProducer, topic: str) -> list[dict]:
+    return [json.loads(value) for sent_to, _, value in producer.sent if sent_to == topic]
+
+
+@pytest.mark.asyncio
+async def test_loop_produces_sessions_keyed_by_session_id_and_skips_poison() -> None:
+    """One qualified session flows out keyed for compaction; a poison message
+    is logged and skipped rather than wedging the loop; and the empty poll at
+    the head sweeps the long-stale deadline closed - these observations are
+    days old against wall clock, exactly like a boot replay."""
+    batch = messages([obs(m, CrossingState.BLOCKED) for m in range(0, 9, 3)])
+    batch.insert(1, FakeMessage(b"not json", offset=99))
+
+    producer = FakeProducer()
+    settings = Settings(kafka_bootstrap="test:9092")
+    await drain(FakeTailer([batch, []]), producer, FakeProgress(), settings)
 
     session_records = [s for s in producer.sent if s[0] == settings.kafka_sessions_topic]
     assert session_records, "a qualified session must be produced"
@@ -188,25 +235,6 @@ async def test_loop_produces_sessions_keyed_by_session_id_and_skips_poison() -> 
     emissions = [json.loads(v)["is_open"] for _, _, v in session_records]
     assert emissions[0] is True, "the session is announced open as soon as it qualifies"
     assert emissions[-1] is False, "the head-of-topic sweep closes the stale session"
-
-
-class HeadCrossingTailer:
-    """A tailer that reaches the head *inside* a batch, like the real one.
-
-    ``TopicTailer.get_batch`` advances its positions as it returns records, so
-    the batch that crosses the boot end offsets already reports ``caught_up``
-    by the time it lands - while every record in it is still replayed history.
-    """
-
-    def __init__(self, batches: list[list[FakeMessage]]) -> None:
-        self._batches = batches
-        self.caught_up = False
-
-    async def get_batch(self, timeout_ms: int = 1000):  # noqa: ARG002
-        await asyncio.sleep(0)
-        batch = self._batches.pop(0) if self._batches else []
-        self.caught_up = True
-        return batch
 
 
 @pytest.mark.asyncio
@@ -218,28 +246,57 @@ async def test_the_batch_that_crosses_the_head_is_still_replay() -> None:
     days ago to everyone holding a pager."""
     replayed = [obs(m, CrossingState.BLOCKED) for m in (0, 3)]
     live = [obs(m, CrossingState.BLOCKED, crossing="SE_8TH_DIVISION") for m in (0, 3)]
-    tailer = HeadCrossingTailer(
-        [
-            [FakeMessage(o.model_dump_json().encode()) for o in replayed],
-            [FakeMessage(o.model_dump_json().encode()) for o in live],
-        ]
+    tailer = FakeTailer(
+        [messages(replayed), messages(live, first_offset=len(replayed))], caught_up=False
     )
+
     producer = FakeProducer()
-    stop = asyncio.Event()
-
-    async def stop_soon():
-        await asyncio.sleep(0.05)
-        stop.set()
-
     settings = Settings(kafka_bootstrap="test:9092")
-    await asyncio.gather(
-        run_loop(tailer, producer, Processor(), settings, stop),  # type: ignore[arg-type]
-        stop_soon(),
+    await drain(tailer, producer, FakeProgress(), settings)
+
+    alerted = [a["crossing_id"] for a in produced(producer, settings.kafka_alerts_topic)]
+    assert alerted == ["SE_8TH_DIVISION"]
+
+
+@pytest.mark.asyncio
+async def test_records_below_the_boundary_build_state_but_publish_nothing() -> None:
+    """The backfill guard. Everything up to the committed offset was already
+    published in a previous life, and republishing it would restore sessions a
+    re-scored window deliberately deleted - so those records feed the
+    sessionizer and emit nothing. State is still theirs: the one record past
+    the boundary announces a session that started five observations earlier,
+    with the started_at only the replayed records could supply."""
+    blocked = [obs(m, CrossingState.BLOCKED) for m in range(0, 15, 3)]
+    producer = FakeProducer()
+    settings = Settings(kafka_bootstrap="test:9092")
+
+    progress = FakeProgress(boundary=len(blocked) - 1)
+    await drain(FakeTailer([messages(blocked), []]), producer, progress, settings)
+
+    sessions = produced(producer, settings.kafka_sessions_topic)
+    assert [s["is_open"] for s in sessions] == [True, False], (
+        "only the record at the boundary announces, and the head sweep closes it"
+    )
+    assert datetime.fromisoformat(sessions[0]["started_at"]) == blocked[0].captured_at
+    assert sessions[0]["duration_seconds"] == 12 * 60
+    assert progress.committed == len(blocked), "the boundary advances past what was acked"
+
+
+@pytest.mark.asyncio
+async def test_a_fresh_group_republishes_no_history() -> None:
+    """First deployment against a topic full of retained observations. Someone
+    published those sessions already - the boundary starts at the head, so the
+    replay rebuilds state in silence and pages nobody. All that reaches the bus
+    is the close of the run still open at the head, which is the live edge this
+    service owns."""
+    blocked = [obs(m, CrossingState.BLOCKED) for m in range(0, 15, 3)]
+    producer = FakeProducer()
+    settings = Settings(kafka_bootstrap="test:9092")
+
+    await drain(
+        FakeTailer([messages(blocked), []]), producer, FakeProgress(boundary=len(blocked)), settings
     )
 
-    alerted = [
-        json.loads(v)["crossing_id"]
-        for topic, _, v in producer.sent
-        if topic == settings.kafka_alerts_topic
-    ]
-    assert alerted == ["SE_8TH_DIVISION"]
+    assert produced(producer, settings.kafka_alerts_topic) == []
+    sessions = produced(producer, settings.kafka_sessions_topic)
+    assert [s["is_open"] for s in sessions] == [False]
