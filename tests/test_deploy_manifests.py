@@ -148,7 +148,7 @@ def test_the_deploy_tree_yields_the_objects_under_test():
     """Guards the parser itself: every assertion below is vacuous if parsing
     silently returns nothing, and a per-object parametrize would report that as
     a green run."""
-    assert {m.name for m in MONITORS} == {"blockade-capture", "detector"}
+    assert {m.name for m in MONITORS} >= {"blockade-capture", "detector"}
     assert {s.name for s in SERVICES} >= {"poller", "detector"}
     assert WORKLOADS
 

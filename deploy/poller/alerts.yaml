@@ -52,7 +52,11 @@ spec:
         # the failure the other rules are structurally unable to see.
         - alert: BlockadePollerMetricsMissing
           expr: absent(blockade_last_new_frame_timestamp)
-          for: 5m
+          # The same 15-minute budget the stall rules allow, spent here entirely
+          # on `for`: absent() is true the instant the series go, and a Recreate
+          # rollout of a single replica pulling :latest onto a Pi is a legitimate
+          # gap. Below this a routine deploy pages critical.
+          for: 15m
           labels:
             severity: critical
           annotations:
