@@ -45,6 +45,23 @@ spec:
               Points at the poller, the network, or a revoked key rather than a
               single camera fault.
 
+        # Every rule above is a threshold over a poller metric, so all four go
+        # quiet together the moment those series stop existing -- a dead pod, a
+        # crash loop, a scrape that never matched. `absent` is the only form
+        # that fires on nothing: it holds when the metric is missing, which is
+        # the failure the other rules are structurally unable to see.
+        - alert: BlockadePollerMetricsMissing
+          expr: absent(blockade_last_new_frame_timestamp)
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Poller metrics have stopped arriving"
+            description: >-
+              No blockade_last_new_frame_timestamp series exists, so every
+              other capture alert is blind. The poller is down, crash-looping,
+              or no longer being scraped, and frames are being lost for real.
+
         - alert: BlockadeCameraErroring
           expr: blockade_consecutive_errors > 10
           for: 10m
