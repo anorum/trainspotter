@@ -111,6 +111,29 @@ class FramePoller:
         self._manifest = manifest
         self._store = store
         self._cursors: dict[str, CameraCursor] = {c.camera_id: CameraCursor() for c in cameras}
+        self._seed_metrics(cameras)
+
+    @staticmethod
+    def _seed_metrics(cameras: list[Camera]) -> None:
+        """Create every per-camera series at startup rather than on first
+        observation.
+
+        A labelled metric has no series until something touches that label, and
+        an alert threshold over a series that does not exist evaluates to no
+        data -- it stays silent instead of firing. So the cameras most worth
+        alerting on are exactly the ones that never register: one whose first
+        poll dies before any counter is reached leaves
+        `blockade_last_new_frame_timestamp{camera_id=...}` absent forever, and
+        BlockadeCameraStalled has nothing to compare. Seeding the last-new-frame
+        gauge to process start makes that camera breach the same 15-minute
+        threshold a camera that went quiet later would.
+        """
+        started = datetime.now(UTC).timestamp()
+        for camera in cameras:
+            LAST_NEW_FRAME.labels(camera.camera_id).set(started)
+            CONSECUTIVE_ERRORS.labels(camera.camera_id).set(0)
+            for status in FetchStatus:
+                FRAMES.labels(camera.camera_id, status.value)
 
     async def poll_once(self, camera: Camera) -> FrameRecord:
         """Poll a single camera and return the record that was written.

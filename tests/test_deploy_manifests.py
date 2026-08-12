@@ -144,12 +144,24 @@ def _selected_services(monitor: Monitor) -> list[Service]:
     ]
 
 
+def _scraped_services() -> list[Service]:
+    """Only Services a ServiceMonitor selects. A Service fronting pods this repo
+    does not declare -- the Flink operator's REST Service, the Strimzi bootstrap
+    -- has no in-repo workload to resolve its target port against, and holding
+    it to that would be a failure of the guard rather than of the chain."""
+    by_identity = {(s.namespace, s.name): s for m in MONITORS for s in _selected_services(m)}
+    return list(by_identity.values())
+
+
+SCRAPED_SERVICES = _scraped_services()
+
+
 def test_the_deploy_tree_yields_the_objects_under_test():
     """Guards the parser itself: every assertion below is vacuous if parsing
     silently returns nothing, and a per-object parametrize would report that as
     a green run."""
     assert {m.name for m in MONITORS} >= {"blockade-capture", "detector"}
-    assert {s.name for s in SERVICES} >= {"poller", "detector"}
+    assert {s.name for s in SCRAPED_SERVICES} >= {"poller", "detector"}
     assert WORKLOADS
 
 
@@ -172,8 +184,8 @@ def test_every_scraped_endpoint_names_a_published_port(monitor: Monitor):
         )
 
 
-@pytest.mark.parametrize("service", SERVICES, ids=lambda s: f"{s.namespace}-{s.name}")
-def test_every_service_port_lands_on_a_container_port(service: Service):
+@pytest.mark.parametrize("service", SCRAPED_SERVICES, ids=lambda s: f"{s.namespace}-{s.name}")
+def test_every_scraped_service_port_lands_on_a_container_port(service: Service):
     """The far end of the chain: a Service can name a target port no container
     opens, and the failure looks identical to a mismatched selector."""
     pods = [
