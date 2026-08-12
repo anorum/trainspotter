@@ -387,7 +387,7 @@ def derive_band(
 
 def derive_band_from_frames(
     model: ReferenceModel, frames: list[bytes], thresholds: Thresholds | None = None
-) -> TrackBand | None:
+) -> tuple[TrackBand | None, int]:
     """Derive a camera's band from known-BLOCKED frames, via the CLI.
 
     Each frame is compared against its brightness-matched reference exactly as
@@ -395,6 +395,12 @@ def derive_band_from_frames(
     one profile for ``derive_band``. Frames that are unreadable, unfamiliar to
     the references, or the wrong shape are skipped rather than fatal - the
     band needs a majority of usable profiles, not all of them.
+
+    Returns the band alongside how many frames actually contributed a profile.
+    The count is not decoration: the band is written into the camera's
+    reference metadata and changes what every later observation means, so the
+    operator has to see that thirty night frames yielded two profiles rather
+    than reading the band as the verdict of all thirty.
     """
     t = thresholds or model.thresholds or Thresholds()
     profiles = []
@@ -406,7 +412,13 @@ def derive_band_from_frames(
         if ref is None or scene.shape != ref.median.shape:
             continue
         profiles.append(_obstructed_rows(_changed_mask(scene, ref, t), t))
-    return derive_band(profiles)
+    if len(profiles) < len(frames):
+        log.warning(
+            "%s: %d of %d blocked frames unusable (unreadable, unfamiliar lighting, "
+            "or wrong shape); band derived from %d",
+            model.camera_id, len(frames) - len(profiles), len(frames), len(profiles),
+        )
+    return derive_band(profiles), len(profiles)
 
 
 @dataclass

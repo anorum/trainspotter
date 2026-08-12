@@ -154,7 +154,11 @@ def scan(
 
 @app.command()
 def explain(
-    image: Path = typer.Argument(help="Frame to score; camera id inferred from the path."),
+    image: Path = typer.Argument(
+        exists=True,
+        dir_okay=False,
+        help="Frame to score; camera id inferred from the path.",
+    ),
     camera: str = typer.Option("", help="Camera id when the path does not contain one."),
 ) -> None:
     """Score one frame and print the judgement. The debugging path.
@@ -190,7 +194,10 @@ def explain(
 def band(
     camera: str = typer.Argument(help="Camera id, e.g. odot-676."),
     blocked_dir: Path = typer.Option(
-        ..., help="Directory of known-BLOCKED frames for this camera, e.g. data/blocks/odot-676."
+        ...,
+        exists=True,
+        file_okay=False,
+        help="Directory of known-BLOCKED frames for this camera, e.g. data/blocks/odot-676.",
     ),
     write: bool = typer.Option(False, help="Write the band into the camera's reference metadata."),
 ) -> None:
@@ -218,11 +225,11 @@ def band(
         for p in sorted(blocked_dir.iterdir())
         if p.suffix.lower() in (".jpg", ".jpeg", ".png")
     ]
-    derived = derive_band_from_frames(model, frames)
+    derived, used = derive_band_from_frames(model, frames)
     if derived is None:
         typer.secho(
-            f"No band derivable from {len(frames)} frames - too few usable profiles "
-            "(unreadable, unfamiliar lighting, or wrong shape).",
+            f"No band derivable from {len(frames)} frames - {used} usable "
+            "(the rest unreadable, unfamiliar lighting, or wrong shape).",
             fg=typer.colors.RED,
             err=True,
         )
@@ -231,7 +238,7 @@ def band(
     previous = f"{model.band.top}..{model.band.bottom}" if model.band else "none"
     typer.echo(
         f"{camera}: band rows {derived.top}..{derived.bottom} "
-        f"(was {previous}, from {len(frames)} blocked frames)"
+        f"(was {previous}, from {used} of {len(frames)} blocked frames)"
     )
     if write:
         model.band = derived
