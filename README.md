@@ -27,7 +27,7 @@ ODOT/PBOT camera stills
    [capture]        6 cameras, 30s tick, conditional GET, sha256 dedupe
         |           frames to disk + append-only JSONL manifest
         v
-   [detector]       interchangeable: reference | yolo | vlm | classifier
+   [detector]       interchangeable: reference | yolo | vlm | classifier | auto
         |           one ObservationRecord per crossing per tick
         v
    raw observations   BLOCKED / CLEAR / UNKNOWN + confidence
@@ -49,18 +49,19 @@ Image bytes never enter the message bus - object storage plus a reference, alway
 
 ## Detection
 
-Four detectors, all satisfying the same [`Detector`](src/blockade/detect/base.py) protocol and selected by config:
+Five detectors, all satisfying the same [`Detector`](src/blockade/detect/base.py) protocol and selected by config:
 
 | `BLOCKADE_DETECTOR` | What it is | Cost |
 | --- | --- | --- |
-| `reference` (default) | Differencing against a median image of the empty crossing | free |
+| `reference` (library default) | Differencing against a median image of the empty crossing | free |
 | `yolo` | YOLO-World open-vocabulary detection, no training | free, CPU |
 | `vlm` | Claude Haiku reads the scene | ~$0.0003/frame |
 | `classifier` | Per-camera MobileNetV3-small head, trained offline, run as ONNX | free, CPU |
+| `auto` (deployed) | Per-camera router: `classifier` where `references/` has a trained model, `reference` everywhere else | free, CPU |
 
 Which is best is an open question that only more data answers, so swapping is a config change and every row records the `detector_version` that produced it.
 Rows from different detectors are never silently mixed.
-`classifier` is registered but stays inert until a trained model for a given camera beats `reference` on the held-out gold labels; without a model on disk it answers `UNKNOWN` rather than guessing.
+`auto` exists because the detector knob is global but the truth is per camera - flipping the whole fleet to `classifier` would turn every untrained camera into permanent `UNKNOWN`, so the router ships the trained model only where one exists on disk and falls back to `reference` otherwise.
 
 **`UNKNOWN` is a first-class answer.**
 A dark camera, a decode failure, or an unfamiliar lighting condition is a gap in coverage, which the dataset can record honestly.
