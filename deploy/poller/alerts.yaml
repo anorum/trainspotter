@@ -7,7 +7,7 @@ metadata:
 spec:
   selector:
     matchLabels:
-      app: blockade-capture
+      app: poller
   endpoints:
     - port: metrics
       interval: 30s
