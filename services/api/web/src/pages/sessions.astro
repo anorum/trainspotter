@@ -1,7 +1,7 @@
 ---
 import "../styles/global.css";
 import Masthead from "../components/Masthead.astro";
-import LiveBoard from "../components/LiveBoard";
+import SessionLog from "../components/SessionLog";
 ---
 
 <!doctype html>
@@ -9,16 +9,16 @@ import LiveBoard from "../components/LiveBoard";
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Blockade - SE Portland crossings</title>
+    <title>Train sheet - Blockade</title>
     <meta
       name="description"
-      content="Is a train blocking the crossing right now? Live status for the SE Portland rail crossings at 8th, Clinton, and Milwaukie."
+      content="Every recorded train blockage at the SE Portland crossings, with the camera frames that saw it."
     />
   </head>
   <body>
-    <Masthead active="board" />
+    <Masthead active="log" />
     <main>
-      <LiveBoard client:load />
+      <SessionLog client:load />
     </main>
     <footer>
       <p>

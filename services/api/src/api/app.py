@@ -14,7 +14,7 @@ from pathlib import Path
 
 from blockade.api.state import LiveState
 from blockade.config import Settings, get_settings, load_roster
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -119,13 +119,34 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         )
 
     @app.get("/api/v1/timeline")
-    async def timeline(crossing_id: str, hours: int = 24) -> dict:
+    async def timeline(
+        crossing_id: str,
+        hours: int = 24,
+        from_: str | None = Query(default=None, alias="from"),
+        to: str | None = Query(default=None, alias="to"),
+    ) -> dict:
         """Postgres-backed over all history when configured (latest detector
-        version wins per instant); the in-memory window otherwise."""
+        version wins per instant); the in-memory window otherwise.
+
+        `from`/`to` (ISO timestamps) bound the range exactly - the sessions
+        page uses them to pull the frames inside one session - and take
+        precedence over `hours`, which remains the trailing-window shorthand
+        the scrubber uses.
+        """
         from datetime import UTC, datetime, timedelta
 
-        end = datetime.now(UTC)
-        start = end - timedelta(hours=hours if settings.database_url else min(hours, 7 * 24))
+        def parse(stamp: str) -> datetime:
+            try:
+                parsed = datetime.fromisoformat(stamp)
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=f"bad timestamp: {stamp}") from exc
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+        end = parse(to) if to else datetime.now(UTC)
+        if from_:
+            start = parse(from_)
+        else:
+            start = end - timedelta(hours=hours if settings.database_url else min(hours, 7 * 24))
         if settings.database_url and "pool" in pool_holder:
             from api import db as dbmod
 
