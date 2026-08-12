@@ -128,7 +128,7 @@ Budget roughly 100 MB/day.
 `blockade-sync` uploads everything captured in the meantime once a bucket exists, so nothing is lost by deferring.
 
 On macOS, [deploy/local/com.blockade.capture.plist](deploy/local/com.blockade.capture.plist) runs capture as a LaunchAgent.
-It only runs while you are logged in and the machine is awake, which is why the durable home is the k3s Deployment in [deploy/capture/](deploy/capture/).
+It only runs while you are logged in and the machine is awake, which is why the durable home is the k3s Deployment in [deploy/poller/](deploy/poller/).
 
 ### Credentials
 
@@ -149,6 +149,7 @@ uv run ruff check .
 ```
 
 Tests run against recorded HTTP fixtures rather than hand-written fakes, and the label set in [data/labels/](data/labels/) records whether each judgement came from visual inspection or from a human observer, because those are not equally authoritative.
+Hand-labeled BLOCKED training frames live in [data/blocks/](data/blocks/), one directory per camera, kept in git for the same reason as the labels: slow to produce, and reproducible from nothing else once ODOT overwrites the image.
 
 ## Licence
 

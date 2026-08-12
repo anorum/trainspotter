@@ -16,10 +16,11 @@ from datetime import UTC, datetime, timedelta
 import httpx
 import pytest
 import respx
-from blockade.config import Camera, Settings
+from blockade.config import Camera, CameraSource, Settings
 from blockade.schemas import CapturedAtSource, FetchStatus, FrameRecord
 from blockade.storage import LocalFrameCache, ManifestWriter, content_hash, frame_key
 from poller.poller import FramePoller
+from prometheus_client import REGISTRY
 
 from tests.conftest import JPEG_A, JPEG_B
 
@@ -250,3 +251,32 @@ async def test_manifest_lines_roundtrip_as_frame_records(
 
     assert len(parsed) == 1
     assert parsed[0] == written
+
+
+def test_every_camera_is_alertable_before_its_first_poll(settings, client, cache, manifest):
+    """A camera whose first poll never reaches a counter -- a bug in the store
+    path, an unwritable cache -- would otherwise have no series at all, and the
+    stall alert would evaluate to no data and stay silent about the camera most
+    worth alerting on. The exported series must exist from construction."""
+    before = datetime.now(UTC).timestamp()
+    cam = Camera(
+        camera_id="odot-unpolled",
+        name="Portland - never answers",
+        crossing_id="SE_12TH_CLINTON",
+        image_url=IMAGE_URL,
+        source=CameraSource.MANUAL,
+        poll_interval_seconds=30.0,
+    )
+
+    FramePoller(settings, [cam], client, cache, manifest, store=None)
+
+    labels = {"camera_id": "odot-unpolled"}
+    stalled_since = REGISTRY.get_sample_value("blockade_last_new_frame_timestamp", labels)
+    assert stalled_since is not None, "no series means the stall threshold cannot fire"
+    assert before <= stalled_since <= datetime.now(UTC).timestamp()
+    assert REGISTRY.get_sample_value("blockade_consecutive_errors", labels) == 0.0
+    for status in FetchStatus:
+        counted = REGISTRY.get_sample_value(
+            "blockade_frames_total", {"camera_id": "odot-unpolled", "status": status.value}
+        )
+        assert counted == 0.0, f"{status.value} has no series to rate against"

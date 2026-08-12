@@ -19,6 +19,9 @@ data/frames/
 *.pt
 weights/
 
+# macOS noise
+.DS_Store
+
 # Credentials
 .env
 .env.*

@@ -7,7 +7,7 @@ metadata:
 spec:
   selector:
     matchLabels:
-      app: blockade-capture
+      app: poller
   endpoints:
     - port: metrics
       interval: 30s
@@ -45,6 +45,27 @@ spec:
               Points at the poller, the network, or a revoked key rather than a
               single camera fault.
 
+        # Every rule above is a threshold over a poller metric, so all four go
+        # quiet together the moment those series stop existing -- a dead pod, a
+        # crash loop, a scrape that never matched. `absent` is the only form
+        # that fires on nothing: it holds when the metric is missing, which is
+        # the failure the other rules are structurally unable to see.
+        - alert: BlockadePollerMetricsMissing
+          expr: absent(blockade_last_new_frame_timestamp)
+          # The same 15-minute budget the stall rules allow, spent here entirely
+          # on `for`: absent() is true the instant the series go, and a Recreate
+          # rollout of a single replica pulling :latest onto a Pi is a legitimate
+          # gap. Below this a routine deploy pages critical.
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Poller metrics have stopped arriving"
+            description: >-
+              No blockade_last_new_frame_timestamp series exists, so every
+              other capture alert is blind. The poller is down, crash-looping,
+              or no longer being scraped, and frames are being lost for real.
+
         - alert: BlockadeCameraErroring
           expr: blockade_consecutive_errors > 10
           for: 10m
@@ -55,10 +76,13 @@ spec:
 
         # A camera whose every poll is a duplicate is either frozen or refreshing
         # far slower than assumed. Both change what the detector should trust.
+        # Errors are excluded from the right operand deliberately: a camera that
+        # only ever fails is served nothing to be a duplicate of, and
+        # BlockadeCameraErroring is the rule that describes it.
         - alert: BlockadeCameraAllDuplicates
           expr: |
             sum by (camera_id) (rate(blockade_frames_total{status="ok"}[1h])) == 0
-            and sum by (camera_id) (rate(blockade_frames_total[1h])) > 0
+            and sum by (camera_id) (rate(blockade_frames_total{status!="error"}[1h])) > 0
           for: 1h
           labels:
             severity: warning

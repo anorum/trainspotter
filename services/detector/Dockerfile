@@ -42,6 +42,6 @@ ENV PATH="/app/.venv/bin:$PATH" \
 RUN mkdir -p /var/lib/blockade && chown -R blockade:blockade /var/lib/blockade
 
 USER blockade
-EXPOSE 9103
+EXPOSE 9102
 ENTRYPOINT ["blockade-detect"]
 CMD ["run"]
