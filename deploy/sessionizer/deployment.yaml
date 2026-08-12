@@ -69,16 +69,3 @@ spec:
     - name: metrics
       port: 9102
       targetPort: metrics
----
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-  name: sessionizer
-  namespace: blockade
-spec:
-  selector:
-    matchLabels:
-      app: sessionizer
-  endpoints:
-    - port: metrics
-      interval: 30s

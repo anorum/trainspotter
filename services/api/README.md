@@ -7,7 +7,7 @@ When `BLOCKADE_DATABASE_URL` is set, one grouped consumer per topic (`blockade-a
 ## Backfilling history after a detector improves
 
 Streaming owns now, batch owns history.
-When a detector gets better, its new word reaches Postgres through this loop, never through Kafka or the live Flink job - replaying history through the live job would corrupt its keyed state.
+When a detector gets better, its new word reaches Postgres through this loop, never through Kafka or the live sessionizer - replaying history through the live sessionizer would corrupt its keyed state.
 
 1. Re-score the window with the new detector, wherever the frame corpus and manifests live in the poller layout (`var/frames/frames/...` and `var/manifests/{camera_id}/{YYYY-MM-DD-HH}.jsonl`; the poller PVC has them, or pull the window down from S3):
 

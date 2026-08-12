@@ -172,12 +172,13 @@ async def run_loop(
 
 
 async def _serve(settings: Settings) -> None:
+    assert settings.kafka_bootstrap is not None
     tailer = TopicTailer(
-        settings.kafka_bootstrap or "",
+        settings.kafka_bootstrap,
         settings.kafka_observations_topic,
         client_id="blockade-sessionizer",
     )
-    producer = RecordProducer(settings.kafka_bootstrap or "", client_id="blockade-sessionizer")
+    producer = RecordProducer(settings.kafka_bootstrap, client_id="blockade-sessionizer")
 
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()

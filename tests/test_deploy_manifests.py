@@ -146,9 +146,9 @@ def _selected_services(monitor: Monitor) -> list[Service]:
 
 def _scraped_services() -> list[Service]:
     """Only Services a ServiceMonitor selects. A Service fronting pods this repo
-    does not declare -- the Flink operator's REST Service, the Strimzi bootstrap
-    -- has no in-repo workload to resolve its target port against, and holding
-    it to that would be a failure of the guard rather than of the chain."""
+    does not declare -- the Strimzi bootstrap, for instance -- has no in-repo
+    workload to resolve its target port against, and holding it to that would be
+    a failure of the guard rather than of the chain."""
     by_identity = {(s.namespace, s.name): s for m in MONITORS for s in _selected_services(m)}
     return list(by_identity.values())
 

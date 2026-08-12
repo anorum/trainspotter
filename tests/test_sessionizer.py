@@ -20,8 +20,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from blockade.alerts import Alert
 from blockade.config import Settings
-from blockade.schemas import CrossingState, ObservationRecord
+from blockade.schemas import BlockageSession, CrossingState, ObservationRecord
 from blockade.sessions import derive_sessions
 from sessionizer.runner import ALERT_FRESHNESS, OUT_OF_ORDERNESS, Processor, run_loop
 
@@ -44,9 +45,15 @@ def obs(
     )
 
 
-def drive(processor: Processor, observations, caught_up=True, now=None):
+def drive(
+    processor: Processor,
+    observations: list[ObservationRecord],
+    caught_up: bool = True,
+    now: datetime | None = None,
+) -> tuple[list[BlockageSession], list[Alert]]:
     """Feed observations in event order; collect all emissions."""
-    sessions, alerts = [], []
+    sessions: list[BlockageSession] = []
+    alerts: list[Alert] = []
     for o in sorted(observations, key=lambda o: o.captured_at):
         emitted, alert = processor.observe(o, caught_up, now or o.captured_at)
         sessions.extend(emitted)

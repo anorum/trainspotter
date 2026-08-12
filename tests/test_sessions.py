@@ -1,4 +1,4 @@
-"""Session derivation - the logic the Flink job must reproduce."""
+"""Session derivation - the logic the streaming sessionizer must reproduce."""
 
 from __future__ import annotations
 
