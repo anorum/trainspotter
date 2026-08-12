@@ -2,7 +2,9 @@
 
 The serving layer: one pod answering "is a train blocking the crossing right now".
 Tails the Kafka topics into an in-memory board (the reducer in blockade-core), serves it as JSON and SSE, proxies frames from S3, and serves the Astro-built site from the same container.
-When `BLOCKADE_DATABASE_URL` is set, one grouped consumer per topic (`blockade-api-db-obs` and `blockade-api-db-sess`) also materializes observations and sessions into Postgres and the `/api/v1/timeline`, `/api/v1/sessions`, and `/api/v1/analytics` endpoints answer from that history; unset, the API serves only the in-memory window, `/api/v1/analytics` reports `available: false`, and the live board never depends on the database.
+One grouped consumer per topic (`blockade-api-db-obs` and `blockade-api-db-sess`) also materializes observations and sessions into Postgres, and the `/api/v1/timeline`, `/api/v1/sessions`, and `/api/v1/analytics` endpoints answer only from that history.
+Without `BLOCKADE_DATABASE_URL` those history endpoints refuse - 503, or `available: false` from `/api/v1/analytics` so the UI hides the stats surface - rather than serving a half-true history from memory.
+The live board never depends on the database either way.
 
 ## Backfilling history after a detector improves
 

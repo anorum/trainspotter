@@ -90,8 +90,6 @@ def test_late_arrivals_never_regress_a_camera() -> None:
     board = state.snapshot(now=T0 + timedelta(minutes=11))
     clinton = next(c for c in board.crossings if c.crossing_id == "SE_12TH_CLINTON")
     assert clinton.state is CrossingState.BLOCKED, "679's fresh BLOCKED joins the vote"
-    joined = state.recent_observations("SE_12TH_CLINTON", T0, T0 + timedelta(minutes=11))
-    assert len(joined) == 2, "the late record still serves history joins"
 
     state.apply_observation(obs(6, CrossingState.BLOCKED, "odot-678"))  # older than 678's own
     board = state.snapshot(now=T0 + timedelta(minutes=11))

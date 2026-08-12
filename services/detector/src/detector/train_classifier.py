@@ -26,6 +26,14 @@ log = logging.getLogger(__name__)
 
 
 def load_examples(manifest: Path, frames_roots: list[Path], split: str) -> list[tuple[Path, int]]:
+    # One walk per root up front, not one rglob per manifest line: on a corpus
+    # of thousands of frames the per-line glob dominated training wall-time.
+    by_name: dict[str, list[Path]] = {}
+    for root in frames_roots:
+        for path in root.rglob("*"):
+            if path.is_file():
+                by_name.setdefault(path.name, []).append(path)
+
     out = []
     for line in manifest.read_text().splitlines():
         rec = json.loads(line)
@@ -33,11 +41,9 @@ def load_examples(manifest: Path, frames_roots: list[Path], split: str) -> list[
             continue
         name = Path(rec["object_key"]).name
         camera_id = rec["camera_id"]
-        for root in frames_roots:
-            hits = [h for h in root.rglob(name) if camera_id in h.parts]
-            if hits:
-                out.append((hits[0], LABELS.index(rec["label"])))
-                break
+        hit = next((h for h in by_name.get(name, ()) if camera_id in h.parts), None)
+        if hit is not None:
+            out.append((hit, LABELS.index(rec["label"])))
     return out
 
 

@@ -380,7 +380,6 @@ async def _run(settings: Settings, local_only: bool, once: bool) -> None:
 
         runner = asyncio.create_task(poller.run())
         outbox_task = None
-        outbox = None
         if settings.kafka_bootstrap:
             # A sibling task, never a step in the poll loop: the manifest append
             # is capture's commit point, and everything after it is async. With
@@ -388,19 +387,18 @@ async def _run(settings: Settings, local_only: bool, once: bool) -> None:
             # manifest accumulates for a later drain.
             from poller.outbox import ManifestOutbox
 
-            outbox = ManifestOutbox(settings)
-            outbox_task = asyncio.create_task(outbox.run(), name="outbox")
+            outbox_task = asyncio.create_task(ManifestOutbox(settings).run(), name="outbox")
             log.info("outbox publishing to %s", settings.kafka_bootstrap)
         await stop.wait()
         runner.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await runner
         if outbox_task is not None:
+            # Cancellation lands in run()'s finally, which stops the producer
+            # itself - one shutdown path, owned by the task.
             outbox_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await outbox_task
-        if outbox is not None:
-            await outbox.close()
         manifest.flush_all()
         log.info("shutdown complete")
 

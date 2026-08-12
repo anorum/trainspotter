@@ -9,6 +9,10 @@
 # PLACEHOLDERS: the real ones come from the inventory endpoint's per-camera URL
 # field. Do not guess them into cameras.yaml -- an unverified URL that 404s looks
 # identical in the metrics to a camera that is genuinely down.
+#
+# lat/lon are optional and feed the map pin only: a crossing takes the coordinates
+# of the first camera that carries them, and has no pin if none do. `notes` is
+# free text for humans; nothing parses it.
 
 cameras:
   - camera_id: odot-PLACEHOLDER-1
@@ -16,6 +20,8 @@ cameras:
     crossing_id: SE_11TH_MILWAUKIE
     image_url: https://tripcheck.com/RoadCams/cams/PLACEHOLDER.jpg
     source: manual
+    lat: 45.50329
+    lon: -122.65457
     poll_interval_seconds: 30.0
     enabled: true
     notes: 11th northbound approach
@@ -25,6 +31,8 @@ cameras:
     crossing_id: SE_11TH_MILWAUKIE
     image_url: https://tripcheck.com/RoadCams/cams/PLACEHOLDER.jpg
     source: manual
+    lat: 45.50314
+    lon: -122.65414
     poll_interval_seconds: 30.0
     enabled: true
     notes: 11th southbound approach
@@ -34,6 +42,8 @@ cameras:
     crossing_id: SE_12TH_CLINTON
     image_url: https://tripcheck.com/RoadCams/cams/PLACEHOLDER.jpg
     source: manual
+    lat: 45.5036
+    lon: -122.65381
     poll_interval_seconds: 30.0
     enabled: true
     notes: closest to the rails
@@ -43,6 +53,8 @@ cameras:
     crossing_id: SE_12TH_CLINTON
     image_url: https://tripcheck.com/RoadCams/cams/PLACEHOLDER.jpg
     source: manual
+    lat: 45.50494
+    lon: -122.6536
     poll_interval_seconds: 30.0
     enabled: true
     notes: 12th northern approach
@@ -52,6 +64,8 @@ cameras:
     crossing_id: SE_8TH_DIVISION
     image_url: https://tripcheck.com/RoadCams/cams/PLACEHOLDER.jpg
     source: manual
+    lat: 45.50573
+    lon: -122.65745
     poll_interval_seconds: 30.0
     enabled: true
     notes: 8th approach
@@ -61,6 +75,8 @@ cameras:
     crossing_id: SE_8TH_DIVISION
     image_url: https://tripcheck.com/RoadCams/cams/PLACEHOLDER.jpg
     source: manual
+    lat: 45.50476
+    lon: -122.65796
     poll_interval_seconds: 30.0
     enabled: true
     notes: 8th approach

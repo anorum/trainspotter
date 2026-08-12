@@ -1,9 +1,12 @@
-"""The `/api/v1/timeline` HTTP surface, in-memory mode.
+"""The `/api/v1/timeline` range semantics.
 
-Phase B added `from`/`to` (ISO timestamps) so the sessions page can pull the
-frames that belong to one session by exact bounds. These tests pin the
-behavior at the HTTP layer: `from`/`to` bound the range exactly and take
-precedence over `hours`, and a malformed timestamp fails as caller error.
+`from`/`to` (ISO timestamps) bound the range exactly and take precedence over
+`hours`; a malformed timestamp fails as caller error. The range logic lives in
+`resolve_range`, tested directly; the endpoint itself is Postgres-backed and
+its storage behavior is pinned in test_history_db.py. The HTTP test here pins
+the two non-storage contracts: 422 on a bad stamp, 503 without a history
+store - the deployment always configures one, and a half-true history from
+memory is worse than an honest error.
 """
 
 from __future__ import annotations
@@ -13,10 +16,9 @@ from pathlib import Path
 
 import httpx
 import pytest
-from api.app import build_app
-from blockade.api.state import LiveState
+from api.app import build_app, resolve_range
 from blockade.config import Settings
-from blockade.schemas import CrossingState, ObservationRecord
+from fastapi import HTTPException
 
 T0 = datetime(2026, 8, 11, 6, 0, tzinfo=UTC)
 
@@ -32,29 +34,40 @@ cameras:
 """
 
 
-def _obs(minute: float, state: CrossingState) -> ObservationRecord:
-    at = T0 + timedelta(minutes=minute)
-    return ObservationRecord(
-        crossing_id="SE_12TH_CLINTON",
-        camera_id="odot-678",
-        captured_at=at,
-        observed_at=at,
-        state=state,
-        confidence=0.9,
-        reason="test",
-        object_key=f"frames/odot-678/2026/08/11/06/{int(minute * 60_000)}-abcd1234.jpg",
-        detector_version="motion/1",
+def test_from_and_to_bound_the_range_exactly() -> None:
+    start, end = resolve_range(
+        (T0 + timedelta(minutes=5)).isoformat(), (T0 + timedelta(minutes=30)).isoformat(), 24
     )
+    assert start == T0 + timedelta(minutes=5)
+    assert end == T0 + timedelta(minutes=30)
+
+
+def test_from_and_to_take_precedence_over_hours() -> None:
+    """`hours` is the trailing-window shorthand; explicit bounds override it."""
+    start, end = resolve_range(T0.isoformat(), (T0 + timedelta(hours=1)).isoformat(), 9999)
+    assert (end - start) == timedelta(hours=1)
+
+
+def test_hours_alone_is_a_trailing_window() -> None:
+    start, end = resolve_range(None, None, 24)
+    assert (end - start) == timedelta(hours=24)
+    assert end.tzinfo is not None
+
+
+def test_naive_stamps_are_treated_as_utc() -> None:
+    start, _ = resolve_range("2026-08-11T06:00:00", None, 24)
+    assert start == T0
+
+
+def test_bad_iso_timestamp_is_caller_error() -> None:
+    with pytest.raises(HTTPException) as exc:
+        resolve_range("not-a-time", None, 24)
+    assert exc.value.status_code == 422
 
 
 @pytest.fixture
-def seeded_app(tmp_path: Path):
-    """Build the API app and prime the in-memory LiveState it reads from.
-
-    The LiveState is captured inside the /api/v1/timeline route's closure;
-    we reach it through the closure cells so the test exercises the real
-    endpoint without also having to spin up the bus tailer.
-    """
+def bare_app(tmp_path: Path):
+    """The app without a database: history endpoints must refuse honestly."""
     roster_path = tmp_path / "cameras.yaml"
     roster_path.write_text(ROSTER_YAML)
     settings = Settings(
@@ -65,23 +78,7 @@ def seeded_app(tmp_path: Path):
         # required by StateFeed; never dialed - lifespan is not entered
         kafka_bootstrap="localhost:9092",
     )
-    app = build_app(settings=settings)
-
-    route = next(
-        r for r in app.router.routes if getattr(r, "path", None) == "/api/v1/timeline"
-    )
-    for cell in route.endpoint.__closure__ or ():
-        if isinstance(cell.cell_contents, LiveState):
-            state: LiveState = cell.cell_contents
-            for m in (0, 10, 20, 40, 90):
-                state.apply_observation(
-                    _obs(m, CrossingState.BLOCKED if m in (10, 20) else CrossingState.CLEAR)
-                )
-            break
-    else:  # pragma: no cover - closure layout changed
-        pytest.fail("could not locate LiveState in the /api/v1/timeline closure")
-
-    return app
+    return build_app(settings=settings)
 
 
 async def _get(app, path, params):
@@ -90,57 +87,19 @@ async def _get(app, path, params):
         return await client.get(path, params=params)
 
 
-async def test_from_and_to_bound_the_returned_observations(seeded_app) -> None:
-    """Only observations inside [from, to] come back."""
+async def test_bad_timestamp_returns_422_over_http(bare_app) -> None:
     resp = await _get(
-        seeded_app,
+        bare_app,
         "/api/v1/timeline",
-        {
-            "crossing_id": "SE_12TH_CLINTON",
-            "from": (T0 + timedelta(minutes=5)).isoformat(),
-            "to": (T0 + timedelta(minutes=30)).isoformat(),
-        },
-    )
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    minutes = sorted(
-        int((datetime.fromisoformat(o["captured_at"]) - T0).total_seconds() // 60)
-        for o in body["observations"]
-    )
-    assert minutes == [10, 20], f"only the two BLOCKED frames in-window should return: {minutes}"
-    assert datetime.fromisoformat(body["from"]) == T0 + timedelta(minutes=5)
-    assert datetime.fromisoformat(body["to"]) == T0 + timedelta(minutes=30)
-
-
-async def test_from_and_to_take_precedence_over_hours(seeded_app) -> None:
-    """`hours` is the trailing-window shorthand the scrubber uses. When
-    `from`/`to` are supplied they must win outright, or the sessions page's
-    'pull the frames inside this session' request silently narrows."""
-    resp = await _get(
-        seeded_app,
-        "/api/v1/timeline",
-        {
-            "crossing_id": "SE_12TH_CLINTON",
-            "hours": 1,
-            "from": T0.isoformat(),
-            "to": (T0 + timedelta(hours=2)).isoformat(),
-        },
-    )
-    assert resp.status_code == 200
-    body = resp.json()
-    # All five seeded frames sit inside T0..T0+2h. `hours=1` refers to the
-    # trailing window from now(), which excludes T0 entirely - if it had
-    # narrowed the response, we'd see zero observations.
-    assert len(body["observations"]) == 5
-    assert datetime.fromisoformat(body["to"]) == T0 + timedelta(hours=2)
-
-
-async def test_bad_iso_timestamp_returns_422(seeded_app) -> None:
-    """A malformed `from` is caller error, not a server crash."""
-    resp = await _get(
-        seeded_app,
-        "/api/v1/timeline",
-        {"crossing_id": "SE_12TH_CLINTON", "from": "not-a-timestamp"},
+        {"crossing_id": "SE_12TH_CLINTON", "from": "yesterday-ish"},
     )
     assert resp.status_code == 422
-    assert "not-a-timestamp" in resp.text
+
+
+async def test_history_without_a_database_is_503_not_a_guess(bare_app) -> None:
+    for path, params in (
+        ("/api/v1/timeline", {"crossing_id": "SE_12TH_CLINTON"}),
+        ("/api/v1/sessions", {}),
+    ):
+        resp = await _get(bare_app, path, params)
+        assert resp.status_code == 503, path

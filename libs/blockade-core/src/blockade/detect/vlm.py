@@ -16,12 +16,13 @@ from __future__ import annotations
 import base64
 import hashlib
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 
 import anthropic
 from pydantic import BaseModel, Field
 
 from blockade.config import Camera, Settings
+from blockade.detect.base import observation
 from blockade.schemas import CrossingState, ObservationRecord
 
 log = logging.getLogger(__name__)
@@ -138,7 +139,15 @@ class VlmDetector:
             judgement = response.parsed_output
             if judgement is None:
                 return self._unknown(camera, captured_at, object_key, "model returned no judgement")
-            return self._record(camera, captured_at, object_key, judgement)
+            return observation(
+                camera,
+                captured_at,
+                object_key,
+                state=judgement.state,
+                confidence=judgement.confidence,
+                reason=judgement.reason,
+                version=self.version,
+            )
 
         except anthropic.APIStatusError as exc:
             log.warning("classification failed for %s: %s", object_key, exc)
@@ -147,36 +156,15 @@ class VlmDetector:
             log.warning("classification failed for %s: %s", object_key, exc)
             return self._unknown(camera, captured_at, object_key, f"{type(exc).__name__}")
 
-    def _record(
-        self, camera: Camera, captured_at: datetime, object_key: str, judgement: _Judgement
-    ) -> ObservationRecord:
-        return ObservationRecord(
-            crossing_id=camera.crossing_id,
-            camera_id=camera.camera_id,
-            captured_at=captured_at,
-            observed_at=datetime.now(UTC),
-            state=judgement.state,
-            # An UNKNOWN carries no confidence in a state, only in the refusal.
-            # Recording the model's self-reported number here would let a
-            # "confident UNKNOWN" leak into statistics as though it were a
-            # measurement.
-            confidence=0.0 if judgement.state is CrossingState.UNKNOWN else judgement.confidence,
-            reason=judgement.reason[:200],
-            object_key=object_key,
-            detector_version=self.version,
-        )
-
     def _unknown(
         self, camera: Camera, captured_at: datetime, object_key: str, reason: str
     ) -> ObservationRecord:
-        return ObservationRecord(
-            crossing_id=camera.crossing_id,
-            camera_id=camera.camera_id,
-            captured_at=captured_at,
-            observed_at=datetime.now(UTC),
+        return observation(
+            camera,
+            captured_at,
+            object_key,
             state=CrossingState.UNKNOWN,
             confidence=0.0,
-            reason=reason[:200],
-            object_key=object_key,
-            detector_version=self.version,
+            reason=reason,
+            version=self.version,
         )

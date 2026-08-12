@@ -58,6 +58,8 @@ class Camera(BaseModel):
     )
     image_url: HttpUrl
     source: CameraSource = CameraSource.MANUAL
+    lat: float | None = None
+    lon: float | None = None
     poll_interval_seconds: float = Field(
         default=30.0,
         ge=15.0,

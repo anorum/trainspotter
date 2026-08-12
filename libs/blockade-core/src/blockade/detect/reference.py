@@ -30,13 +30,14 @@ import io
 import json
 import logging
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
 
 from blockade.config import Camera
+from blockade.detect.base import observation
 from blockade.schemas import CrossingState, ObservationRecord
 
 log = logging.getLogger(__name__)
@@ -216,15 +217,16 @@ class ReferenceModel:
                 for raw in frames
                 if (scene := _decode(raw)) is not None
                 and (ref := model.nearest(_brightness_bin(scene))) is not None
-                and detector.examine(scene, ref, band).band_rows
-                < detector.thresholds.min_band_rows
+                and detector.examine(scene, ref, band).band_rows < detector.thresholds.min_band_rows
             ]
             # Refuse to rebuild from a pool that has collapsed -- if most frames
             # look blocked, the references are wrong, not the crossing.
             if len(keep) < max(min_samples, len(frames) // 2):
                 log.warning(
                     "%s: refinement would drop %d of %d frames; keeping first-pass model",
-                    camera_id, len(frames) - len(keep), len(frames),
+                    camera_id,
+                    len(frames) - len(keep),
+                    len(frames),
                 )
                 return model
             model = cls.build(camera_id, keep, min_samples)
@@ -299,17 +301,17 @@ class ReferenceModel:
         with np.load(path) as data:
             levels = {int(k.split("_")[1]) for k in data.files if k.startswith("median_")}
             bins = {lv: Reference(data[f"median_{lv}"], data[f"spread_{lv}"]) for lv in levels}
-        meta = json.loads((directory / f"{camera_id}.json").read_text()) if (
-            directory / f"{camera_id}.json"
-        ).exists() else {}
+        meta = (
+            json.loads((directory / f"{camera_id}.json").read_text())
+            if (directory / f"{camera_id}.json").exists()
+            else {}
+        )
         counts = meta.get("samples", {})
         raw_band = meta.get("band")
         band = TrackBand(raw_band["top"], raw_band["bottom"]) if raw_band else None
         raw_thresholds = meta.get("thresholds")
         thresholds = Thresholds(**raw_thresholds) if raw_thresholds else None
-        return cls(
-            camera_id, bins, {int(k): v for k, v in counts.items()}, band, thresholds
-        )
+        return cls(camera_id, bins, {int(k): v for k, v in counts.items()}, band, thresholds)
 
 
 @dataclass(frozen=True)
@@ -416,7 +418,10 @@ def derive_band_from_frames(
         log.warning(
             "%s: %d of %d blocked frames unusable (unreadable, unfamiliar lighting, "
             "or wrong shape); band derived from %d",
-            model.camera_id, len(frames) - len(profiles), len(frames), len(profiles),
+            model.camera_id,
+            len(frames) - len(profiles),
+            len(frames),
+            len(profiles),
         )
     return derive_band(profiles), len(profiles)
 
@@ -473,8 +478,15 @@ class ReferenceDetector:
     ) -> ObservationRecord:
         scene = _decode(image)
         if scene is None:
-            return self._record(camera, captured_at, object_key, CrossingState.UNKNOWN, 0.0,
-                                "image could not be decoded")
+            return observation(
+                camera,
+                captured_at,
+                object_key,
+                state=CrossingState.UNKNOWN,
+                confidence=0.0,
+                reason="image could not be decoded",
+                version=self.version,
+            )
 
         model = self._models.get(camera.camera_id)
         # The model's own calibration wins over the global defaults: cameras
@@ -483,19 +495,37 @@ class ReferenceDetector:
         t = (model.thresholds if model and model.thresholds else None) or self.thresholds
         version = _version_for(t)
         if scene.mean() < t.min_luminance:
-            return self._record(camera, captured_at, object_key, CrossingState.UNKNOWN, 0.0,
-                                f"frame too dark to judge (luminance {scene.mean():.0f})",
-                                version)
+            return observation(
+                camera,
+                captured_at,
+                object_key,
+                state=CrossingState.UNKNOWN,
+                confidence=0.0,
+                reason=f"frame too dark to judge (luminance {scene.mean():.0f})",
+                version=version,
+            )
 
         reference = model.nearest(_brightness_bin(scene)) if model else None
         if reference is None:
-            return self._record(camera, captured_at, object_key, CrossingState.UNKNOWN, 0.0,
-                                "no reference image for this camera and lighting",
-                                version)
+            return observation(
+                camera,
+                captured_at,
+                object_key,
+                state=CrossingState.UNKNOWN,
+                confidence=0.0,
+                reason="no reference image for this camera and lighting",
+                version=version,
+            )
         if reference.median.shape != scene.shape:
-            return self._record(camera, captured_at, object_key, CrossingState.UNKNOWN, 0.0,
-                                "frame size differs from reference",
-                                version)
+            return observation(
+                camera,
+                captured_at,
+                object_key,
+                state=CrossingState.UNKNOWN,
+                confidence=0.0,
+                reason="frame size differs from reference",
+                version=version,
+            )
 
         ev = self.examine(scene, reference, model.band, t)
 
@@ -503,46 +533,37 @@ class ReferenceDetector:
             # Confidence scales with how far past the bar it is, so a marginal
             # mass and an unmistakable one are not recorded as equally certain.
             confidence = min(0.95, 0.6 + 0.35 * min(1.0, ev.band_rows / (t.min_band_rows * 3)))
-            return self._record(
-                camera, captured_at, object_key, CrossingState.BLOCKED, confidence,
-                f"mass spans {ev.band_rows} rows, {ev.changed_fraction:.0%} of frame differs",
-                version,
+            return observation(
+                camera,
+                captured_at,
+                object_key,
+                state=CrossingState.BLOCKED,
+                confidence=confidence,
+                reason=f"mass spans {ev.band_rows} rows, "
+                f"{ev.changed_fraction:.0%} of frame differs",
+                version=version,
             )
 
         if ev.changed_fraction <= t.clear_max_changed:
-            return self._record(
-                camera, captured_at, object_key, CrossingState.CLEAR, 0.85,
-                f"matches empty reference ({ev.changed_fraction:.0%} differs)",
-                version,
+            return observation(
+                camera,
+                captured_at,
+                object_key,
+                state=CrossingState.CLEAR,
+                confidence=0.85,
+                reason=f"matches empty reference ({ev.changed_fraction:.0%} differs)",
+                version=version,
             )
 
         # Something is there, but it is not a frame-spanning mass - most likely
         # vehicles, weather, or a lighting shift. Not a train, and not clearly
         # nothing, so the honest answer is that we do not know.
-        return self._record(
-            camera, captured_at, object_key, CrossingState.UNKNOWN, 0.0,
-            f"{ev.changed_fraction:.0%} differs but no spanning mass ({ev.band_rows} rows)",
-            version,
-        )
-
-    def _record(
-        self,
-        camera: Camera,
-        captured_at: datetime,
-        object_key: str,
-        state: CrossingState,
-        confidence: float,
-        reason: str,
-        version: str | None = None,
-    ) -> ObservationRecord:
-        return ObservationRecord(
-            crossing_id=camera.crossing_id,
-            camera_id=camera.camera_id,
-            captured_at=captured_at,
-            observed_at=datetime.now(UTC),
-            state=state,
-            confidence=0.0 if state is CrossingState.UNKNOWN else confidence,
-            reason=reason[:200],
-            object_key=object_key,
-            detector_version=version or self.version,
+        return observation(
+            camera,
+            captured_at,
+            object_key,
+            state=CrossingState.UNKNOWN,
+            confidence=0.0,
+            reason=f"{ev.changed_fraction:.0%} differs but no spanning mass ({ev.band_rows} rows)",
+            version=version,
         )

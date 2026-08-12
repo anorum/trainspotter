@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -86,35 +85,19 @@ def _normalise(text: str) -> str:
 
 
 def _find_camera_list(payload: Any) -> list[dict[str, Any]]:
-    """Locate the camera list, preferring the documented envelope key."""
+    """Locate the camera list under the documented envelope key.
+
+    The committed inventory in config/ proves the documented shape is real; if
+    ODOT ever renames the envelope, resolve() raises with the observed
+    top-level type and the raw response is on disk to inspect.
+    """
     if isinstance(payload, dict):
         documented = payload.get(INVENTORY_ENVELOPE_KEY)
         if isinstance(documented, list):
             return [x for x in documented if isinstance(x, dict)]
     if isinstance(payload, list):
         return [x for x in payload if isinstance(x, dict)]
-
-    # Fallback: the envelope key changed. Take the longest list of dicts.
-    best: list[dict[str, Any]] = []
-    stack: list[Any] = [payload]
-    while stack:
-        node = stack.pop()
-        if isinstance(node, dict):
-            stack.extend(node.values())
-        elif isinstance(node, list):
-            if node and all(isinstance(x, dict) for x in node) and len(node) > len(best):
-                best = node
-            else:
-                stack.extend(x for x in node if isinstance(x, (dict, list)))
-    return best
-
-
-def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    r = 6_371_000.0
-    p1, p2 = math.radians(lat1), math.radians(lat2)
-    dp, dl = math.radians(lat2 - lat1), math.radians(lon2 - lon1)
-    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
-    return 2 * r * math.asin(math.sqrt(a))
+    return []
 
 
 def fetch_inventory(settings: Settings, bounded: bool = True) -> Any:
@@ -219,9 +202,10 @@ def resolve(payload: Any, targets: dict[str, str] | None = None) -> tuple[list[d
                 # 30s for years and there is no reason to do it in cleartext.
                 "image_url": str(url).replace("http://", "https://", 1),
                 "source": CameraSource.ODOT_INVENTORY.value,
+                "lat": float(lat) if lat is not None else None,
+                "lon": float(lon) if lon is not None else None,
                 "poll_interval_seconds": 30.0,
                 "enabled": True,
-                "notes": f"lat={lat} lon={lon}",
             }
         )
     return resolved, missing
@@ -263,13 +247,9 @@ def fetch(
 def list_cmd(
     source: Path = typer.Option(INVENTORY_RAW_PATH, help="Raw inventory JSON."),
     everything: bool = typer.Option(False, "--all", help="Fetch statewide, ignoring Bounds."),
-    near: str = typer.Option(
-        "", help="lat,lon -- sort by distance from this point instead of by id."
-    ),
 ) -> None:
-    """List cameras in the inventory. Use this when a name fails to resolve: the
-    cameras are all here, and picking them by location is more reliable than
-    matching a display name ODOT can change."""
+    """List cameras in the inventory, with names and coordinates. Use this when
+    a name fails to resolve - the cameras are all here to grep."""
     settings = get_settings()
     try:
         payload = _load_or_fetch(settings, source, bounded=not everything)
@@ -277,22 +257,7 @@ def list_cmd(
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc
 
-    items = _find_camera_list(payload)
-    if near:
-        lat0, lon0 = (float(x) for x in near.split(","))
-
-        def distance(item: dict) -> float:
-            lat, lon = _first_present(item, LAT_FIELDS), _first_present(item, LON_FIELDS)
-            if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
-                return float("inf")
-            return _haversine_m(lat0, lon0, lat, lon)
-
-        items = sorted(items, key=distance)
-        for item in items:
-            typer.echo(f"{distance(item):8.0f}m  {describe(item)}")
-        return
-
-    for item in items:
+    for item in _find_camera_list(payload):
         typer.echo(describe(item))
 
 
@@ -316,9 +281,9 @@ def resolve_cmd(
         typer.secho(f"NOT FOUND in inventory: {name}", fg=typer.colors.RED, err=True)
     if missing:
         typer.secho(
-            "\nCameras get renamed. Run `blockade-inventory list --near 45.5045,-122.6540` "
-            "to see what is actually near the crossings, then set the names in "
-            "TARGET_CAMERAS or hand-write the roster.",
+            "\nCameras get renamed. Run `blockade-inventory list` to see every camera "
+            "with its coordinates, find the crossings by location, then set the names "
+            "in TARGET_CAMERAS or hand-write the roster.",
             fg=typer.colors.YELLOW,
             err=True,
         )

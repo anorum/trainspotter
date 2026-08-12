@@ -149,7 +149,6 @@ dependencies = [
     { name = "asyncpg" },
     { name = "blockade-core", extra = ["kafka"] },
     { name = "fastapi" },
-    { name = "prometheus-client" },
     { name = "typer" },
     { name = "uvicorn" },
 ]
@@ -159,7 +158,6 @@ requires-dist = [
     { name = "asyncpg", specifier = ">=0.29" },
     { name = "blockade-core", extras = ["kafka"], editable = "libs/blockade-core" },
     { name = "fastapi", specifier = ">=0.115" },
-    { name = "prometheus-client", specifier = ">=0.20" },
     { name = "typer", specifier = ">=0.12" },
     { name = "uvicorn", specifier = ">=0.30" },
 ]
@@ -225,14 +223,14 @@ name = "blockade-detector"
 version = "0.1.0"
 source = { editable = "services/detector" }
 dependencies = [
-    { name = "blockade-core", extra = ["classifier", "kafka", "vision"] },
+    { name = "blockade-core", extra = ["classifier", "kafka"] },
     { name = "prometheus-client" },
     { name = "typer" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "blockade-core", extras = ["vision", "kafka", "classifier"], editable = "libs/blockade-core" },
+    { name = "blockade-core", extras = ["kafka", "classifier"], editable = "libs/blockade-core" },
     { name = "prometheus-client", specifier = ">=0.20" },
     { name = "typer", specifier = ">=0.12" },
 ]
