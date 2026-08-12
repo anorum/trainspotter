@@ -76,10 +76,13 @@ spec:
 
         # A camera whose every poll is a duplicate is either frozen or refreshing
         # far slower than assumed. Both change what the detector should trust.
+        # Errors are excluded from the right operand deliberately: a camera that
+        # only ever fails is served nothing to be a duplicate of, and
+        # BlockadeCameraErroring is the rule that describes it.
         - alert: BlockadeCameraAllDuplicates
           expr: |
             sum by (camera_id) (rate(blockade_frames_total{status="ok"}[1h])) == 0
-            and sum by (camera_id) (rate(blockade_frames_total[1h])) > 0
+            and sum by (camera_id) (rate(blockade_frames_total{status!="error"}[1h])) > 0
           for: 1h
           labels:
             severity: warning
