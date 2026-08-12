@@ -206,5 +206,87 @@ async def session_list(pool: asyncpg.Pool, crossing_id: str | None, limit: int) 
     ]
 
 
+LOCAL_TZ = "America/Los_Angeles"
+"""Patterns are bucketed in corridor-local time. Trains do not follow UTC,
+and an hour-of-day profile shifted by seven or eight hours would put the
+morning freight in the middle of the night."""
+
+
+async def analytics(pool: asyncpg.Pool) -> dict:
+    """Temporal structure per crossing, for the patterns page and the board's
+    detail panel.
+
+    Everything derives from the same resolved layers the timeline serves:
+    latest ingest wins per (camera, instant) before any counting, so a
+    backfilled correction changes the statistics the moment it lands. The
+    blocked share is the share of scoreable camera checks (UNKNOWN excluded)
+    that saw a train - at a 2-5 minute sampling cadence that tracks the share
+    of time blocked closely, and it is honest about being sampled.
+    """
+    grid = await pool.fetch(
+        f"""WITH resolved AS (
+              SELECT DISTINCT ON (camera_id, captured_at)
+                     crossing_id, captured_at, state
+              FROM observations
+              ORDER BY camera_id, captured_at, ingested_at DESC
+            )
+            SELECT crossing_id,
+                   extract(dow  FROM captured_at AT TIME ZONE '{LOCAL_TZ}')::int AS dow,
+                   extract(hour FROM captured_at AT TIME ZONE '{LOCAL_TZ}')::int AS hour,
+                   count(*) FILTER (WHERE state = 'BLOCKED')                    AS blocked,
+                   count(*) FILTER (WHERE state IN ('BLOCKED', 'CLEAR'))        AS scoreable
+            FROM resolved
+            GROUP BY 1, 2, 3"""
+    )
+    coverage = await pool.fetch(
+        """SELECT crossing_id, min(captured_at) AS first, max(captured_at) AS last
+           FROM observations GROUP BY 1"""
+    )
+    closed = await pool.fetch(
+        f"""SELECT crossing_id, duration_seconds,
+                   (started_at AT TIME ZONE '{LOCAL_TZ}')::date AS local_day
+            FROM (
+              SELECT DISTINCT ON (session_id) *
+              FROM sessions ORDER BY session_id, ingested_at DESC
+            ) latest
+            WHERE NOT is_open AND duration_seconds IS NOT NULL
+            ORDER BY started_at"""
+    )
+
+    out: dict[str, dict] = {}
+    for r in coverage:
+        days = max(1.0, (r["last"] - r["first"]).total_seconds() / 86_400)
+        out[r["crossing_id"]] = {
+            "first_observed": r["first"].isoformat(),
+            "last_observed": r["last"].isoformat(),
+            "coverage_days": round(days, 2),
+            "hour_of_week": [{"blocked": 0, "scoreable": 0} for _ in range(168)],
+            "durations_seconds": [],
+            "daily_blocked_minutes": {},
+        }
+    for r in grid:
+        entry = out.get(r["crossing_id"])
+        if entry is not None:
+            slot = entry["hour_of_week"][r["dow"] * 24 + r["hour"]]
+            slot["blocked"] += r["blocked"]
+            slot["scoreable"] += r["scoreable"]
+    for r in closed:
+        entry = out.get(r["crossing_id"])
+        if entry is not None:
+            entry["durations_seconds"].append(r["duration_seconds"])
+            day = r["local_day"].isoformat()
+            entry["daily_blocked_minutes"][day] = entry["daily_blocked_minutes"].get(
+                day, 0
+            ) + round(r["duration_seconds"] / 60)
+    for entry in out.values():
+        blocked = sum(s["blocked"] for s in entry["hour_of_week"])
+        scoreable = sum(s["scoreable"] for s in entry["hour_of_week"])
+        total_minutes = sum(entry["daily_blocked_minutes"].values())
+        entry["blocked_share"] = round(blocked / scoreable, 4) if scoreable else None
+        entry["sessions_closed"] = len(entry["durations_seconds"])
+        entry["minutes_per_day"] = round(total_minutes / entry["coverage_days"], 1)
+    return out
+
+
 def parse_record(value: bytes) -> dict:
     return json.loads(value)

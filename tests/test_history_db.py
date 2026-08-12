@@ -274,6 +274,53 @@ async def test_backfill_is_idempotent(pool) -> None:
     assert [r["session_id"] for r in rows] == ["stable"]
 
 
+async def test_analytics_buckets_resolved_observations_in_local_time(pool) -> None:
+    """T0 is 06:00 UTC = 23:00 the previous evening in Portland; the bucket
+    must land there, and a newer detector layer flipping an instant to CLEAR
+    must move the count the moment it is ingested."""
+    await db.upsert_batch(
+        pool,
+        [
+            _obs(0, state="BLOCKED", detector_version="motion/1"),
+            _obs(5, state="BLOCKED", detector_version="motion/1"),
+            _obs(10, state="UNKNOWN", detector_version="motion/1"),
+        ],
+        [],
+    )
+    out = await db.analytics(pool)
+    entry = out["SE_12TH_CLINTON"]
+    # 2026-08-11 06:00 UTC is Monday 23:00 in America/Los_Angeles; dow=1.
+    slot = entry["hour_of_week"][1 * 24 + 23]
+    assert slot == {"blocked": 2, "scoreable": 2}, "UNKNOWN is never scoreable"
+    assert entry["blocked_share"] == 1.0
+
+    await asyncio.sleep(0.05)
+    await db.upsert_batch(pool, [_obs(5, state="CLEAR", detector_version="motion/2")], [])
+    out = await db.analytics(pool)
+    slot = out["SE_12TH_CLINTON"]["hour_of_week"][1 * 24 + 23]
+    assert slot == {"blocked": 1, "scoreable": 2}, "the newer layer's word counts"
+
+
+async def test_analytics_summarizes_closed_sessions_per_local_day(pool) -> None:
+    await db.upsert_batch(
+        pool,
+        [_obs(0, state="BLOCKED", detector_version="motion/1")],
+        [
+            _sess("a", detector_version="motion/1", is_open=False),  # 20 min
+            _sess("b", detector_version="motion/1", is_open=False, started_min=60),
+            _sess("open", detector_version="motion/1", is_open=True, started_min=120),
+        ],
+    )
+    out = await db.analytics(pool)
+    entry = out["SE_12TH_CLINTON"]
+    assert entry["durations_seconds"] == [1200, 1200], "open sessions have no duration yet"
+    assert entry["sessions_closed"] == 2
+    # 06:00 and 07:00 UTC straddle local midnight: Monday 23:00 and Tuesday
+    # 00:00 in Portland - exactly the split UTC bucketing would get wrong.
+    assert list(entry["daily_blocked_minutes"].values()) == [20, 20]
+    assert entry["minutes_per_day"] == 40.0, "coverage clamps to one day minimum"
+
+
 async def test_session_list_limit_caps_the_result(pool) -> None:
     for i in range(5):
         await db.upsert_batch(

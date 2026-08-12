@@ -184,6 +184,21 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             ][:limit]
         return {"sessions": rows}
 
+    @app.get("/api/v1/analytics")
+    async def analytics() -> dict:
+        """Temporal patterns per crossing, Postgres-backed. Without the
+        database there is no history worth aggregating, and the UI hides the
+        stats rather than showing numbers derived from a seven-day tail."""
+        if settings.database_url and "pool" in pool_holder:
+            from api import db as dbmod
+
+            return {
+                "available": True,
+                "local_tz": dbmod.LOCAL_TZ,
+                "crossings": await dbmod.analytics(pool_holder["pool"]),
+            }
+        return {"available": False, "crossings": {}}
+
     @app.get("/api/v1/events")
     async def events() -> StreamingResponse:
         async def stream():

@@ -2,7 +2,7 @@
 // The station sign: wordmark, tagline, and the two-page nav.
 // `active` is the current page so its link reads as location, not action.
 interface Props {
-  active: "board" | "log";
+  active: "board" | "log" | "patterns";
 }
 const { active } = Astro.props;
 ---
@@ -13,6 +13,7 @@ const { active } = Astro.props;
   <nav aria-label="Pages">
     <a href="/" aria-current={active === "board" ? "page" : undefined}>Board</a>
     <a href="/sessions/" aria-current={active === "log" ? "page" : undefined}>Train sheet</a>
+    <a href="/patterns/" aria-current={active === "patterns" ? "page" : undefined}>Patterns</a>
   </nav>
 </header>
 
