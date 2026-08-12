@@ -93,12 +93,22 @@ def train(
     model = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights.DEFAULT)
     for p in model.parameters():
         p.requires_grad = False
+    # The whole classifier head trains, not just the final linear: a single
+    # linear probe under-fit the night scenes (6 of 20 validation positives
+    # missed). The backbone stays frozen - a few hundred camera-specific
+    # frames cannot re-teach ImageNet features, only misremember them.
     model.classifier[3] = nn.Linear(model.classifier[3].in_features, len(LABELS))
+    for p in model.classifier.parameters():
+        p.requires_grad = True
 
     device = "mps" if torch.backends.mps.is_available() else "cpu"
     model.to(device)
-    optimizer = torch.optim.AdamW(model.classifier[3].parameters(), lr=1e-3)
-    loss_fn = nn.CrossEntropyLoss()
+    optimizer = torch.optim.AdamW(model.classifier.parameters(), lr=5e-4)
+    # A missed train becomes a missed alert and a hole in the record; a false
+    # BLOCKED becomes one wrong minute on the board. Weight the loss the way
+    # the product weighs the errors.
+    weights = torch.tensor([1.0, 2.0]).to(device)  # [CLEAR, BLOCKED]
+    loss_fn = nn.CrossEntropyLoss(weight=weights)
 
     loader = DataLoader(Frames(train_items, train_tf), batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(Frames(val_items, eval_tf), batch_size=batch_size)
