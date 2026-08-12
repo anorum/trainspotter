@@ -63,7 +63,8 @@ def seeded_app(tmp_path: Path):
         local_cache_dir=tmp_path / "frames",
         manifest_dir=tmp_path / "manifests",
         camera_config_path=roster_path,
-        kafka_bootstrap="localhost:9092",  # required by StateFeed; never dialed - lifespan is not entered
+        # required by StateFeed; never dialed - lifespan is not entered
+        kafka_bootstrap="localhost:9092",
     )
     app = build_app(settings=settings)
 
