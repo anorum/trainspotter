@@ -276,10 +276,9 @@ def test_the_deployments_argv_reaches_the_run_command() -> None:
     `run` the deployment passes is an unexpected extra argument (exit 2) - the
     pod CrashLoopBackOffs before it opens a socket. Exit 1 with the missing-
     bootstrap complaint is `run`'s own body talking, which is the proof."""
+    manifest = (REPO_ROOT / "deploy/sessionizer/deployment.yaml").read_text()
     deployment = next(
-        doc
-        for doc in yaml.safe_load_all((REPO_ROOT / "deploy/sessionizer/deployment.yaml").read_text())
-        if doc.get("kind") == "Deployment"
+        doc for doc in yaml.safe_load_all(manifest) if doc.get("kind") == "Deployment"
     )
     container = next(
         c

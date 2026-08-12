@@ -2,9 +2,9 @@
 name = "blockade-core"
 version = "0.1.0"
 description = "Shared record definitions, storage, and detectors for the crossing pipeline."
-# Its own README, not a ../../ reach into the repo root: the pipeline image
-# copies this directory alone into the build, and a parent-relative path
-# breaks any consumer that does not carry the whole workspace.
+# Its own README, not a ../../ reach into the repo root: a parent-relative
+# path breaks any consumer that builds this directory on its own rather than
+# carrying the whole workspace.
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
 license = { text = "MIT" }

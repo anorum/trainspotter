@@ -8,8 +8,9 @@ One bucket, three prefixes:
 | `manifests/` | Hourly gzipped JSONL, the backfill corpus |
 | `warehouse/` | Iceberg tables (Phase 3) |
 
-`checkpoints/` used to hold Flink state. The sessionizer that replaced the Flink job
-rebuilds its state by replaying Kafka, so nothing writes that prefix any more.
+`flink/` (the `checkpoints/` and `savepoints/` prefixes under it) used to hold Flink state.
+The sessionizer that replaced the Flink job rebuilds its state by replaying Kafka, so nothing
+writes there any more and the prefix can be deleted whenever convenient.
 
 ```bash
 BUCKET=blockade-$(aws sts get-caller-identity --query Account --output text)
