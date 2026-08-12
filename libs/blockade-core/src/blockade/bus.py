@@ -218,6 +218,7 @@ class GroupProgress:
         self._consumer: AIOKafkaConsumer | None = None
         self._boundary: dict[TopicPartition, int] = {}
         self._positions: dict[TopicPartition, int] = {}
+        self._uncommitted: dict[TopicPartition, int] = {}
 
     async def start(self, boot_end_offsets: Mapping[TopicPartition, int]) -> None:
         """Assign the tailer's partitions and read where the group left off."""
@@ -247,22 +248,18 @@ class GroupProgress:
         tp = TopicPartition(record.topic, record.partition)
         return record.offset < self._boundary.get(tp, 0)
 
-    async def commit(self, records: Iterable[ConsumerRecord]) -> None:
-        """Mark a batch as published. Callers await their producer acks first,
-        so the committed offset never runs ahead of durable output - the same
-        barrier ``RecordConsumer`` documents.
+    def advance(self, records: Iterable[ConsumerRecord]) -> None:
+        """Note a batch as published, without telling the broker yet.
 
         Monotonic: replaying a record from below the boundary cannot walk the
-        committed offset backwards.
+        position backwards.
 
-        Records from a partition this bookkeeper was not given are skipped
-        rather than committed. A groupless tailer picks up a partition added
-        after boot on its next metadata refresh, but committing one that was
-        never assigned is an error that would take the caller's loop down; the
-        records publish anyway, and the next boot assigns the partition
-        properly.
+        Records from a partition this bookkeeper was not given are ignored. A
+        groupless tailer picks up a partition added after boot on its next
+        metadata refresh, but committing one that was never assigned is an
+        error that would take the caller's loop down; those records publish
+        anyway, and the next boot assigns the partition properly.
         """
-        advanced: dict[TopicPartition, int] = {}
         for record in records:
             tp = TopicPartition(record.topic, record.partition)
             if tp not in self._boundary:
@@ -270,6 +267,19 @@ class GroupProgress:
             position = record.offset + 1
             if position > self._positions.get(tp, 0):
                 self._positions[tp] = position
-                advanced[tp] = position
-        if advanced and self._consumer is not None:
-            await self._consumer.commit(advanced)
+                self._uncommitted[tp] = position
+
+    async def commit(self) -> None:
+        """Hand everything noted since the last commit to the group.
+
+        Separate from ``advance`` because the caller decides *when* a position
+        is worth remembering, and that choice is the whole meaning of the
+        offset. A caller that commits every batch says only "these were read";
+        one that commits at a point it can characterise - the head of the
+        topic, all work for the moment done - says that too, and the next boot
+        can rely on it. Either way the caller awaits its producer acks first,
+        so the committed offset never runs ahead of durable output.
+        """
+        if self._uncommitted and self._consumer is not None:
+            await self._consumer.commit(self._uncommitted)
+        self._uncommitted = {}

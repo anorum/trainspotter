@@ -103,14 +103,30 @@ async def test_commits_advance_the_boundary_and_never_walk_it_back(
     in the distant past and the next boot would republish everything since."""
     progress, consumer = await bookkeeper(monkeypatch, head=10, committed=4)
 
-    await progress.commit([FakeRecord(4), FakeRecord(5)])
+    progress.advance([FakeRecord(4), FakeRecord(5)])
+    await progress.commit()
     assert consumer.commits == [{PARTITION: 6}]
 
-    await progress.commit([FakeRecord(0), FakeRecord(1)])
+    progress.advance([FakeRecord(0), FakeRecord(1)])
+    await progress.commit()
     assert consumer.commits == [{PARTITION: 6}], "a replayed record commits nothing"
 
-    await progress.commit([FakeRecord(6)])
+    progress.advance([FakeRecord(6)])
+    await progress.commit()
     assert consumer.commits[-1] == {PARTITION: 7}
+
+
+async def test_progress_noted_but_never_committed_does_not_reach_the_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The two are split so the caller can read records without claiming to have
+    finished with them. Whoever boots next sees where the last commit was, not
+    how far the last process happened to get before it died."""
+    progress, consumer = await bookkeeper(monkeypatch, head=10, committed=4)
+
+    progress.advance([FakeRecord(4), FakeRecord(5), FakeRecord(6)])
+
+    assert consumer.commits == []
 
 
 async def test_a_partition_added_after_boot_is_published_but_not_committed(
@@ -125,7 +141,8 @@ async def test_a_partition_added_after_boot_is_published_but_not_committed(
     grown = FakeRecord(offset=0, partition=7)
 
     assert not progress.published(grown)
-    await progress.commit([grown, FakeRecord(5)])
+    progress.advance([grown, FakeRecord(5)])
+    await progress.commit()
 
     assert consumer.commits == [{PARTITION: 6}]
 

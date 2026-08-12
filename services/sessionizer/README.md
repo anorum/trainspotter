@@ -12,11 +12,12 @@ Session emissions are idempotent - deterministic `session_id`, compacted topic, 
 Replaying the log is not the same as republishing it, though, and the difference matters because batch owns history: loading a re-scored window deletes the sessions it supersedes, and a boot that re-announced every session it re-derived would put those back.
 So a committed group offset rides alongside the tail - it decides nothing about what to read, only about what has already been published.
 Records below it rebuild state in silence; records at or past it emit as usual, which is exactly what arrived while the pod was down.
-The offset advances only after the broker acks the batch's output, the same at-least-once barrier as everywhere else on the bus.
 
-A session closes on silence, so its close belongs to no record and offsets cannot place it - event time can.
-The newest observation the previous life had published bounds how far its wall clock ran, so on a boot's first sweep a deadline that fell before that mark was announced back then and is closed silently, while a deadline past it is the session that was open when the pod died.
-The residual is a deadline in the last couple of minutes before shutdown, which can be announced twice; a backfill cannot have claimed that window, since it refuses to come within a session gap of now.
+A session closes on silence, so its close belongs to no record and an offset alone cannot place it.
+The commit point supplies the rest: offsets move only on the empty poll at the head, after that poll's sweep and its emissions are acked, never mid-drain.
+A committed offset therefore means "at some wall clock past every event below it, this service stood at the head and fired every deadline then due" - so on a boot's first sweep a deadline that fell before the newest replayed observation was announced back then and is closed silently, while a deadline past it is the session that was open when the pod died.
+A life that dies mid-drain commits nothing and its successor simply redoes it, duplicates and all, rather than losing a close and leaving a row open forever.
+The residual is a deadline that came due between the newest replayed observation and the commit, which can be announced twice; a backfill cannot have claimed that window, since it refuses to come within a session gap of now.
 
 Timing discipline, replacing Flink's watermark:
 

@@ -23,19 +23,28 @@ committed offset alongside the tail - not to decide what to read, which is
 always everything, but to mark what this service has already published.
 Records below it rebuild state in silence; records at or past it - which is
 exactly what arrived while the pod was down - emit as usual, so an outage's
-closes and alerts are not lost. The offset advances only after the broker has
-acked the batch's output.
+closes and alerts are not lost.
 
-The gap deadlines the replay rebuilds need the same line drawn, and offsets
-cannot draw it: a session closes on silence, so its close belongs to no record.
-Event time can. The newest observation the previous life had published is how
-far its wall clock provably reached, so on the first sweep of a boot a deadline
-that fell before that mark was already announced then and is closed silently
+The gap deadlines the replay rebuilds need the same line drawn, and a record
+offset cannot draw it alone: a session closes on silence, so its close belongs
+to no record. The commit point supplies the other half. Offsets move only on
+the empty poll at the head of the topic, after that poll's sweep and every
+emission it produced are acked - never mid-drain. So a committed offset does
+not just say "these records were read", it says "at some wall clock later than
+every event in them, this service stood at the head and fired every deadline
+then due". Event time turns that into a test: the newest observation below the
+boundary is a lower bound on that wall clock, so on a boot's first sweep a
+deadline that fell before it was announced back then and is closed silently
 here, while a deadline beyond it is the session that was open when the pod died
-and is this life's to announce. The residual: a deadline that fell in the last
-couple of minutes before shutdown can be announced twice. Nothing else can
-have claimed that window - a backfill refuses to come within a session gap of
-now - so the duplicate lands on its own row and idempotently.
+and is this life's to announce.
+
+A life that dies mid-drain therefore commits nothing, and its successor replays
+from the same line and re-emits everything it emitted - duplicates, which are
+idempotent, rather than a close nobody ever made and a row left open forever.
+The residual runs the other way: a deadline that came due between the newest
+replayed observation and the commit itself can be announced twice. Nothing else
+can have claimed that window - a backfill refuses to come within a session gap
+of now - so the duplicate lands on its own row and idempotently.
 
 Two timing rules replace the watermark:
 
@@ -189,13 +198,17 @@ async def run_loop(
     settings: Settings,
     stop: asyncio.Event,
 ) -> None:
-    """Tail, decide, produce, commit, repeat.
+    """Tail, decide, produce, and - at the head of the topic - commit.
 
     The tail is the whole log every boot; the group offset says how much of it
     this service has already published. What that means for a record is the
     Processor's to decide - both halves of its consequences are suppressed
     below the line, and so are the gap closes an earlier life already made.
-    The line moves only once the broker has acked what the batch produced.
+
+    Progress is noted every batch but committed only on the empty poll, after
+    that poll's sweep and every emission are acked. Committing mid-drain would
+    push the line past records whose gap deadlines nothing had judged yet, and
+    the next boot would take the line's word for closes that never happened.
     """
     while not stop.is_set():
         # Sampled before the fetch, because get_batch() advances the tailer's
@@ -219,7 +232,8 @@ async def run_loop(
                 alerts.append(alert)
         # An empty poll means we are at the head right now: silence is real,
         # not a backlog, so gap deadlines may be judged against wall clock.
-        if not batch and was_caught_up:
+        at_head = not batch and was_caught_up
+        if at_head:
             sessions.extend(processor.sweep(now))
 
         futures = [
@@ -233,7 +247,9 @@ async def run_loop(
             for a in alerts
         ]
         await RecordProducer.await_acks(futures)
-        await progress.commit(batch)
+        progress.advance(batch)
+        if at_head:
+            await progress.commit()
         EMITTED.labels("session").inc(len(sessions))
         EMITTED.labels("alert").inc(len(alerts))
         OPEN_SESSIONS.set(processor.open_count)

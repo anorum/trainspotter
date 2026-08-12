@@ -216,6 +216,24 @@ class FakeTailer:
         return batch
 
 
+class DyingTailer(FakeTailer):
+    """Hands over its backlog and the process dies - no empty poll, ever.
+
+    The OOMKill in the middle of a drain. The loop exits after the last batch it
+    handed back rather than going round again to find the head.
+    """
+
+    def __init__(self, batches: list[list[FakeMessage]], stop: asyncio.Event) -> None:
+        super().__init__(batches, caught_up=False)
+        self._stop = stop
+
+    async def get_batch(self, timeout_ms: int = 1000):
+        batch = await super().get_batch(timeout_ms)
+        if not self._batches:
+            self._stop.set()
+        return batch
+
+
 class FakeProducer:
     def __init__(self) -> None:
         self.sent: list[tuple[str, str, bytes]] = []
@@ -230,18 +248,27 @@ class FakeProducer:
 class FakeProgress:
     """The published-offset boundary. ``GroupProgress`` and its derivation from
     committed offsets are pinned in test_group_progress.py; here it is just the
-    line the loop is expected to respect."""
+    line the loop is expected to respect, plus where it chose to move it.
+
+    ``_boundary`` is fixed for a life, as the real one's is - it is read once at
+    boot. ``committed`` is what the next life would inherit.
+    """
 
     def __init__(self, boundary: int = 0) -> None:
         self._boundary = boundary
         self.committed: int | None = None
+        self._noted: int | None = None
 
     def published(self, record: FakeMessage) -> bool:
         return record.offset < self._boundary
 
-    async def commit(self, records: list[FakeMessage]) -> None:
+    def advance(self, records: list[FakeMessage]) -> None:
         for record in records:
-            self.committed = max(self.committed or 0, record.offset + 1)
+            self._noted = max(self._noted or 0, record.offset + 1)
+
+    async def commit(self) -> None:
+        if self._noted is not None:
+            self.committed = self._noted
 
 
 async def drain(
@@ -351,3 +378,46 @@ async def test_a_fresh_group_republishes_no_history() -> None:
     assert produced(producer, settings.kafka_alerts_topic) == []
     sessions = produced(producer, settings.kafka_sessions_topic)
     assert [(s["crossing_id"], s["is_open"]) for s in sessions] == [("SE_8TH_DIVISION", False)]
+
+
+@pytest.mark.asyncio
+async def test_a_life_that_dies_mid_drain_leaves_its_work_to_be_redone() -> None:
+    """What the committed offset has to mean, and why it moves only at the head.
+
+    Life 1 boots into a three-hour backlog: it announces the train as open, arms
+    its gap deadline, works on through the CLEAR frames that follow - and is
+    killed before the poll that would ever judge that deadline. It committed
+    nothing, because it finished nothing.
+
+    That matters because the first sweep of the next boot reads the boundary as
+    'everything below this was published, closes included'. Had life 1 committed
+    as it drained, life 2 would see a deadline older than the newest replayed
+    frame, believe the close was announced, and drop it - and the session would
+    read open forever, missing from analytics and pinned to the live board.
+    Redoing life 1's work costs duplicates, which the session_id absorbs."""
+    train = [obs(m, CrossingState.BLOCKED) for m in range(0, 9, 3)]
+    afterwards = [obs(m, CrossingState.CLEAR) for m in range(9, 93, 3)]
+    backlog = messages(train + afterwards)
+    settings = Settings(kafka_bootstrap="test:9092")
+
+    life1 = FakeProgress()
+    doomed = FakeProducer()
+    killed = asyncio.Event()
+    await run_loop(
+        DyingTailer([backlog[:4], backlog[4:]], killed),  # type: ignore[arg-type]
+        doomed,  # type: ignore[arg-type]
+        Processor(),
+        life1,  # type: ignore[arg-type]
+        settings,
+        killed,
+    )
+    assert [s["is_open"] for s in produced(doomed, settings.kafka_sessions_topic)] == [True]
+
+    life2 = FakeProgress(boundary=life1.committed or 0)
+    reborn = FakeProducer()
+    await drain(FakeTailer([backlog, []]), reborn, life2, settings)
+
+    sessions = produced(reborn, settings.kafka_sessions_topic)
+    assert [s["is_open"] for s in sessions] == [True, False], "the close life 1 never made"
+    assert life1.committed is None, "a drain that never reached the head finished nothing"
+    assert life2.committed == len(backlog)
