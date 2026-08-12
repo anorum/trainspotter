@@ -8,6 +8,7 @@ the walk - the same absence-of-evidence rule the alerter uses.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -182,3 +183,78 @@ def test_stride_handles_irregular_cadence(tmp_path: Path) -> None:
     assert picks[0] == 0
     times = [sparse[i] for i in picks]
     assert len(times) >= 3
+
+
+ROSTER_YAML = """
+cameras:
+  - camera_id: odot-678
+    name: Portland - 12th at Clinton
+    crossing_id: SE_12TH_CLINTON
+    image_url: http://example.test/678.jpg
+  - camera_id: odot-681
+    name: Portland - 8th at Division
+    crossing_id: SE_8TH_DIVISION
+    image_url: http://example.test/681.jpg
+"""
+
+
+def test_the_cli_labels_each_camera_under_its_own_id(tmp_path, monkeypatch) -> None:
+    """A sweep over several cameras must attribute every label to the camera
+    whose directory the frame came from.
+
+    The judge and the object-key builder are per-camera functions the sweep
+    calls back into, and the camera they carry is what lands in the label
+    file. Bind that camera once for the whole loop and every label - crossing
+    id, camera id, object key - is filed under whichever camera happened to be
+    last, silently poisoning the training set.
+    """
+    import blockade.detect.vlm as vlm_module
+    from blockade.schemas import ObservationRecord
+    from detector.runner import app
+    from typer.testing import CliRunner
+
+    class FakeVlm:
+        version = "fake-model/deadbeef"
+
+        def __init__(self, settings) -> None:
+            self.seen: list[str] = []
+
+        def classify(self, image, camera, captured_at, object_key) -> ObservationRecord:
+            self.seen.append(camera.camera_id)
+            return ObservationRecord(
+                crossing_id=camera.crossing_id,
+                camera_id=camera.camera_id,
+                captured_at=captured_at,
+                observed_at=captured_at,
+                state=CrossingState.CLEAR,
+                confidence=0.9,
+                reason=f"scripted for {camera.camera_id}",
+                object_key=object_key,
+                detector_version=self.version,
+            )
+
+    monkeypatch.setattr(vlm_module, "VlmDetector", FakeVlm)
+    roster = tmp_path / "cameras.yaml"
+    roster.write_text(ROSTER_YAML)
+    monkeypatch.setenv("BLOCKADE_CAMERA_CONFIG_PATH", str(roster))
+
+    frames_dir = tmp_path / "frames"
+    for camera_id in ("odot-678", "odot-681"):
+        camera_dir = frames_dir / camera_id
+        camera_dir.mkdir(parents=True)
+        timeline(camera_dir, n=8, cadence_minutes=15)
+    labels = tmp_path / "labels.jsonl"
+
+    result = CliRunner().invoke(
+        app,
+        ["spotcheck", "--frames-dir", str(frames_dir), "--labels", str(labels)],
+    )
+
+    assert result.exit_code == 0, result.output
+    records = [json.loads(line) for line in labels.read_text().splitlines() if line.strip()]
+    assert records, "the sweep judged nothing"
+    for record in records:
+        assert record["object_key"].startswith(f"frames/{record['camera_id']}/"), record
+        assert record["reason"] == f"scripted for {record['camera_id']}", record
+    assert {r["camera_id"] for r in records} == {"odot-678", "odot-681"}
+    assert {r["crossing_id"] for r in records} == {"SE_12TH_CLINTON", "SE_8TH_DIVISION"}
