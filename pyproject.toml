@@ -23,8 +23,8 @@ dev = [
     "ruff>=0.5",
     # The extras the test suite imports, so a bare `uv sync` reproduces the
     # test environment instead of depending on a flag someone has to remember.
-    # yolo is deliberately absent: no test imports torch, and 2GB of weights
-    # do not belong in every dev checkout.
+    # train is deliberately absent: torch is ~2GB of workstation-only weight
+    # and does not belong in every dev checkout.
     "blockade-core[vision,vlm,kafka]",
 ]
 

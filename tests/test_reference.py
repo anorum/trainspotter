@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import io
 from datetime import UTC, datetime
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -276,3 +277,49 @@ def test_model_thresholds_round_trip_and_win_over_defaults(tmp_path):
     bare_detector = ReferenceDetector({model.camera_id: build_model()})
     obs_default = bare_detector.classify(frame(empty_scene()), camera, CAPTURED, KEY)
     assert "d40-" in obs_default.detector_version
+
+
+# --- Real imagery ------------------------------------------------------------
+# Committed fixtures from the confirmed 23:51-01:05 blockage on odot-678. These
+# two tests are the end-to-end check on real camera frames; everything above
+# runs on synthetic scenes. The reference model is built in-test from the clear
+# fixture: twelve identical copies clear the min_samples floor with zero
+# per-pixel spread, the strictest the detector ever gets.
+
+NIGHT_CAMERA = "odot-678"
+NIGHT_FRAMES = Path(__file__).parent / "fixtures" / "frames" / NIGHT_CAMERA
+CLEAR_NIGHT = NIGHT_FRAMES / "clear-night.jpg"
+BLOCKED_NIGHT = NIGHT_FRAMES / "blocked-night.jpg"
+
+
+@pytest.fixture
+def night_detector() -> ReferenceDetector:
+    frames = [CLEAR_NIGHT.read_bytes()] * 12
+    model = ReferenceModel.build(NIGHT_CAMERA, frames, min_samples=10)
+    return ReferenceDetector({NIGHT_CAMERA: model})
+
+
+@pytest.fixture
+def night_camera() -> Camera:
+    return Camera(
+        camera_id=NIGHT_CAMERA,
+        name="12th at Clinton",
+        crossing_id="SE_12TH_CLINTON",
+        image_url="https://example/678.jpg",
+    )
+
+
+def test_a_frame_matching_its_own_reference_reads_clear(night_detector, night_camera):
+    obs = night_detector.classify(CLEAR_NIGHT.read_bytes(), night_camera, CAPTURED, KEY)
+
+    assert obs.state is CrossingState.CLEAR
+
+
+def test_the_night_train_is_detected(night_detector, night_camera):
+    """The real 23:51-01:05 blockage, scored against a clear frame from ten
+    minutes before it arrived: the same pair a human confirmed as clear and
+    then blocked."""
+    obs = night_detector.classify(BLOCKED_NIGHT.read_bytes(), night_camera, CAPTURED, KEY)
+
+    assert obs.state is CrossingState.BLOCKED
+    assert obs.confidence > 0.5

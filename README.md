@@ -27,7 +27,7 @@ ODOT/PBOT camera stills
    [capture]        6 cameras, 30s tick, conditional GET, sha256 dedupe
         |           frames to disk + append-only JSONL manifest
         v
-   [detector]       interchangeable: reference | yolo | vlm | classifier | auto
+   [detector]       interchangeable: reference | vlm | classifier | auto
         |           one ObservationRecord per crossing per tick
         v
    raw observations   BLOCKED / CLEAR / UNKNOWN + confidence
@@ -49,12 +49,11 @@ Image bytes never enter the message bus - object storage plus a reference, alway
 
 ## Detection
 
-Five detectors, all satisfying the same [`Detector`](src/blockade/detect/base.py) protocol and selected by config:
+Four detectors, all satisfying the same [`Detector`](libs/blockade-core/src/blockade/detect/base.py) protocol and selected by config:
 
 | `BLOCKADE_DETECTOR` | What it is | Cost |
 | --- | --- | --- |
 | `reference` (library default) | Differencing against a median image of the empty crossing | free |
-| `yolo` | YOLO-World open-vocabulary detection, no training | free, CPU |
 | `vlm` | Claude Haiku reads the scene | ~$0.0003/frame |
 | `classifier` | Per-camera MobileNetV3-small head, trained offline, run as ONNX | free, CPU |
 | `auto` (deployed) | Per-camera router: `classifier` where `references/` has a trained model, `reference` everywhere else | free, CPU |

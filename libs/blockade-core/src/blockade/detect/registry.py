@@ -1,27 +1,30 @@
 """Pick a detector by name.
 
-Detectors are interchangeable on purpose. Which one is best is an open question
-that only real data answers, and the answer will change: reference differencing
-is free and running today, YOLO-World needs no training, a fine-tuned YOLO is
-DESIGN2's endpoint, and Haiku reads a scene rather than a difference. Swapping
-between them must be a config change, never an edit.
+Detectors are interchangeable on purpose. Which one is best is an empirical
+question the label set keeps re-answering, and the answer changes per camera:
+reference differencing is free and runs everywhere, per-camera classifiers win
+where enough labels exist, Haiku reads a scene rather than a difference, and
+`auto` mixes them. Swapping must be a config change, never an edit.
 
 Everything downstream is insulated from the choice because each one returns the
 same ObservationRecord, stamped with its own `detector_version` - so rows from
 different detectors are never silently mixed, and two detectors can be run over
 the same frames and compared.
 
-Imports are deferred: choosing `reference` must not drag in torch.
+Imports are deferred: choosing `reference` must not drag in onnxruntime or an
+API client.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import logging
 
 from blockade.config import Settings
 from blockade.detect.base import Detector
 
-DETECTOR_NAMES = ("reference", "yolo", "vlm", "classifier", "auto")
+log = logging.getLogger(__name__)
+
+DETECTOR_NAMES = ("reference", "vlm", "classifier", "auto")
 
 
 def _build_reference(settings: Settings) -> Detector:
@@ -34,18 +37,6 @@ def _build_reference(settings: Settings) -> Detector:
         if model is not None:
             models[camera_id] = model
     return ReferenceDetector(models)
-
-
-def _build_yolo(settings: Settings) -> Detector:
-    from blockade.detect.yolo import YoloWorldDetector
-
-    return YoloWorldDetector(settings)
-
-
-def _build_vlm(settings: Settings) -> Detector:
-    from blockade.detect.vlm import VlmDetector
-
-    return VlmDetector(settings)
 
 
 def _build_classifier(settings: Settings) -> Detector:
@@ -87,21 +78,16 @@ def _build_auto(settings: Settings) -> Detector:
     return AutoDetector(_build_classifier(settings), reference, trained)
 
 
-_BUILDERS: dict[str, Callable[[Settings], Detector]] = {
-    "reference": _build_reference,
-    "yolo": _build_yolo,
-    "vlm": _build_vlm,
-    "classifier": _build_classifier,
-    "auto": _build_auto,
-}
-
-
 def _camera_ids(settings: Settings) -> list[str]:
     from blockade.config import load_roster
 
     try:
         return [c.camera_id for c in load_roster(settings.camera_config_path).enabled()]
-    except (FileNotFoundError, ValueError):
+    except (FileNotFoundError, ValueError) as exc:
+        # An empty roster builds a detector with no models, which answers
+        # UNKNOWN for every camera forever - indistinguishable in metrics from
+        # a healthy detector watching dark cameras. Say so, loudly.
+        log.warning("camera roster unusable (%s); every camera will score UNKNOWN", exc)
         return []
 
 
@@ -115,7 +101,18 @@ def build_detector(name: str | None = None, settings: Settings | None = None) ->
     from blockade.config import get_settings
 
     settings = settings or get_settings()
-    name = (name or settings.detector).lower()
-    if name not in _BUILDERS:
-        raise ValueError(f"Unknown detector {name!r}. Available: {', '.join(DETECTOR_NAMES)}")
-    return _BUILDERS[name](settings)
+    match (name or settings.detector).lower():
+        case "reference":
+            return _build_reference(settings)
+        case "vlm":
+            from blockade.detect.vlm import VlmDetector
+
+            return VlmDetector(settings)
+        case "classifier":
+            return _build_classifier(settings)
+        case "auto":
+            return _build_auto(settings)
+        case unknown:
+            raise ValueError(
+                f"Unknown detector {unknown!r}. Available: {', '.join(DETECTOR_NAMES)}"
+            )
