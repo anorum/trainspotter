@@ -31,7 +31,15 @@ let cached: Promise<AnalyticsResponse> | null = null;
 
 /** One fetch per page load; the board panel and any future caller share it. */
 export function fetchAnalytics(): Promise<AnalyticsResponse> {
-  cached ??= fetch("/api/v1/analytics").then((r) => r.json());
+  cached ??= fetch("/api/v1/analytics")
+    .then((r) => {
+      if (!r.ok) throw new Error(`analytics fetch failed: ${r.status}`);
+      return r.json() as Promise<AnalyticsResponse>;
+    })
+    .catch((err) => {
+      cached = null;
+      throw err;
+    });
   return cached;
 }
 
