@@ -7,8 +7,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-
-type State = "CLEAR" | "BLOCKED" | "UNKNOWN";
+import { COLORS, GEOMETRY, type State } from "../lib/crossings";
 
 interface CameraInfo {
   camera_id: string;
@@ -39,29 +38,38 @@ interface TimelineObs {
   camera_id: string;
 }
 
-/** Schematic positions: the rail line runs NW to SE, true to the corridor. */
-const GEOMETRY: Record<string, { x: number; y: number; label: string; street: string }> = {
-  SE_8TH_DIVISION: { x: 280, y: 130, label: "8th & Division", street: "SE DIVISION ST" },
-  SE_12TH_CLINTON: { x: 480, y: 270, label: "12th & Clinton", street: "SE CLINTON ST" },
-  SE_11TH_MILWAUKIE: { x: 680, y: 410, label: "11th & Milwaukie", street: "SE MILWAUKIE AVE" },
-};
+interface SessionRow {
+  crossing_id: string;
+  started_at: string;
+  ended_at: string | null;
+}
 
-const COLORS: Record<State, string> = {
-  CLEAR: "var(--signal-green)",
-  BLOCKED: "var(--signal-red)",
-  UNKNOWN: "var(--signal-amber)",
-};
+/** Scrub windows. Hours, labelled the way a dispatcher would say them. */
+const WINDOWS: [number, string][] = [
+  [24, "24H"],
+  [72, "3D"],
+  [168, "7D"],
+  [720, "30D"],
+];
 
 export default function LiveBoard() {
   const [status, setStatus] = useState<Status | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [scrubT, setScrubT] = useState<number | null>(null); // null = live
+  const [windowHours, setWindowHours] = useState(24);
   const [timelines, setTimelines] = useState<Record<string, TimelineObs[]>>({});
+  const [loadedHours, setLoadedHours] = useState(0);
+  const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [tick, setTick] = useState(0);
   const sourceRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
     fetch("/api/v1/status").then((r) => r.json()).then(setStatus);
+    // The lanes under the scrubber: blockages findable by eye before
+    // scrubbing, so the history is worth a drag in the first place.
+    fetch("/api/v1/sessions?limit=500")
+      .then((r) => r.json())
+      .then((body) => setSessions(body.sessions));
     const source = new EventSource("/api/v1/events");
     source.addEventListener("status", (e) => setStatus(JSON.parse((e as MessageEvent).data)));
     sourceRef.current = source;
@@ -72,15 +80,17 @@ export default function LiveBoard() {
     };
   }, []);
 
-  // Scrub data loads lazily the first time the slider moves off "now".
-  const loadTimelines = async () => {
-    if (Object.keys(timelines).length > 0) return;
+  // Scrub data loads lazily the first time the slider moves off "now", and
+  // reloads when the window widens past what has been fetched.
+  const loadTimelines = async (hours: number) => {
+    if (loadedHours >= hours) return;
     const loaded: Record<string, TimelineObs[]> = {};
     for (const id of Object.keys(GEOMETRY)) {
-      const r = await fetch(`/api/v1/timeline?crossing_id=${id}&hours=24`);
+      const r = await fetch(`/api/v1/timeline?crossing_id=${id}&hours=${hours}`);
       loaded[id] = (await r.json()).observations;
     }
     setTimelines(loaded);
+    setLoadedHours(hours);
   };
 
   const scrubbing = scrubT !== null;
@@ -120,7 +130,18 @@ export default function LiveBoard() {
 
   const chosen = board.crossings.find((c) => c.crossing_id === selected) ?? null;
   const now = Date.now();
-  const windowStart = now - 24 * 3600 * 1000;
+  const windowStart = now - windowHours * 3600 * 1000;
+  const corridor = Object.keys(GEOMETRY);
+  const lanes = corridor.map((id) =>
+    sessions
+      .filter((s) => s.crossing_id === id)
+      .map((s) => {
+        const a = new Date(s.started_at).getTime();
+        const b = s.ended_at ? new Date(s.ended_at).getTime() : now;
+        return [a, b] as [number, number];
+      })
+      .filter(([a, b]) => b > windowStart && a < now),
+  );
 
   return (
     <div class="board">
@@ -176,19 +197,55 @@ export default function LiveBoard() {
         >
           {scrubbing ? "Back to live" : "● Live"}
         </button>
-        <input
-          type="range"
-          min={windowStart}
-          max={now}
-          step={60_000}
-          value={scrubT ?? now}
-          aria-label="Time travel through the last 24 hours"
-          onInput={async (e) => {
-            await loadTimelines();
-            const v = Number((e.target as HTMLInputElement).value);
-            setScrubT(v >= now - 60_000 ? null : v);
-          }}
-        />
+        <div class="track">
+          <input
+            type="range"
+            min={windowStart}
+            max={now}
+            step={60_000}
+            value={scrubT ?? now}
+            aria-label={`Time travel through the last ${windowHours} hours`}
+            onInput={(e) => {
+              // Read the value before anything async: awaiting first lets a
+              // state update re-render this controlled input back to "now",
+              // and the late read then always returns the reset value.
+              const v = Number((e.target as HTMLInputElement).value);
+              void loadTimelines(windowHours);
+              // Snap-to-live only inside half a step. At a full step the
+              // first ArrowLeft lands exactly on the threshold and snaps
+              // straight back, locking keyboard users out of the past.
+              setScrubT(v >= now - 30_000 ? null : v);
+            }}
+          />
+          {/* One lane per crossing in corridor order; red is a recorded
+              blockage at that instant. The track is itself a timeline. */}
+          <div class="lanes" aria-hidden="true">
+            {lanes.map((intervals) => (
+              <div class="lane">
+                {intervals.map(([a, b]) => (
+                  <span
+                    class="blocked-seg"
+                    style={`left:${(100 * (Math.max(a, windowStart) - windowStart)) / (now - windowStart)}%;width:${Math.max(0.4, (100 * (Math.min(b, now) - Math.max(a, windowStart))) / (now - windowStart))}%`}
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div class="windows" role="group" aria-label="Scrub window">
+          {WINDOWS.map(([hours, label]) => (
+            <button
+              class={windowHours === hours ? "win on" : "win"}
+              aria-pressed={windowHours === hours}
+              onClick={async () => {
+                setWindowHours(hours);
+                if (scrubbing) await loadTimelines(hours);
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <span class="data when">
           {scrubbing ? new Date(scrubT!).toLocaleString() : "now"}
         </span>
@@ -291,10 +348,17 @@ const css = `
 @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.45 } }
 
 .scrub { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0 1rem; }
-.scrub input { flex: 1; accent-color: var(--signal-amber); }
+.scrub .track { flex: 1; }
+.scrub input { width: 100%; display: block; accent-color: var(--signal-amber); }
 .scrub button { background: var(--panel); color: var(--crossbuck); border: 1px solid var(--hairline); border-radius: 4px; padding: 0.3rem 0.8rem; cursor: pointer; font-family: var(--display); letter-spacing: 0.05em; }
 .scrub button.live { color: var(--signal-green); }
 .scrub .when { color: var(--muted); min-width: 11ch; text-align: right; font-size: 0.85rem; }
+.lanes { display: grid; gap: 2px; padding: 2px 8px 0; }
+.lane { position: relative; height: 3px; background: var(--panel); border-radius: 2px; }
+.blocked-seg { position: absolute; top: 0; height: 100%; background: var(--signal-red); border-radius: 2px; }
+.windows { display: flex; gap: 2px; }
+.win { padding: 0.3rem 0.5rem; font-size: 0.8rem; color: var(--muted); }
+.win.on { color: var(--crossbuck); border-color: var(--signal-amber); }
 
 .crossings-list { display: grid; gap: 1px; background: var(--hairline); border: 1px solid var(--hairline); border-radius: 6px; overflow: hidden; }
 .row { display: flex; align-items: center; gap: 0.75rem; padding: 0.65rem 1rem; background: var(--panel); border: 0; color: var(--crossbuck); cursor: pointer; text-align: left; font-size: 1rem; }
