@@ -6,6 +6,7 @@ description = "Shared record definitions, storage, and detectors for the crossin
 # path breaks any consumer that builds this directory on its own rather than
 # carrying the whole workspace.
 readme = "README.md"
+# Ceiling tracks the python:3.11-slim runtime images, not PyFlink (gone); move both together.
 requires-python = ">=3.11,<3.12"
 license = { text = "MIT" }
 
