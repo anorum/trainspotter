@@ -7,6 +7,14 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import {
+  type AnalyticsResponse,
+  fetchAnalytics,
+  hourOfDay,
+  percent,
+  share,
+  worstHours,
+} from "../lib/analytics";
 import { COLORS, GEOMETRY, type State } from "../lib/crossings";
 
 interface CameraInfo {
@@ -60,8 +68,14 @@ export default function LiveBoard() {
   const [timelines, setTimelines] = useState<Record<string, TimelineObs[]>>({});
   const [loadedHours, setLoadedHours] = useState(0);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
+  const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null);
   const [tick, setTick] = useState(0);
   const sourceRef = useRef<EventSource | null>(null);
+
+  // The panel's habit line loads the first time any crossing is selected.
+  useEffect(() => {
+    if (selected && !analytics) fetchAnalytics().then(setAnalytics);
+  }, [selected]);
 
   useEffect(() => {
     fetch("/api/v1/status").then((r) => r.json()).then(setStatus);
@@ -297,6 +311,55 @@ export default function LiveBoard() {
               {Math.round(chosen.latest_observation.confidence * 100)}%)
             </p>
           )}
+          {(() => {
+            const a = analytics?.available
+              ? analytics.crossings[chosen.crossing_id]
+              : undefined;
+            if (!a || a.blocked_share === null) return null;
+            const worst = worstHours(a);
+            const day = hourOfDay(a);
+            const localHour = Number(
+              new Date().toLocaleString("en-US", {
+                timeZone: analytics!.local_tz ?? "America/Los_Angeles",
+                hour: "numeric",
+                hour12: false,
+              }),
+            ) % 24;
+            return (
+              <div class="habits">
+                <p class="data habit-line">
+                  blocked {percent(a.blocked_share)} of checks · ~
+                  {Math.round(a.minutes_per_day)} min/day
+                  {worst && <> · worst {worst}</>}
+                  {" · "}
+                  <a href="/patterns/">patterns</a>
+                </p>
+                {/* One day in 24 cells: the crossing's habit at a glance. */}
+                <div class="hourstrip" aria-label="Typical blockage share by hour">
+                  {day.map((slot, h) => (
+                    <span
+                      class={`hs-cell ${h === localHour ? "hs-now" : ""}`}
+                      style={
+                        share(slot) > 0
+                          ? `background: color-mix(in srgb, var(--signal-red) ${Math.round(
+                              18 + 82 * Math.min(1, share(slot) * 2),
+                            )}%, var(--panel))`
+                          : undefined
+                      }
+                      title={`${h}:00 - ${
+                        slot.scoreable
+                          ? `train in ${slot.blocked} of ${slot.scoreable} checks`
+                          : "no checks yet"
+                      }`}
+                    />
+                  ))}
+                </div>
+                <div class="hourticks data" aria-hidden="true">
+                  <span>12A</span><span>6A</span><span>12P</span><span>6P</span><span>12A</span>
+                </div>
+              </div>
+            );
+          })()}
           <div class="cameras">
             {chosen.cameras.map((cam) => (
               <figure key={cam.camera_id}>
@@ -384,6 +447,13 @@ const css = `
 .detail .close { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 1rem; }
 .detail .ticker { color: var(--signal-red); font-size: 1.1rem; margin: 0.5rem 0 0; }
 .detail .reason { color: var(--muted); margin: 0.35rem 0 0; font-size: 0.9rem; }
+.habits { margin-top: 0.75rem; }
+.habit-line { color: var(--muted); font-size: 0.85rem; margin: 0 0 0.4rem; }
+.habit-line a { color: var(--signal-amber); }
+.hourstrip { display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; }
+.hs-cell { height: 10px; background: var(--panel); border-radius: 2px; }
+.hs-now { outline: 2px solid var(--signal-amber); outline-offset: -1px; }
+.hourticks { display: flex; justify-content: space-between; color: var(--muted); font-size: 0.65rem; margin-top: 2px; }
 .cameras { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-top: 1rem; }
 .cameras figure { margin: 0; }
 .cameras img { width: 100%; border-radius: 4px; border: 1px solid var(--hairline); }
