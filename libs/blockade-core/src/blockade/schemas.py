@@ -1,8 +1,9 @@
 """Record schemas for every stage of the pipeline.
 
-This module is the single source of truth. The Phase 0 JSONL manifest, the Kafka
-topics, the Iceberg tables, and the serving API all use these definitions, so the
-Phase 0 corpus replays through the streaming pipeline with no translation layer.
+This module is the single source of truth. The JSONL manifest, the Kafka
+topics, the Postgres history store, and the serving API all use these
+definitions, so the captured corpus replays through the streaming pipeline
+with no translation layer.
 
 Corresponds to DESIGN.md section 5.
 
@@ -17,8 +18,6 @@ from datetime import UTC, datetime
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
-
-SCHEMA_VERSION = "v1"
 
 
 class FetchStatus(StrEnum):
@@ -89,27 +88,6 @@ class FrameRecord(BaseRecord):
     def is_duplicate(self) -> bool:
         return self.fetch_status in (FetchStatus.DUPLICATE, FetchStatus.NOT_MODIFIED)
 
-    @property
-    def has_image(self) -> bool:
-        """True when this record points at retrievable image bytes."""
-        return self.object_key is not None
-
-
-class DetectionRecord(BaseRecord):
-    """``crossing.detections.v1`` -- key: ``camera_id``. Phase 1 output."""
-
-    camera_id: str
-    crossing_id: str
-    captured_at: datetime
-    roi_vehicle_count: int
-    roi_motion_score: float = Field(description="Mean absolute frame difference within the ROI.")
-    queue_occupancy: float = Field(ge=0.0, le=1.0)
-    detector_version: str
-    confidence: float = Field(ge=0.0, le=1.0)
-    degraded: bool = Field(
-        default=False, description="Night, rain, camera offline, or stale content hash."
-    )
-
 
 class CrossingState(StrEnum):
     CLEAR = "CLEAR"
@@ -123,9 +101,6 @@ class ObservationRecord(BaseRecord):
 
     This is the dataset. ``sessions`` are derived from a sequence of these and can
     be rebuilt at any time, so observations are the layer that must be right.
-
-    Distinct from ``DetectionRecord``, which describes the ONNX vehicle-count
-    approach. This one carries a state judgement rather than raw counts.
     """
 
     crossing_id: str
@@ -154,20 +129,6 @@ class ObservationRecord(BaseRecord):
         'no data', never 'no blockages'.
         """
         return self.state is not CrossingState.UNKNOWN
-
-
-class CrossingStateRecord(BaseRecord):
-    """``crossing.state.v1`` -- key: ``crossing_id``. Phase 2 FusionJob output."""
-
-    crossing_id: str
-    window_start: datetime
-    state: CrossingState
-    cameras_reporting: int
-    cameras_agreeing: int
-    max_suppressed: bool = Field(
-        default=False, description="A MAX Orange Line vehicle explains this queue spike."
-    )
-    confidence: float = Field(ge=0.0, le=1.0)
 
 
 class BlockageSession(BaseRecord):

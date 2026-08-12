@@ -330,10 +330,6 @@ class TrackBand:
     top: int
     bottom: int
 
-    @property
-    def height(self) -> int:
-        return self.bottom - self.top
-
     def mask(self, rows: np.ndarray) -> np.ndarray:
         """Zero out everything outside the band."""
         masked = np.zeros_like(rows)
@@ -374,7 +370,6 @@ class Evidence:
 
     changed_fraction: float
     band_rows: int
-    luminance: float
 
 
 def _version_for(t: Thresholds) -> str:
@@ -418,7 +413,6 @@ class ReferenceDetector:
         return Evidence(
             changed_fraction=float(changed.mean()),
             band_rows=int(obstructed.sum()),
-            luminance=float(scene.mean()),
         )
 
     def classify(

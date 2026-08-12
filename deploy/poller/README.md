@@ -28,7 +28,6 @@ kubectl create secret docker-registry regcred -n blockade \
 # rather than in the manifest so no address is committed.
 kubectl create secret generic odot-credentials -n blockade \
   --from-literal=BLOCKADE_ODOT_API_KEY=... \
-  --from-literal=BLOCKADE_ODOT_API_KEY_SECONDARY=... \
   --from-literal=BLOCKADE_USER_AGENT='blockade/0.1 (+<repo>; <contact>)'
 
 # Camera roster. Reloader restarts the Deployment when this changes, so adding a

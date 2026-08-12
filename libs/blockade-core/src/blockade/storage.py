@@ -15,7 +15,6 @@ from __future__ import annotations
 import gzip
 import hashlib
 import logging
-import shutil
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -70,8 +69,6 @@ class ObjectStore(Protocol):
 
     def get(self, key: str) -> bytes: ...
 
-    def exists(self, key: str) -> bool: ...
-
 
 class S3ObjectStore:
     """S3-compatible object store. Real AWS when ``s3_endpoint_url`` is None."""
@@ -96,17 +93,6 @@ class S3ObjectStore:
 
     def get(self, key: str) -> bytes:
         return self._client.get_object(Bucket=self._bucket, Key=key)["Body"].read()
-
-    def exists(self, key: str) -> bool:
-        from botocore.exceptions import ClientError
-
-        try:
-            self._client.head_object(Bucket=self._bucket, Key=key)
-        except ClientError as exc:
-            if exc.response["Error"]["Code"] in ("404", "NoSuchKey", "NotFound"):
-                return False
-            raise
-        return True
 
     def list_keys(self, prefix: str) -> set[str]:
         """Every key under ``prefix``.
@@ -146,10 +132,6 @@ class LocalFrameCache:
         tmp.replace(path)
         return path
 
-    def read(self, key: str) -> bytes | None:
-        path = self.path_for(key)
-        return path.read_bytes() if path.exists() else None
-
     def sweep(self) -> int:
         """Delete cached frames past the TTL. Returns the number removed."""
         if not self._root.exists():
@@ -164,9 +146,6 @@ class LocalFrameCache:
             except FileNotFoundError:
                 continue
         return removed
-
-    def disk_usage_bytes(self) -> int:
-        return shutil.disk_usage(self._root).used if self._root.exists() else 0
 
 
 class ManifestWriter:

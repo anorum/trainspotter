@@ -27,7 +27,6 @@ cameras:
     crossing_id: SE_12TH_CLINTON
     image_url: https://example/1.jpg
     source: manual
-    usability: unknown
     poll_interval_seconds: 30.0
     enabled: true
 """

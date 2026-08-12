@@ -54,7 +54,7 @@ async def test_first_frame_is_stored_and_recorded(settings, camera, client, cach
     assert record.object_key is not None
     assert record.content_hash is not None and record.content_hash.startswith("sha256:")
     assert record.image_bytes == len(JPEG_A)
-    assert cache.read(record.object_key) == JPEG_A
+    assert cache.path_for(record.object_key).read_bytes() == JPEG_A
 
 
 @respx.mock
@@ -96,7 +96,7 @@ async def test_changed_bytes_produce_a_new_object(settings, camera, client, cach
 
     assert second.fetch_status is FetchStatus.OK
     assert second.object_key != first.object_key
-    assert cache.read(second.object_key) == JPEG_B
+    assert cache.path_for(second.object_key).read_bytes() == JPEG_B
 
 
 @respx.mock

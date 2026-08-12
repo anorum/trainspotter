@@ -18,7 +18,6 @@ Plain functions over an asyncpg pool.
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
 
 import asyncpg
@@ -286,7 +285,3 @@ async def analytics(pool: asyncpg.Pool) -> dict:
         entry["sessions_closed"] = len(entry["durations_seconds"])
         entry["minutes_per_day"] = round(total_minutes / entry["coverage_days"], 1)
     return out
-
-
-def parse_record(value: bytes) -> dict:
-    return json.loads(value)

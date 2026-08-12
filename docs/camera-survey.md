@@ -51,8 +51,7 @@ The Phase 0 gate. Visually inspect all six feeds before writing any detector, an
 actually there rather than what the camera name implies. Some cameras will not be usable, and
 finding that out now is much cheaper than discovering it while tuning thresholds.
 
-Fill this in after 24–48 hours of capture. Update `usability` in `config/cameras.yaml` to match -
-Phase 1 reads that field to decide which cameras to trust.
+Fill this in after 24-48 hours of capture.
 
 ## How to run the survey
 

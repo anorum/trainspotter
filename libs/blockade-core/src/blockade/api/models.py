@@ -60,14 +60,3 @@ class StatusResponse(BaseModel):
 
     generated_at: datetime
     crossings: list[CrossingStatus]
-
-
-class CrossingInfo(BaseModel):
-    """Static roster facts for one crossing (from cameras.yaml)."""
-
-    model_config = ConfigDict(frozen=True)
-
-    crossing_id: str
-    cameras: list[CameraFrameInfo]
-    lat: float | None = None
-    lon: float | None = None
