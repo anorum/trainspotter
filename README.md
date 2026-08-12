@@ -110,7 +110,7 @@ See their respective terms of use.
 ## Running it
 
 ```bash
-uv sync                                   # Python 3.11 - PyFlink does not support 3.12
+uv sync
 cp .env.example .env                      # then add the ODOT key
 
 uv run blockade-inventory resolve         # writes config/cameras.yaml

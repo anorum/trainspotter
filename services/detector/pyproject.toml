@@ -3,6 +3,7 @@ name = "blockade-detector"
 version = "0.1.0"
 description = "Consumes frame metadata, scores frames, publishes raw detections."
 readme = "README.md"
+# Ceiling tracks the python:3.11-slim runtime images, not PyFlink (gone); move both together.
 requires-python = ">=3.11,<3.12"
 license = { text = "MIT" }
 

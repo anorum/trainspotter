@@ -5,11 +5,11 @@ implementation's *closed* sessions equal ``derive_sessions`` output exactly -
 same session_ids, same boundaries, same filters. Two independent
 implementations that must agree; a disagreement is a counterexample.
 
-The driver below plays the role Flink will play: it owns the state and the
+The driver below plays the role the host plays: it owns the state and the
 timer, feeds observations in event-time order, and fires the timer whenever
 event time passes the armed deadline - which is precisely what a watermark
-does. If the semantics survive this harness, the Flink wrapper has nothing
-left to get wrong but plumbing.
+does. If the semantics survive this harness, the host has nothing left to get
+wrong but plumbing.
 """
 
 from __future__ import annotations
@@ -40,9 +40,9 @@ def obs(
 
 
 class Driver:
-    """Stands in for Flink: owns state and timers, advances the watermark.
+    """Stands in for the host: owns state and timers, advances the watermark.
 
-    ``watermark_lag_ms`` mirrors the bounded-out-of-orderness strategy: the
+    ``watermark_lag_ms`` mirrors the bounded-out-of-orderness allowance: the
     watermark trails the newest event by that much, so timers between an old
     event and a new one fire *after* the new element is processed. Equivalence
     must hold at zero lag and at the real two-minute lag - the sessionizer
@@ -67,7 +67,7 @@ class Driver:
             if timer is not None:
                 self.timers[o.crossing_id] = timer
             self.emitted.extend(out)
-        # End of input: in Flink the job would keep waiting, but the oracle
+        # End of input: the live host would keep waiting, but the oracle
         # sees the whole file, so flush every pending timer for the diff.
         self._fire_due(None)
         return self.emitted
@@ -170,7 +170,7 @@ def test_a_gap_of_exactly_the_limit_continues_the_session() -> None:
 
 
 def test_state_round_trips_through_json() -> None:
-    """What crosses a Flink checkpoint must survive serialization exactly."""
+    """What the host persists must survive serialization exactly."""
     state = SessionizerState(
         crossing_id="SE_12TH_CLINTON",
         started_at_ms=1_786_300_000_000,

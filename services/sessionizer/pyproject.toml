@@ -1,7 +1,7 @@
 [project]
-name = "blockade-poller"
+name = "blockade-sessionizer"
 version = "0.1.0"
-description = "Scrapes ODOT camera stills to object storage and publishes frame metadata."
+description = "Turns the observation stream into blockage sessions and alerts."
 readme = "README.md"
 # Ceiling tracks the python:3.11-slim runtime images, not PyFlink (gone); move both together.
 requires-python = ">=3.11,<3.12"
@@ -9,19 +9,16 @@ license = { text = "MIT" }
 
 dependencies = [
     "blockade-core[kafka]",
-    "httpx>=0.27",
     "prometheus-client>=0.20",
     "typer>=0.12",
 ]
 
 [project.scripts]
-blockade-capture = "poller.poller:app"
-blockade-inventory = "poller.inventory:app"
-blockade-sync = "poller.sync:app"
+blockade-sessionizer = "sessionizer.runner:app"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/poller"]
+packages = ["src/sessionizer"]

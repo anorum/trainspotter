@@ -1,10 +1,10 @@
 """Group observations into blockage sessions.
 
-This is the logic the Flink job will implement, kept here as plain Python so it
-can be tested directly and used as the oracle Flink's output is diffed against.
-Two independent implementations that must agree is the most useful way to learn
-a windowing engine, because a disagreement is a concrete counterexample rather
-than a vague worry.
+This is the batch oracle: the same rule the streaming sessionizer applies one
+observation at a time, written as a whole-history group-by so the two can be
+diffed. Two independent implementations that must agree, because a
+disagreement is a concrete counterexample rather than a vague worry - the
+pairing has already caught a real off-by-one on the gap boundary.
 
 Sessions are a derived view. They are rebuilt from observations whenever the
 parameters change, which is why the parameters live in data and travel with the

@@ -1,7 +1,7 @@
 """Detector service entrypoints.
 
 Sits between the poller and Kafka, per DESIGN2 section 3: it reads frames and
-publishes raw detections. Flink consumes those, and never sees an image.
+publishes raw detections. The sessionizer consumes those, and never sees an image.
 
 Two entrypoints carry the traffic, over one code path:
 

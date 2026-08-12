@@ -7,12 +7,12 @@ gap``, and if the alarm fires first, the session closes. That is the entire
 translation; everything else is bookkeeping.
 
 This class is pure Python with all state in one serializable dataclass, so the
-Flink operator wrapping it stays a thin shell: Flink contributes durable keyed
-state, event-time timers, and crash recovery, while the decisions live here
-where they are unit-tested and diffed against the batch oracle. A closed
-session emitted by this class must match what ``derive_sessions`` produces
-from the same observations - that equivalence is pinned by tests, and a
-disagreement is a concrete counterexample rather than a vague worry.
+host wrapping it (the sessionizer service) stays a thin shell: the host owns
+keyed state and decides when timers fire, while the decisions live here where
+they are unit-tested and diffed against the batch oracle. A closed session
+emitted by this class must match what ``derive_sessions`` produces from the
+same observations - that equivalence is pinned by tests, and a disagreement
+is a concrete counterexample rather than a vague worry.
 
 Emission protocol, shaped for the compacted ``crossing.sessions.v1`` topic:
 a session is emitted with ``is_open=True`` as soon as it qualifies (enough
@@ -43,8 +43,8 @@ def _from_ms(epoch_ms: int) -> datetime:
 class SessionizerState:
     """Everything the sessionizer remembers about one crossing.
 
-    Primitives only, deliberately: this crosses a checkpoint boundary in Flink,
-    and epoch milliseconds survive serialization without a timezone to lose.
+    Primitives only, deliberately: this state must survive serialization by
+    any host, and epoch milliseconds have no timezone to lose.
     """
 
     crossing_id: str
@@ -66,9 +66,8 @@ class StreamingSessionizer:
     """Feeds on one crossing's observations; emits session records.
 
     Stateless itself - the caller owns the ``SessionizerState`` and the timer,
-    because in Flink both belong to the framework. Methods return the new
-    state, the records to emit, and the timer to (re)arm. One instance serves
-    every key, as it will inside Flink.
+    so any host can supply durability. Methods return the new state, the
+    records to emit, and the timer to (re)arm. One instance serves every key.
     """
 
     def __init__(self, params: SessionParams | None = None) -> None:
@@ -91,9 +90,9 @@ class StreamingSessionizer:
         at = _ms(obs.captured_at)
         if state is not None and at - state.last_blocked_ms > self._gap_ms:
             # This observation arrived past the gap, so the previous session is
-            # over - and it must be closed *here*, not left to the timer.
-            # Watermarks lag events by the out-of-orderness bound, so Flink
-            # processes this element before the close timer fires; relying on
+            # over - and it must be closed *here*, not left to the timer. Any
+            # sane host delays timers by an out-of-orderness margin, so this
+            # element is processed before the close timer fires; relying on
             # the timer would silently drop the close emission. The stale timer
             # later fires against the fresh state and is ignored.
             if self._qualifies(state):

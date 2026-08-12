@@ -65,7 +65,7 @@ def test_session_id_survives_reopen_and_close():
 
 
 def test_frame_record_rejects_unknown_fields():
-    """Strict schemas: silent field drift between the poller and the Flink job
+    """Strict schemas: silent field drift between the poller and its consumers
     would be discovered as missing data weeks later."""
     with pytest.raises(ValueError):
         FrameRecord(
