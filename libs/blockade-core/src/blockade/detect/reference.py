@@ -337,6 +337,28 @@ class TrackBand:
         return masked
 
 
+def _changed_mask(scene: np.ndarray, reference: Reference, t: Thresholds) -> np.ndarray:
+    """Pixels that differ from the reference beyond its own noise floor.
+
+    Each pixel is judged against its own history: the flat floor where the
+    scene is dependable, a multiple of its usual deviation where it is not.
+    The one comparison the whole detector rests on, shared so the band
+    derivation can never drift from what the detector actually measures.
+    """
+    diff = np.abs(scene.astype(np.float32) - reference.median.astype(np.float32))
+    bar = np.maximum(t.pixel_delta, t.spread_multiple * reference.spread)
+    return diff > bar
+
+
+def _obstructed_rows(changed: np.ndarray, t: Thresholds) -> np.ndarray:
+    """Rows covered densely enough to be an obstruction rather than scattered noise.
+
+    Shared with ``_changed_mask`` for the same reason: this is the profile the
+    band is derived from, so it has to be the profile the detector reads.
+    """
+    return changed.mean(axis=1) > t.band_row_fraction
+
+
 def derive_band(
     row_profiles: list[np.ndarray], min_support: float = 0.5, pad: int = 6
 ) -> TrackBand | None:
@@ -361,6 +383,42 @@ def derive_band(
     top = max(0, int(rows.min()) - pad)
     bottom = min(len(support), int(rows.max()) + pad + 1)
     return TrackBand(top, bottom)
+
+
+def derive_band_from_frames(
+    model: ReferenceModel, frames: list[bytes], thresholds: Thresholds | None = None
+) -> tuple[TrackBand | None, int]:
+    """Derive a camera's band from known-BLOCKED frames, via the CLI.
+
+    Each frame is compared against its brightness-matched reference exactly as
+    the detector would compare it, and the rows the train obstructed become
+    one profile for ``derive_band``. Frames that are unreadable, unfamiliar to
+    the references, or the wrong shape are skipped rather than fatal - the
+    band needs a majority of usable profiles, not all of them.
+
+    Returns the band alongside how many frames actually contributed a profile.
+    The count is not decoration: the band is written into the camera's
+    reference metadata and changes what every later observation means, so the
+    operator has to see that thirty night frames yielded two profiles rather
+    than reading the band as the verdict of all thirty.
+    """
+    t = thresholds or model.thresholds or Thresholds()
+    profiles = []
+    for raw in frames:
+        scene = _decode(raw)
+        if scene is None:
+            continue
+        ref = model.nearest(_brightness_bin(scene))
+        if ref is None or scene.shape != ref.median.shape:
+            continue
+        profiles.append(_obstructed_rows(_changed_mask(scene, ref, t), t))
+    if len(profiles) < len(frames):
+        log.warning(
+            "%s: %d of %d blocked frames unusable (unreadable, unfamiliar lighting, "
+            "or wrong shape); band derived from %d",
+            model.camera_id, len(frames) - len(profiles), len(frames), len(profiles),
+        )
+    return derive_band(profiles), len(profiles)
 
 
 @dataclass
@@ -399,13 +457,8 @@ class ReferenceDetector:
         thresholds: Thresholds | None = None,
     ) -> Evidence:
         t = thresholds or self.thresholds
-        diff = np.abs(scene.astype(np.float32) - reference.median.astype(np.float32))
-        # Each pixel is judged against its own history: the flat floor where the
-        # scene is dependable, a multiple of its usual deviation where it is not.
-        bar = np.maximum(t.pixel_delta, t.spread_multiple * reference.spread)
-        changed = diff > bar
-        row_coverage = changed.mean(axis=1)
-        obstructed = row_coverage > t.band_row_fraction
+        changed = _changed_mask(scene, reference, t)
+        obstructed = _obstructed_rows(changed, t)
         if band is not None:
             # Only obstruction at track level counts. Everything below the rails
             # is road traffic, and counting it is how a bus becomes a train.

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import io
 from datetime import UTC, datetime
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -276,3 +277,168 @@ def test_model_thresholds_round_trip_and_win_over_defaults(tmp_path):
     bare_detector = ReferenceDetector({model.camera_id: build_model()})
     obs_default = bare_detector.classify(frame(empty_scene()), camera, CAPTURED, KEY)
     assert "d40-" in obs_default.detector_version
+
+
+# --- Band derivation ---------------------------------------------------------
+# The band written here becomes part of the camera's reference metadata, so a
+# wrong one silently changes what every later observation for that camera means.
+
+MASS_TOP, MASS_BOTTOM = 60, 130
+PAD = 6  # derive_band's default padding either side of the supported rows
+
+
+def blocked_frames(n: int, rng_seed: int = 3) -> list[bytes]:
+    """Frames of the same train sitting across rows MASS_TOP..MASS_BOTTOM."""
+    rng = np.random.default_rng(rng_seed)
+    frames = []
+    for _ in range(n):
+        scene = empty_scene().astype(np.int16)
+        scene[MASS_TOP:MASS_BOTTOM, :] = 20
+        scene += rng.integers(-3, 4, scene.shape)
+        frames.append(frame(np.clip(scene, 0, 255).astype(np.uint8)))
+    return frames
+
+
+def test_band_covers_the_rows_the_trains_obstructed():
+    """The derived band must bracket where the mass actually sat: too high and
+    a low-profile consist falls outside it, too low and road traffic counts."""
+    from blockade.detect.reference import derive_band_from_frames
+
+    derived, used = derive_band_from_frames(build_model(), blocked_frames(5))
+
+    assert used == 5
+    assert derived is not None
+    assert derived.top <= MASS_TOP <= derived.top + 2 * PAD
+    assert derived.bottom - 2 * PAD <= MASS_BOTTOM <= derived.bottom
+
+
+def test_derived_band_is_the_band_the_detector_then_reads():
+    """The derivation and the detector must measure the same thing: a band that
+    excludes the mass it was derived from would suppress the very blockages the
+    camera was seen having."""
+    from blockade.detect.reference import derive_band_from_frames
+
+    model = build_model()
+    frames = blocked_frames(5)
+    derived, _ = derive_band_from_frames(model, frames)
+
+    model.band = derived
+    camera = Camera(camera_id="odot-1234", name="t", crossing_id="X", image_url="http://x")
+    obs = ReferenceDetector({"odot-1234": model}).classify(frames[0], camera, CAPTURED, KEY)
+
+    assert obs.state is CrossingState.BLOCKED
+
+
+def test_one_off_obstructions_stay_out_of_the_band():
+    """A vehicle stopped below the tracks appears in a frame or two. Widening
+    the band to include it is how road traffic starts reading as a train."""
+    from blockade.detect.reference import derive_band_from_frames
+
+    frames = blocked_frames(4)
+    stray = empty_scene()
+    stray[MASS_TOP:MASS_BOTTOM, :] = 20
+    stray[180:200, :] = 20  # present in exactly one frame
+    frames.append(frame(stray))
+
+    derived, used = derive_band_from_frames(build_model(), frames)
+
+    assert used == 5
+    assert derived.bottom < 180
+
+
+def test_unusable_frames_are_skipped_and_not_counted():
+    """Undecodable bytes, lighting the references have never seen, and a frame
+    of the wrong shape each cost a profile. Counting them as contributors is
+    how a band supported by two frames gets accepted as the verdict of five."""
+    from blockade.detect.reference import derive_band_from_frames
+
+    odd = io.BytesIO()
+    Image.fromarray(np.full((SIZE[0], SIZE[1] - 20), 120, dtype=np.uint8), mode="L").save(
+        odd, format="JPEG", quality=95
+    )
+    frames = blocked_frames(3) + [
+        b"not a jpeg",
+        frame(np.full_like(empty_scene(), 250)),  # bin the model has no reference near
+        odd.getvalue(),
+    ]
+
+    derived, used = derive_band_from_frames(build_model(), frames)
+
+    assert used == 3
+    assert derived is not None
+
+
+def test_no_obstruction_yields_no_band():
+    """Clear frames must not produce a band. Inventing one from noise would
+    pin the camera's track level to wherever the noise happened to fall."""
+    from blockade.detect.reference import derive_band_from_frames
+
+    derived, used = derive_band_from_frames(build_model(), [frame(empty_scene())] * 4)
+
+    assert used == 4
+    assert derived is None
+
+
+def test_band_derivation_honours_the_thresholds_it_is_given():
+    """Cameras carry their own calibration, and the band has to be derived with
+    the thresholds that will later judge the camera, not the global defaults."""
+    from blockade.detect.reference import derive_band_from_frames
+
+    frames = blocked_frames(4)
+    model = build_model()
+
+    with_defaults, _ = derive_band_from_frames(model, frames)
+    unreachable, _ = derive_band_from_frames(model, frames, Thresholds(band_row_fraction=1.1))
+
+    assert with_defaults is not None
+    assert unreachable is None
+
+    model.thresholds = Thresholds(band_row_fraction=1.1)
+    from_model, _ = derive_band_from_frames(model, frames)
+    assert from_model is None, "the model's own calibration must win over the defaults"
+
+
+# --- Real imagery ------------------------------------------------------------
+# Committed fixtures from the confirmed 23:51-01:05 blockage on odot-678. These
+# two tests are the end-to-end check on real camera frames; everything above
+# runs on synthetic scenes. The reference model is built in-test from the clear
+# fixture: twelve identical copies clear the min_samples floor with zero
+# per-pixel spread, the strictest the detector ever gets.
+
+NIGHT_CAMERA = "odot-678"
+NIGHT_FRAMES = Path(__file__).parent / "fixtures" / "frames" / NIGHT_CAMERA
+CLEAR_NIGHT = NIGHT_FRAMES / "clear-night.jpg"
+BLOCKED_NIGHT = NIGHT_FRAMES / "blocked-night.jpg"
+
+
+@pytest.fixture
+def night_detector() -> ReferenceDetector:
+    frames = [CLEAR_NIGHT.read_bytes()] * 12
+    model = ReferenceModel.build(NIGHT_CAMERA, frames, min_samples=10)
+    return ReferenceDetector({NIGHT_CAMERA: model})
+
+
+@pytest.fixture
+def night_camera() -> Camera:
+    return Camera(
+        camera_id=NIGHT_CAMERA,
+        name="12th at Clinton",
+        crossing_id="SE_12TH_CLINTON",
+        image_url="https://example/678.jpg",
+    )
+
+
+def test_a_frame_matching_its_own_reference_reads_clear(night_detector, night_camera):
+    obs = night_detector.classify(CLEAR_NIGHT.read_bytes(), night_camera, CAPTURED, KEY)
+
+    assert obs.state is CrossingState.CLEAR
+
+
+def test_the_night_train_is_detected(night_detector, night_camera):
+    """The real 23:51-01:05 blockage, scored against a clear frame from ten
+    minutes before it arrived: the same pair a human confirmed as clear and
+    then blocked."""
+    obs = night_detector.classify(BLOCKED_NIGHT.read_bytes(), night_camera, CAPTURED, KEY)
+
+    assert obs.state is CrossingState.BLOCKED
+    assert obs.confidence > 0.5

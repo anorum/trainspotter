@@ -12,7 +12,7 @@ When a detector gets better, its new word reaches Postgres through this loop, ne
 1. Re-score the window with the new detector, wherever the frame corpus and manifests live in the poller layout (`var/frames/frames/...` and `var/manifests/{camera_id}/{YYYY-MM-DD-HH}.jsonl`; the poller PVC has them, or pull the window down from S3):
 
    ```
-   uv run blockade-detector scan --camera odot-678 \
+   uv run blockade-detect scan --camera odot-678 \
      --since 2026-08-09T00:00:00Z --until 2026-08-12T00:00:00Z \
      --output obs-678.jsonl
    ```

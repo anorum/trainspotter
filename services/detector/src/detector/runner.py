@@ -3,7 +3,7 @@
 Sits between the poller and Kafka, per DESIGN2 section 3: it reads frames and
 publishes raw detections. Flink consumes those, and never sees an image.
 
-Two entrypoints over one code path:
+Two entrypoints carry the traffic, over one code path:
 
 - ``scan`` scores frames already on disk. This is the backfill and replay route,
   and the one that regenerates the whole record after a detector change.
@@ -12,6 +12,9 @@ Two entrypoints over one code path:
 
 They differ only in where frames arrive from, so a detector improvement reaches
 live traffic and the historical record through the same code.
+
+``explain``, ``band``, and ``spotcheck`` are the operator tools beside them:
+score a single frame, derive a camera's track band, and grow the label set.
 """
 
 from __future__ import annotations
@@ -147,6 +150,100 @@ def scan(
     counts = {s.value: sum(1 for o in observations if o.state is s) for s in CrossingState}
     typer.echo(f"{len(observations)} observations -> {output}")
     typer.echo(f"  {json.dumps(counts)}")
+
+
+@app.command()
+def explain(
+    image: Path = typer.Argument(
+        exists=True,
+        dir_okay=False,
+        help="Frame to score; camera id inferred from the path.",
+    ),
+    camera: str = typer.Option("", help="Camera id when the path does not contain one."),
+) -> None:
+    """Score one frame and print the judgement. The debugging path.
+
+    Builds the same detector the deployment builds (BLOCKADE_DETECTOR), so
+    what this prints is what the pod would have published for the same bytes.
+    The reason line carries the evidence; every detector writes one for
+    exactly this audit.
+    """
+    settings = get_settings()
+    roster = {c.camera_id: c for c in load_roster(settings.camera_config_path).enabled()}
+    camera_id = camera or next((cid for cid in roster if cid in image.resolve().parts), "")
+    cam = roster.get(camera_id)
+    if cam is None:
+        typer.secho(
+            f"Cannot tell which camera this frame belongs to. Pass --camera; "
+            f"roster has: {', '.join(roster)}",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    detector = build_detector(settings=settings)
+    captured_at = datetime.fromtimestamp(image.stat().st_mtime, tz=UTC)
+    observation = detector.classify(image.read_bytes(), cam, captured_at, image.name)
+    typer.echo(f"state={observation.state.value}")
+    typer.echo(f"confidence={observation.confidence:.2f}")
+    typer.echo(f"reason={observation.reason}")
+    typer.echo(f"detector_version={observation.detector_version}")
+
+
+@app.command()
+def band(
+    camera: str = typer.Argument(help="Camera id, e.g. odot-676."),
+    blocked_dir: Path = typer.Option(
+        ...,
+        exists=True,
+        file_okay=False,
+        help="Directory of known-BLOCKED frames for this camera, e.g. data/blocks/odot-676.",
+    ),
+    write: bool = typer.Option(False, help="Write the band into the camera's reference metadata."),
+) -> None:
+    """Derive a camera's track band from hand-labeled blocked frames.
+
+    A new camera runs bandless (whole frame counts) until it has been seen
+    blocked; this is how it earns its band from data instead of a hand-drawn
+    ROI. Rerun with more frames any time; --write updates the local reference
+    metadata, which then ships to S3 like any reference change.
+    """
+    from blockade.detect.reference import ReferenceModel, derive_band_from_frames
+
+    settings = get_settings()
+    model = ReferenceModel.load(settings.references_dir, camera)
+    if model is None:
+        typer.secho(
+            f"No reference model for {camera} in {settings.references_dir}.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    frames = [
+        p.read_bytes()
+        for p in sorted(blocked_dir.iterdir())
+        if p.suffix.lower() in (".jpg", ".jpeg", ".png")
+    ]
+    derived, used = derive_band_from_frames(model, frames)
+    if derived is None:
+        typer.secho(
+            f"No band derivable from {len(frames)} frames - {used} usable "
+            "(the rest unreadable, unfamiliar lighting, or wrong shape).",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    previous = f"{model.band.top}..{model.band.bottom}" if model.band else "none"
+    typer.echo(
+        f"{camera}: band rows {derived.top}..{derived.bottom} "
+        f"(was {previous}, from {used} of {len(frames)} blocked frames)"
+    )
+    if write:
+        model.band = derived
+        model.save(settings.references_dir)
+        typer.echo(f"rewrote {camera}.json and {camera}.npz in {settings.references_dir}")
 
 
 def _ensure_references(settings: Settings) -> None:

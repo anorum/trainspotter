@@ -1,13 +1,10 @@
-"""The interface both detectors implement.
+"""The interface every detector implements.
 
-Two exist deliberately. `reference.ReferenceDetector` is free, local, and free to
-re-run over the whole corpus, which is what makes re-deriving the dataset at a
-finer resolution cost nothing. `vlm.VlmDetector` costs money per frame but reads
-a scene rather than a difference, and is there for when accuracy is worth paying
-for.
-
-Keeping them behind one signature means they can be scored against the same
-label set and swapped by configuration rather than by editing the runner.
+Several exist deliberately: free local differencing, per-camera trained
+classifiers, a paid VLM, and the auto router that mixes them. Which is best is
+an empirical question the label set keeps re-answering, so keeping them behind
+one signature means they can be scored against the same labels and swapped by
+configuration rather than by editing the runner.
 """
 
 from __future__ import annotations

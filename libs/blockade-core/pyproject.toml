@@ -23,10 +23,8 @@ dependencies = [
 [project.optional-dependencies]
 # The free detector. numpy and Pillow only - no model weights, no GPU.
 vision = ["numpy>=1.26", "pillow>=10.0"]
-# The bus. Optional so batch tools (eval, sync) never drag a Kafka client in.
+# The bus. Optional so batch tools (sync, backfill) never drag a Kafka client in.
 kafka = ["aiokafka>=0.12"]
-# Deliberately separate: torch is ~2GB and does not belong on an 8GB ARM node.
-yolo = ["ultralytics>=8.3"]
 vlm = ["anthropic>=0.40"]
 # Training runs on a workstation only; the runtime ships ONNX and needs
 # neither torch nor these.

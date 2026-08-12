@@ -1,9 +1,9 @@
 # Detector service: consumes frame metadata, scores frames, publishes raw
 # detections.
 #
-# Carries the vision extras (numpy, Pillow) but deliberately not torch. YOLO is
-# available as a detector implementation, but an 8GB ARM node is the wrong place
-# for a 2GB image, and reference differencing does the same job here with numpy.
+# Carries the vision extras (numpy, Pillow) but deliberately not torch. Training
+# happens on a workstation; an 8GB ARM node is the wrong place for a 2GB image,
+# and what runs here is numpy differencing plus ONNX classifier heads.
 FROM python:3.11-slim AS build
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv

@@ -38,7 +38,7 @@ def run(port: int = typer.Option(8000, help="HTTP port for API, site, and probes
 @app.command()
 def backfill(
     observations: Path = typer.Argument(
-        ..., help="Observations JSONL from `blockade-detector scan`."
+        ..., help="Observations JSONL from `blockade-detect scan`."
     ),
     dry_run: bool = typer.Option(False, help="Print the plan without touching the database."),
 ) -> None:

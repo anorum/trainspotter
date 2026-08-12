@@ -1,7 +1,7 @@
 """Load a re-scored history window into Postgres.
 
 The other half of "streaming owns now, batch owns history": after a detector
-improves, `blockade-detector scan` re-scores the kept frames, and this module
+improves, `blockade-detect scan` re-scores the kept frames, and this module
 takes that JSONL, derives sessions with the same parameters the streaming job
 uses, and loads both into the history store. Nothing here touches Kafka or
 Flink - replaying history through the live job would corrupt its keyed state,
