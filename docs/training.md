@@ -153,7 +153,7 @@ A missing `sweep_file` is not an error - `build_manifest` skips the source when 
 
 **Fold in the hand-saved blocks**, where the camera has them.
 `build_manifest` does not read `data/blocks/`, but the manifest is plain `Example` JSONL, so appending them is a few lines - and this is how the production `odot-678` model was trained.
-This step presumes hand-saved frames already exist for that camera: `data/blocks/` holds `odot-676`, `odot-678`, and `odot-681` today, and for the others the session-file remedy in section 1 is the one that applies.
+This step presumes hand-saved frames already exist for that camera: `data/blocks/` holds `odot-676`, `odot-678`, and `odot-681` today, and for `odot-682` - the only other camera this runbook still covers - the session-file remedy in section 1 is the one that applies.
 
 Choose the exam before you append, because here the gold guarantee is yours to keep rather than the code's.
 `build_manifest` enforces gold-out-of-training by object key, and these rows carry `blocks/...` keys that check never sees, so nothing stops you training on the very frames you plan to be graded against.

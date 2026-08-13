@@ -39,11 +39,12 @@ class AlertPolicy:
     """
 
     reset_after: timedelta = timedelta(minutes=20)
-    """Re-arm regardless if nothing is heard for this long.
+    """Re-arm regardless if no judgement is heard for this long.
 
     Guards the case where a camera goes dark mid-blockage and never reports
     CLEAR: without it the crossing would stay armed forever and the next real
-    train would pass unannounced.
+    train would pass unannounced. UNKNOWN is not hearing -- see `observe`,
+    where only a BLOCKED or CLEAR advances `last_seen`.
     """
 
 

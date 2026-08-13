@@ -103,7 +103,9 @@ One pod serving both the JSON API and the static site, plus the Postgres materia
 - **Backfill** (`blockade-api backfill obs.jsonl`): loads a re-scored window; see the data contract below.
 - **Frames** (`/api/v1/frames/...`): S3 reads behind a content-addressed disk LRU, with a path-pattern guard.
 - **Web** (`web/`): static Astro build baked into the image; three pages, one Preact island each - the board (schematic corridor map, SSE, time scrubber), the train sheet, and patterns.
-  `npm run check` typechecks under Astro strict; CI runs it for web changes.
+  The scrubber is the one place the consensus rule above exists twice: `LiveState` only ever holds the present, so answering "what did the board show at 05:45" happens client-side over `/timeline` rows, in `web/src/lib/scrub.ts`.
+  That copy is pinned against the reducer's own scenarios in `scrub.test.ts`, so the two cannot drift silently.
+  `npm run check` typechecks under Astro strict and `npm test` runs those scenarios; CI runs both for web changes.
 
 ### Postgres (deploy/postgres)
 

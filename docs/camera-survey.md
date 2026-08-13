@@ -103,8 +103,9 @@ table is kept as the vocabulary the verdicts use.
 45.50329, -122.65457 · labelled "212 - SE Milwaukie @ Gideon St"
 Night: streetlights and headlights dominate; vehicle bodies are hard to separate from background.
 **Rail structure visible in frame** - candidate for a direct train signal.
-Verdict: **usable**, but the weakest detector performance of the three crossings, and the pair most
-in need of more hand labels. A train on 2026-08-11 (~11:41-11:49 PDT) was reported missed here by
+Verdict: **usable**, but the weakest detector performance of the three crossings, and - now that
+`odot-677` is non-scoring and this is the crossing's only witness - the camera most in need of more
+hand labels. A train on 2026-08-11 (~11:41-11:49 PDT) was reported missed here by
 the operator, corroborated by what the other two crossings recorded that day; its gold labels are
 still queued for entry, so `data/labels/labels.jsonl` does not yet carry it. That gap is the point:
 Milwaukie has the thinnest ground truth of the three crossings - two records for 676, one for 677,
