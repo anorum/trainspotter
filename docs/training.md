@@ -16,6 +16,7 @@ An unclosed session contributes no positives, because its real end is not known 
 
 **VLM-sweep CLEARs** are the good negatives.
 `blockade-detect spotcheck` walks frames at a stride and records Haiku's judgement; the manifest takes the ones labelled CLEAR at confidence 0.8 or above.
+The sweep must write to its own file rather than to gold, for two independent reasons that section 2 spells out.
 The code applies no time-of-day filter, so you have to be the filter: Haiku missed a confirmed night train on these cameras, and a high-confidence night CLEAR does not mean what the same number means at noon.
 Review the night CLEARs before you trust them.
 
@@ -40,7 +41,30 @@ Adjudicated frames reach training only as gold exclusions or through the sources
 Both steps are plain functions, called from a workstation script with the `train` extra installed.
 There is no runtime CLI for either: torch is about 2GB of workstation-only weight that never belongs in a serving image.
 
-Assemble the manifest first.
+**Get the corpus onto the workstation.**
+`blockade-sync` only ever uploads, so pull the frames down yourself, and keep the S3 layout when you do:
+
+```bash
+aws s3 sync s3://pdx-trainspotter/frames/odot-678 var/frames/frames/odot-678
+```
+
+The doubled `frames/` is not a typo: the local cache mirrors S3 keys exactly, because `LocalFrameCache` resolves a path as `root / key` and `var/frames` is that root.
+Both consumers below depend on the layout rather than on a path you pass them.
+`build_manifest` rebuilds each object key from the frame's own directory and filename, and `load_examples` only accepts a frame whose path contains the camera id as a directory component - so a flat dump of JPEGs matches nothing, loads zero examples, and trains on an empty set without raising.
+
+**Sweep for VLM negatives**, if you want them:
+
+```bash
+uv run blockade-detect spotcheck --frames-dir var/frames/frames \
+  --camera odot-678 --labels data/work/sweep.jsonl
+```
+
+Pass `--labels` every time.
+It defaults to `data/labels/labels.jsonl`, and sweeping into that default appends Haiku's own judgements to the file section 3 uses as the exam: the exam would stop measuring the model against humans and start measuring it against another model, silently, one sweep at a time.
+Today all 33 gold records are human or human-anchored adjudications, and that is the property worth protecting.
+The two files cannot be the same one anyway - `build_manifest` skips every gold key before it consults the sweep, so a sweep written into gold contributes nothing to training and the VLM negatives vanish instead.
+
+**Assemble the manifest.**
 `session_files` is JSONL of `BlockageSession` records - a dump of the compacted `crossing.sessions.v1` topic, or `sessions.derive_sessions` run over `blockade-detect scan` output; there is no command that writes it for you.
 
 ```python
@@ -51,13 +75,15 @@ from detector.dataset import build_manifest, write_manifest
 examples = build_manifest(
     camera_id="odot-678",
     crossing_id="SE_12TH_CLINTON",
-    frames_dir=Path("data/frames/odot-678"),
+    frames_dir=Path("var/frames/frames/odot-678"),
     session_files=[Path("data/work/sessions-odot-678.jsonl")],
     sweep_file=Path("data/work/sweep.jsonl"),
     gold_labels=Path("data/labels/labels.jsonl"),
 )
 write_manifest(examples, Path("data/work/manifest-odot-678.jsonl"))
 ```
+
+A missing `sweep_file` is not an error - `build_manifest` skips the source when the file does not exist - so check the assembled manifest actually contains `vlm-sweep` examples rather than assuming it does.
 
 Then train.
 One model per camera: MobileNetV3-small, ImageNet backbone frozen, the full classifier head fine-tuned.
@@ -69,7 +95,7 @@ from detector.train_classifier import train
 
 metrics = train(
     manifest=Path("data/work/manifest-odot-678.jsonl"),
-    frames_roots=[Path("data/frames")],
+    frames_roots=[Path("var/frames")],
     out_onnx=Path("data/work/classifier-odot-678.onnx"),
     epochs=12,
 )
