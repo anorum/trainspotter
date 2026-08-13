@@ -14,6 +14,12 @@ Labels are not equal, and treating them as equal is how a camera regresses.
 Every frame inside a closed blockage session, shrunk by a two-minute margin at both ends so boundary uncertainty never becomes a training label, is labelled BLOCKED.
 An unclosed session contributes no positives, because its real end is not known and must not be guessed.
 
+Sessions are per crossing while training is per camera, and that gap is the sharpest label trap in this document.
+`build_manifest` selects its windows by `crossing_id`, then labels BLOCKED every frame of whichever camera you pointed it at that falls inside a core.
+Sessions open on a blocked-biased consensus across both of a crossing's cameras, so the partner camera inherits positives its own view never justified: `odot-679` favors Division over the Clinton crossing it is paired with, and `odot-682` cannot resolve the tracks at night.
+Core positives are therefore trustworthy only for the camera whose view actually drove the session - `odot-678` at Clinton, `odot-681` at Division.
+For the weak partner, spot-check the positives before training and lean on hand-curated `data/blocks/{camera_id}/` labels instead; a model taught that a clear-looking frame is BLOCKED is precisely the false-positive generator this section exists to prevent.
+
 **VLM-sweep CLEARs** are the good negatives.
 `blockade-detect spotcheck` walks frames at a stride and records Haiku's judgement; the manifest takes the ones labelled CLEAR at confidence 0.8 or above.
 The sweep must write to its own file rather than to gold, for two independent reasons that section 2 spells out.
@@ -49,15 +55,21 @@ aws s3 sync s3://pdx-trainspotter/frames/odot-678 var/frames/frames/odot-678
 ```
 
 The doubled `frames/` is not a typo: the local cache mirrors S3 keys exactly, because `LocalFrameCache` resolves a path as `root / key` and `var/frames` is that root.
-Both consumers below depend on the layout rather than on a path you pass them.
-`build_manifest` rebuilds each object key from the frame's own directory and filename, and `load_examples` only accepts a frame whose path contains the camera id as a directory component - so a flat dump of JPEGs matches nothing, loads zero examples, and trains on an empty set without raising.
+`build_manifest` does not actually need that layout: it mints each object key canonically, from the `camera_id` argument you pass plus the epoch-ms timestamp in the filename, and never reads the frame's directory at all.
+That is worth knowing for the trap it creates - point `frames_dir` at a directory holding another camera's frames and every key is minted under the camera you named rather than the one the pixels came from, silently.
+`load_examples` is the consumer that does depend on the layout, because it only accepts a frame whose path contains the camera id as a directory component - so a flat dump of JPEGs matches nothing, loads zero examples, and trains on an empty set without raising.
 
 **Sweep for VLM negatives**, if you want them:
 
 ```bash
+mkdir -p var/training
 uv run blockade-detect spotcheck --frames-dir var/frames/frames \
-  --camera odot-678 --labels data/work/sweep.jsonl
+  --camera odot-678 --labels var/training/sweep.jsonl
 ```
+
+Create the directory first, as above.
+`append_labels` opens the label file in append mode without creating parents, and it does that only after the sweep has already put the camera's frames through Haiku - so a missing directory costs the whole API spend and then writes nothing.
+`var/` is gitignored, which is also why the scratch files and the exported model below live there: weights never belong on a tracked path.
 
 Pass `--labels` every time.
 It defaults to `data/labels/labels.jsonl`, and sweeping into that default appends Haiku's own judgements to the file section 3 uses as the exam: the exam would stop measuring the model against humans and start measuring it against another model, silently, one sweep at a time.
@@ -76,11 +88,11 @@ examples = build_manifest(
     camera_id="odot-678",
     crossing_id="SE_12TH_CLINTON",
     frames_dir=Path("var/frames/frames/odot-678"),
-    session_files=[Path("data/work/sessions-odot-678.jsonl")],
-    sweep_file=Path("data/work/sweep.jsonl"),
+    session_files=[Path("var/training/sessions-odot-678.jsonl")],
+    sweep_file=Path("var/training/sweep.jsonl"),
     gold_labels=Path("data/labels/labels.jsonl"),
 )
-write_manifest(examples, Path("data/work/manifest-odot-678.jsonl"))
+write_manifest(examples, Path("var/training/manifest-odot-678.jsonl"))
 ```
 
 A missing `sweep_file` is not an error - `build_manifest` skips the source when the file does not exist - so check the assembled manifest actually contains `vlm-sweep` examples rather than assuming it does.
@@ -94,16 +106,17 @@ Loss is BLOCKED-weighted, because the classes are lopsided and a missed train co
 from detector.train_classifier import train
 
 metrics = train(
-    manifest=Path("data/work/manifest-odot-678.jsonl"),
+    manifest=Path("var/training/manifest-odot-678.jsonl"),
     frames_roots=[Path("var/frames")],
-    out_onnx=Path("data/work/classifier-odot-678.onnx"),
+    out_onnx=Path("var/training/classifier-odot-678.onnx"),
     epochs=12,
 )
 ```
 
 The default is 6 epochs; around 12 is the working figure, so pass it.
 `train` returns tp/fp/tn/fn over the 15% validation split held out of the manifest.
-Read that as a smoke signal only - the split is drawn from the same weak labels the model trained on, so it cannot tell you the model got better. Section 3 is the gate.
+Read that as a smoke signal only - the split is drawn from the same weak labels the model trained on, so it cannot tell you the model got better.
+Section 3 is the gate.
 
 ## 3. The exam gate
 
