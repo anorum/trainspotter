@@ -1,4 +1,5 @@
 > **Historical record.** Despite the name, this is the EARLIER of the two design documents - the first hand-off draft.
+> What actually got built diverged substantially: the fine-tuned YOLO detector below was never built (per-camera MobileNetV3-small classifiers with a reference-differencing fallback instead), Iceberg tables became Postgres, `raw-detections` / `crossing.detections.v1` became `crossing.observations.v1`, and the Flink sessionizer became a plain Kafka consumer.
 > The current truth is [docs/architecture.md](../architecture.md).
 
 Grade Crossing Blockage Detector — Design Doc

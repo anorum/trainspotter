@@ -2,10 +2,11 @@
 <!--
   macOS LaunchAgent for Phase 0 capture.
 
-  DESIGN.md calls for a systemd unit on a Pi; this is the same idea for a Mac. It
-  is a stopgap that starts the clock tonight -- the durable home is the k3s
-  Deployment in deploy/capture/. Every day without capture is a day permanently
-  missing from the corpus, because ODOT overwrites each image with the next.
+  docs/history/design.md calls for a systemd unit on a Pi; this is the same idea
+  for a Mac. It is a stopgap that starts the clock tonight - the durable home is
+  the k3s Deployment in deploy/capture/. Every day without capture is a day
+  permanently missing from the corpus, because ODOT overwrites each image with
+  the next.
 
   Install:
     cp deploy/local/com.blockade.capture.plist ~/Library/LaunchAgents/

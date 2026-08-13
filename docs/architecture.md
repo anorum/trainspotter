@@ -28,7 +28,7 @@ flowchart LR
     detector -->|crossing.observations.v1| kafka
     kafka -->|observations| sessionizer
     sessionizer -->|crossing.sessions.v1<br/>crossing.alerts.v1| kafka
-    kafka -->|all topics, tailed| api
+    kafka -->|observations + sessions,<br/>tailed| api
     api --> pg
     s3 -->|frame images| api
     api -->|blockade.home.alexnorum.com| browser[Browser<br/>board / sheet / patterns]
@@ -48,7 +48,8 @@ History is never replayed through the live services - that would corrupt their s
 
 **The live board reads memory; history surfaces read Postgres.**
 "Is a train blocking right now" is answered from an in-memory state the API rebuilds by replaying Kafka on every boot - it works even with the database down.
-"What happened last Tuesday" is answered only from Postgres; without it those endpoints return 503 rather than a half-true answer from a memory buffer.
+"What happened last Tuesday" is answered only from Postgres; without it `/timeline` and `/sessions` return 503 rather than a half-true answer from a memory buffer.
+`/analytics` is the one deliberate exception: it answers 200 with `{"available": false, "crossings": {}}`, because the UI needs to hide the stats surface entirely rather than render an error in place of it.
 
 ## Components
 
@@ -75,7 +76,7 @@ Detectors are interchangeable by config (`BLOCKADE_DETECTOR`); production runs `
 - `vlm` - Claude Haiku reads the scene; used by the `spotcheck` label-growing tool, not in the live path.
 
 CLIs: `blockade-detect run` (the streaming service), `scan` (batch re-score for backfills), `explain <image>` (score one frame with the production build), `band <camera>` (derive the track band from hand-labeled blocked frames), `spotcheck` (VLM label sweep).
-The accuracy loop - label sources by trust, training, the exam gate, shipping, backfilling - is a workflow, not a service; it is documented in the classifier training runbook kept alongside the model work.
+The accuracy loop - label sources by trust, training, the exam gate, shipping, backfilling - is a workflow, not a service; it is documented in [docs/training.md](training.md).
 
 ### sessionizer (`services/sessionizer` + `libs/blockade-core/src/blockade/{stream_sessions,alerts}.py`, deploy/sessionizer)
 
@@ -155,7 +156,7 @@ A deploy-manifest test asserts every ServiceMonitor actually selects a Service, 
 
 ### Common tasks
 
-- **Retrain a camera**: follow the classifier training workflow (label, train, exam against gold labels, `aws s3 cp` the ONNX to `references/`, rollout restart the detector, then backfill the improved history).
+- **Retrain a camera**: follow [docs/training.md](training.md) (label, train, exam against gold labels, `aws s3 cp` the ONNX to `references/`, rollout restart the detector, then backfill the improved history).
 - **Backfill after a detector change**: `blockade-detect scan --camera X --until <now-20min>` then `blockade-api backfill obs.jsonl --dry-run`, then for real; only the re-scored crossing's history changes.
 - **Add a camera**: add it to `TARGET_CAMERAS` in `inventory.py`, run `blockade-inventory resolve`, recreate the ConfigMap; it scores UNKNOWN until it has a reference model (and earns its track band from its first hand-labeled blockages via `blockade-detect band`).
 - **Debug one frame**: `uv run blockade-detect explain path/to/frame.jpg`.

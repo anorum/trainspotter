@@ -23,8 +23,9 @@ Guide v5 (2020-10-21), sections 1.3.4 and 2.3.2:
     }
 
 Note the two distinct names: ``device-name`` is a compact slug and ``cctv-other``
-is the human-readable description. Which one carries the names in DESIGN.md is
-not knowable without a live response, so both are matched.
+is the human-readable description. Which one carries the names in
+docs/history/design.md is not knowable without a live response, so both are
+matched.
 """
 
 from __future__ import annotations
@@ -148,11 +149,11 @@ def describe(item: dict[str, Any]) -> str:
 def resolve(payload: Any, targets: dict[str, str] | None = None) -> tuple[list[dict], list[str]]:
     """Map the inventory onto the target camera list.
 
-    Matches ``device-name`` and ``cctv-other`` against the DESIGN.md names, after
-    normalising away case, spacing, and punctuation. Returns the resolved entries
-    and the names that could not be found -- a missing name is reported rather
-    than skipped, because silently capturing five of six would not be obvious for
-    weeks.
+    Matches ``device-name`` and ``cctv-other`` against the
+    docs/history/design.md names, after normalising away case, spacing, and
+    punctuation. Returns the resolved entries and the names that could not be
+    found -- a missing name is reported rather than skipped, because silently
+    capturing five of six would not be obvious for weeks.
     """
     targets = targets or TARGET_CAMERAS
     items = _find_camera_list(payload)
