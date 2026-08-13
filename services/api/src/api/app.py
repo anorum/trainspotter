@@ -64,7 +64,10 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         if camera.lat is not None and camera.lon is not None:
             coords.setdefault(camera.crossing_id, (camera.lat, camera.lon))
 
-    state = LiveState(cameras_by_crossing)
+    state = LiveState(
+        cameras_by_crossing,
+        scoring={camera.camera_id for camera in roster if camera.scores},
+    )
     feed = StateFeed(settings, state)
     images = FrameImages(settings)
 

@@ -12,7 +12,9 @@
 #
 # lat/lon are optional and feed the map pin only: a crossing takes the coordinates
 # of the first camera that carries them, and has no pin if none do. `notes` is
-# free text for humans; nothing parses it.
+# free text for humans; nothing parses it. `scores` defaults to true; set it false
+# for a camera whose view does not include the crossing -- it is still captured and
+# shown on the board, but never judged. See docs/camera-survey.md.
 
 cameras:
   - camera_id: odot-PLACEHOLDER-1

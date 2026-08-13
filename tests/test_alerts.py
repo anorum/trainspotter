@@ -112,3 +112,22 @@ def test_clearing_needs_more_confirmation_than_alerting():
     policy = AlertPolicy()
 
     assert policy.clear_confirmations > policy.confirmations
+
+
+def test_a_stream_of_unknowns_is_silence_not_hearing():
+    """UNKNOWN is absence of evidence, so it must not hold off the re-arm.
+    A camera gone glare-blind mid-blockage - or a non-scoring camera's
+    permanent UNKNOWN heartbeat - would otherwise keep last_seen fresh
+    forever, and the next real train after an outage would pass unannounced."""
+    alerter = RisingEdgeAlerter()
+
+    first = run(alerter, [obs(0), obs(2)])
+    assert len(first) == 1, "the first train alerts"
+
+    # 30 minutes of UNKNOWN heartbeat: longer than reset_after (20m), and the
+    # only traffic on the crossing. It must count as silence.
+    heartbeat = [obs(4 + m, CrossingState.UNKNOWN) for m in range(0, 30, 2)]
+    assert run(alerter, heartbeat) == []
+
+    second = run(alerter, [obs(36), obs(38)])
+    assert len(second) == 1, "the outage re-armed the crossing; the next train alerts"

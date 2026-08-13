@@ -45,12 +45,22 @@ class LiveState:
         self,
         cameras_by_crossing: dict[str, list[tuple[str, str]]],
         stale_after: timedelta = DEFAULT_STALE_AFTER,
+        scoring: set[str] | None = None,
     ) -> None:
         """``cameras_by_crossing`` maps crossing_id to [(camera_id, name)] from
         the roster, so every crossing renders its cameras even before their
-        first frame arrives."""
+        first frame arrives.
+
+        ``scoring`` is the set of camera_ids whose judgements count. A
+        non-scoring camera (its view does not include the crossing) still
+        renders and still supplies frames, but it must not join consensus:
+        its permanent UNKNOWN heartbeat would otherwise read as a fresh
+        witness and make ``stale`` unreachable - a dead real camera could
+        hide behind it forever. None means every camera scores.
+        """
         self._cameras_by_crossing = cameras_by_crossing
         self._stale_after = stale_after
+        self._scoring = scoring
         self._sessions: dict[str, BlockageSession] = {}
         self._by_camera: dict[str, ObservationRecord] = {}
         self._state_since: dict[str, tuple[CrossingState, datetime]] = {}
@@ -120,7 +130,8 @@ class LiveState:
         fresh = [
             o
             for camera_id, _ in self._cameras_by_crossing.get(crossing_id, [])
-            if (o := self._by_camera.get(camera_id)) is not None
+            if (self._scoring is None or camera_id in self._scoring)
+            and (o := self._by_camera.get(camera_id)) is not None
             and now - o.captured_at <= self._stale_after
         ]
         blocked = [o for o in fresh if o.state is CrossingState.BLOCKED]

@@ -107,13 +107,17 @@ class RisingEdgeAlerter:
             state.alerted = False
             state.blocked_streak = 0
             state.clear_streak = 0
-        state.last_seen = obs.captured_at
 
         if obs.state is CrossingState.UNKNOWN:
-            # Absence of evidence. It neither confirms nor clears, and must not
-            # break a streak -- an unreadable frame mid-blockage is not a gap in
-            # the blockage.
+            # Absence of evidence. It neither confirms nor clears, must not
+            # break a streak - an unreadable frame mid-blockage is not a gap in
+            # the blockage - and must not count as *hearing* either: last_seen
+            # advances only on judgements, or a stream of UNKNOWNs (a camera
+            # gone glare-blind, or a non-scoring camera's heartbeat) would hold
+            # off the re-arm forever, which is the exact outage reset_after
+            # exists for.
             return None
+        state.last_seen = obs.captured_at
 
         if obs.state is CrossingState.BLOCKED:
             state.blocked_streak += 1

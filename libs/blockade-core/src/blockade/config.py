@@ -60,6 +60,18 @@ class Camera(BaseModel):
     source: CameraSource = CameraSource.MANUAL
     lat: float | None = None
     lon: float | None = None
+    scores: bool = Field(
+        default=True,
+        description=(
+            "Whether the detector judges this camera's frames. False for a view that "
+            "does not include the crossing: the frames are still captured and shown "
+            "on the board, but the camera emits zero-inference UNKNOWNs rather than "
+            "judgements. A camera that cannot see the tracks must not vote - its "
+            "BLOCKEDs are traffic noise the blocked-biased consensus would amplify, "
+            "and its CLEARs would reset alert streaks. docs/camera-survey.md records "
+            "which cameras carry it and why."
+        ),
+    )
     poll_interval_seconds: float = Field(
         default=30.0,
         ge=15.0,

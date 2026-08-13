@@ -109,9 +109,10 @@ and no BLOCKED example at either.
 
 ### Portland - 11th at Milwaukie S - `odot-677`, `SE_11TH_MILWAUKIE`
 45.50314, -122.65414 · labelled "213 - SE Milwaukie @ Gideon St"
-Also overlooks the rail corridor. Darker frame than 676; a large unlit region occupies the left
-third. Verdict: **usable**, with the same caveat as 676 - Milwaukie is the crossing that most needs
-hand-labelled blocks.
+Verdict revised 2026-08-12 on Alex's inspection: **non-scoring** - the view shows the Gideon
+intersection and the crossing is not in frame, overturning the night-one read. Its reference
+detector had been emitting ~100 BLOCKEDs/day of traffic noise. Now `scores: false` in the roster:
+captured and shown on the board, never judged.
 
 ### Portland - 12th at Clinton - `odot-678`, `SE_12TH_CLINTON`
 45.50360, -122.65381 · labelled "214 - SE 12th @ Clinton"
@@ -121,8 +122,11 @@ production classifier.
 
 ### Portland - 12th at Division - `odot-679`, `SE_12TH_CLINTON`
 45.50494, -122.65360 · largest payload of the six (~29 KB), suggesting more scene detail.
-Verdict: **marginal** for the crossing it is assigned to - the view favors Division, so it
-contributes little to Clinton and its consensus weight there is small.
+Verdict revised 2026-08-12 on Alex's inspection: **non-scoring** - the view looks north at the
+Division intersection and the Clinton crossing is entirely out of frame. "Marginal" understated
+it: its reference detector emitted ~123 BLOCKEDs/day that the blocked-biased consensus amplified
+into phantom board states and padded sessions. Now `scores: false` in the roster: captured and
+shown, never judged.
 
 ### Portland - 8th at Division - `odot-681`, `SE_8TH_DIVISION`
 45.50573, -122.65745 · ~300 m from the crossings, the furthest of the set.

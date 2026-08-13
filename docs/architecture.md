@@ -66,6 +66,8 @@ CLIs: `blockade-capture` (run/once), `blockade-inventory` (fetch/list/resolve - 
 
 Turns frames into `ObservationRecord`s: one judgement (BLOCKED / CLEAR / UNKNOWN, confidence, reason) per crossing per tick.
 UNKNOWN is a first-class honest answer; a detector must never raise and never guess.
+Cameras whose view does not include the crossing carry `scores: false` in the roster (today 677 and 679): they emit zero-inference UNKNOWNs stamped `unscored/1`, so the board keeps their pictures while consensus, sessions, alerts, and analytics all ignore them.
+That covers new rows; their historical judgements stay authoritative for past instants until a re-score and backfill layers `unscored/1` over them.
 Every record is stamped with the `detector_version` that produced it, so rows from different detectors are never silently mixed.
 
 Detectors are interchangeable by config (`BLOCKADE_DETECTOR`); production runs `auto`, a per-camera router:

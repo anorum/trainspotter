@@ -207,3 +207,26 @@ def test_changed_flag_drives_the_sse_fanout() -> None:
 
     state.apply_observation(obs(2, CrossingState.BLOCKED))
     assert state.changed
+
+
+def test_a_non_scoring_cameras_heartbeat_cannot_hide_a_dead_witness():
+    """677/679 emit permanent zero-inference UNKNOWNs so the board keeps their
+    pictures. Those heartbeats must not count as fresh witnesses: with the
+    real camera dead, the crossing must read stale, or a dead detector could
+    hide behind the blind camera's ticking forever."""
+    state = LiveState(
+        {"SE_12TH_CLINTON": [("odot-678", "Clinton"), ("odot-679", "Division view")]},
+        scoring={"odot-678"},
+    )
+    state.apply_observation(obs(0, CrossingState.BLOCKED, "odot-678"))
+    # The real witness dies; the blind camera keeps ticking UNKNOWN.
+    for m in (2, 4, 6, 8, 10):
+        state.apply_observation(obs(m, CrossingState.UNKNOWN, "odot-679"))
+
+    board = state.snapshot(now=T0 + timedelta(minutes=11))
+    clinton = next(c for c in board.crossings if c.crossing_id == "SE_12TH_CLINTON")
+    assert clinton.state is CrossingState.UNKNOWN
+    assert clinton.stale, "the heartbeat is not a witness; the crossing is genuinely dark"
+    # The pictures still flow: the blind camera's frames stay on the panel.
+    division_view = next(c for c in clinton.cameras if c.camera_id == "odot-679")
+    assert division_view.object_key is not None

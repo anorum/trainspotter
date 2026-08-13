@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 from blockade.config import Settings
 from blockade.schemas import CapturedAtSource, CrossingState, FetchStatus, FrameRecord
-from detector.runner import Scorer, score_frames
+from detector.runner import UNSCORED_VERSION, Scorer, score_frames
 
 FIXTURES = Path(__file__).parent / "fixtures" / "frames"
 CLEAR_NIGHT = FIXTURES / "odot-678" / "clear-night.jpg"
@@ -119,3 +119,21 @@ def test_a_scored_fixture_frame_reads_clear(settings: Settings) -> None:
     assert observation is not None
     assert observation.state is CrossingState.CLEAR
     assert observation.crossing_id == "SE_12TH_CLINTON"
+
+
+def test_a_non_scoring_camera_emits_an_inert_unknown(settings: Settings) -> None:
+    """odot-679 watches the Division intersection, so it must not vote. The
+    board still needs its frames, so the scorer mints an UNKNOWN without
+    reading bytes or consulting a model, stamped as policy not as failure."""
+
+    def forbidden_read(object_key: str) -> bytes | None:
+        raise AssertionError("a non-scoring camera's bytes must never be read")
+
+    scorer = Scorer(settings, forbidden_read)
+    obs = scorer.score(frame("odot-679", 0))
+
+    assert obs is not None
+    assert obs.state is CrossingState.UNKNOWN
+    assert obs.confidence == 0.0
+    assert obs.detector_version == UNSCORED_VERSION
+    assert obs.object_key == "frames/odot-679/x/0.jpg"
