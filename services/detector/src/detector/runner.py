@@ -371,16 +371,16 @@ async def _stream(settings: Settings) -> None:
                         "unparseable frame record at %s:%s", message.partition, message.offset
                     )
                     continue
-                observation = scorer.score(record)
-                if observation is None:
+                obs = scorer.score(record)
+                if obs is None:
                     SKIPPED_FRAMES.labels(record.camera_id).inc()
                     continue
-                SCORED.labels(observation.camera_id, observation.state.value).inc()
+                SCORED.labels(obs.camera_id, obs.state.value).inc()
                 futures.append(
                     await producer.send(
                         settings.kafka_observations_topic,
-                        observation.crossing_id,
-                        observation.model_dump_json().encode(),
+                        obs.crossing_id,
+                        obs.model_dump_json().encode(),
                     )
                 )
             # The at-least-once barrier: observations are durable in the broker

@@ -61,6 +61,13 @@ const WINDOWS: [number, string][] = [
   [720, "30D"],
 ];
 
+/** How long a judgement stands as a measurement rather than a memory.
+ *  Mirrors DEFAULT_STALE_AFTER in the API's live reducer
+ *  (libs/blockade-core/src/blockade/api/state.py); the two have to move
+ *  together, or the scrubbed board and the live board disagree about whether
+ *  the same instant had a witness. */
+const STALE_AFTER_MS = 6 * 60_000;
+
 /** How long a failed history load silences the scrubber's retries. */
 const RETRY_COOLDOWN_MS = 5_000;
 
@@ -188,15 +195,18 @@ export default function LiveBoard() {
   const board = useMemo(() => {
     if (!status) return null;
     if (!scrubbing) return status;
-    // Time-travel view: each crossing shows its state at the scrubbed instant.
-    // The state comes from judgements only - the last row at or before the
-    // instant that actually claims BLOCKED or CLEAR. An UNKNOWN row is a
-    // refusal to judge (a glare-ruined frame, or a camera that does not view
-    // the crossing at all and publishes a zero-inference UNKNOWN every tick),
-    // never an assertion about the crossing, which is the same rule the live
-    // consensus applies. Frames still come from every row, so those cameras'
-    // pictures time-travel with the rest.
+    // Time-travel view: each crossing shows its state at the scrubbed instant,
+    // by the two rules the live reducer applies to the same question. The state
+    // comes from judgements only - an UNKNOWN row is a refusal to judge (a
+    // glare-ruined frame, or a camera that does not view the crossing at all
+    // and publishes a zero-inference UNKNOWN every tick), never an assertion
+    // about the crossing. And the judgement has to be fresh at that instant: an
+    // older one is a memory, so a crossing whose witnesses went quiet reads
+    // UNKNOWN and stale rather than holding a red dot from hours earlier.
+    // Frames still come from every row, at any age, so those cameras' pictures
+    // time-travel with the rest.
     const at = new Date(scrubT!);
+    const freshFrom = at.getTime() - STALE_AFTER_MS;
     return {
       generated_at: at.toISOString(),
       crossings: status.crossings.map((c) => {
@@ -204,7 +214,9 @@ export default function LiveBoard() {
           (o) => new Date(o.captured_at) <= at,
         );
         let last: TimelineObs | undefined;
-        for (const o of past) if (o.state !== "UNKNOWN") last = o;
+        for (const o of past) {
+          if (o.state !== "UNKNOWN" && new Date(o.captured_at).getTime() >= freshFrom) last = o;
+        }
         const frames = new Map<string, TimelineObs>();
         for (const o of past) if (o.object_key) frames.set(o.camera_id, o);
         return {
