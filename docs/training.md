@@ -18,8 +18,9 @@ Sessions are per crossing while training is per camera, and that gap is the shar
 `build_manifest` selects its windows by `crossing_id`, then labels BLOCKED every frame of whichever camera you pointed it at that falls inside a core.
 Sessions open on a blocked-biased consensus across both of a crossing's cameras, so the partner camera inherits positives its own view never justified: `odot-679` favors Division over the Clinton crossing it is paired with, and `odot-682` cannot resolve the tracks at night.
 Core positives are therefore trustworthy only for the camera whose view actually drove the session - `odot-678` at Clinton, `odot-681` at Division.
-For the weak partner, spot-check the core positives before training and fold in that camera's own hand-saved blocks as explicit BLOCKED rows, which section 2 shows how to do; a model taught that a clear-looking frame is BLOCKED is precisely the false-positive generator this section exists to prevent.
-The other remedy is to build `session_files` from that camera's own observations - `blockade-detect scan --camera odot-679` then `derive_sessions` over the result - so the windows come only from what that view actually produced.
+For the weak partner, spot-check the core positives before training; a model taught that a clear-looking frame is BLOCKED is precisely the false-positive generator this section exists to prevent.
+The remedy that works for a camera with no hand-saved frames of its own - which is `odot-679` and `odot-682` today - is to build `session_files` from that camera's own observations: `blockade-detect scan --camera odot-679` then `derive_sessions` over the result, so the windows come only from what that view actually produced.
+Where hand-saved blocks do exist, section 2 folds them in as explicit BLOCKED rows.
 
 **VLM-sweep CLEARs** are the good negatives.
 `blockade-detect spotcheck` walks frames at a stride and records Haiku's judgement; the manifest takes the ones labelled CLEAR at confidence 0.8 or above.
@@ -101,29 +102,38 @@ write_manifest(examples, Path("var/training/manifest-odot-678.jsonl"))
 
 A missing `sweep_file` is not an error - `build_manifest` skips the source when the file does not exist - so check the assembled manifest actually contains `vlm-sweep` examples rather than assuming it does.
 
-**Fold in the hand-saved blocks.**
+**Fold in the hand-saved blocks**, where the camera has them.
 `build_manifest` does not read `data/blocks/`, but the manifest is plain `Example` JSONL, so appending them is a few lines - and this is how the production `odot-678` model was trained.
-For a weak partner camera it is the difference between a usable model and one taught that a clear-looking frame is BLOCKED.
+This step presumes hand-saved frames already exist for that camera: `data/blocks/` holds `odot-676`, `odot-678`, and `odot-681` today, and for the others the session-file remedy in section 1 is the one that applies.
+
+Choose the exam before you append, because here the gold guarantee is yours to keep rather than the code's.
+`build_manifest` enforces gold-out-of-training by object key, and these rows carry `blocks/...` keys that check never sees, so nothing stops you training on the very frames you plan to be graded against.
+Hold out every block you have already adjudicated into `data/labels/labels.jsonl`.
+On a thin-gold camera, choose the held-out exam positives first and keep them out of the append: `odot-676` has thirteen blocks and no BLOCKED gold at all, so folding in all thirteen would leave section 3 with nothing honest to grade.
 
 ```python
 import json
+from pathlib import Path
 
 camera = "odot-678"
+held_out = {"block1.png", "block2.png"}  # the exam for this camera; never trained on
+
 with open(f"var/training/manifest-{camera}.jsonl", "a") as fh:
     for frame in sorted(Path(f"data/blocks/{camera}").iterdir()):
-        if frame.suffix.lower() in {".jpg", ".jpeg", ".png"}:
-            fh.write(json.dumps({
-                "object_key": f"blocks/{camera}/{frame.name}",
-                "camera_id": camera,
-                "label": "BLOCKED",
-                "source": "hand-blocks",
-                "split": "train",
-            }) + "\n")
+        if frame.suffix.lower() not in {".jpg", ".jpeg", ".png"} or frame.name in held_out:
+            continue
+        fh.write(json.dumps({
+            "object_key": f"blocks/{camera}/{frame.name}",
+            "camera_id": camera,
+            "label": "BLOCKED",
+            "source": "hand-blocks",
+            "split": "train",
+        }) + "\n")
 ```
 
 Then pass `data/blocks` as a second entry in `frames_roots` below.
 `load_examples` resolves each row by basename and accepts the hit whose path contains the camera id, which `data/blocks/{camera_id}/` satisfies - so the rows above find their pixels without the frames being moved or renamed.
-A `dataset.py` helper that folded these in automatically would be a worthwhile small addition; today it is glue you write once.
+A `dataset.py` helper that folded blocks in automatically, taking the held-out set as an argument so the exclusion cannot be forgotten, would be a worthwhile small addition; today it is glue you write once.
 
 Then train.
 One model per camera: MobileNetV3-small, ImageNet backbone frozen, the full classifier head fine-tuned.
@@ -158,8 +168,9 @@ Scoring gold is a throwaway script: read the label file, run both models over th
 Build it however you like, but do not ship without the two numbers side by side.
 
 Cameras with thin gold need a substitute exam.
-Hold out the hand-saved positives as the test set, and add a false-positive screen over quiet frames the model has never seen.
+Hold out the hand-saved positives as the test set - the `held_out` set from section 2, which is why that set has to be chosen before the fold-in rather than after - and add a false-positive screen over quiet frames the model has never seen.
 A model that passes on held-out positives but lights up on quiet frames has not earned a rollout.
+Every camera this applies to is thin for a reason: `odot-676` and `odot-677` have no BLOCKED gold at all, and `odot-679` and `odot-682` have no gold records, so on those the substitute exam is the only exam there is.
 
 ## 4. Ship
 

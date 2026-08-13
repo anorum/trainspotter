@@ -101,8 +101,11 @@ table is kept as the vocabulary the verdicts use.
 Night: streetlights and headlights dominate; vehicle bodies are hard to separate from background.
 **Rail structure visible in frame** - candidate for a direct train signal.
 Verdict: **usable**, but the weakest detector performance of the three crossings, and the pair most
-in need of more hand labels: a confirmed train on 2026-08-11 was missed here that both other
-crossings caught.
+in need of more hand labels. A train on 2026-08-11 (~11:41-11:49 PDT) was reported missed here by
+the operator, corroborated by what the other two crossings recorded that day; its gold labels are
+still queued for entry, so `data/labels/labels.jsonl` does not yet carry it. That gap is the point:
+Milwaukie has the thinnest ground truth of the three crossings - two records for 676, one for 677,
+and no BLOCKED example at either.
 
 ### Portland - 11th at Milwaukie S - `odot-677`, `SE_11TH_MILWAUKIE`
 45.50314, -122.65414 · labelled "213 - SE Milwaukie @ Gideon St"
