@@ -38,6 +38,7 @@ export default function SessionLog() {
   const [filter, setFilter] = useState("ALL");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [strips, setStrips] = useState<Record<string, TimelineObs[]>>({});
+  const [stripFailed, setStripFailed] = useState<Record<string, boolean>>({});
   const [featured, setFeatured] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -59,17 +60,23 @@ export default function SessionLog() {
     }
     setExpanded(s.session_id);
     if (strips[s.session_id]) return;
+    setStripFailed((prev) => ({ ...prev, [s.session_id]: false }));
     const from = new Date(new Date(s.started_at).getTime() - PAD_MS).toISOString();
     const to = s.ended_at
       ? new Date(new Date(s.ended_at).getTime() + PAD_MS).toISOString()
       : new Date().toISOString();
-    const r = await fetch(
-      `/api/v1/timeline?crossing_id=${s.crossing_id}&from=${from}&to=${to}`,
-    );
-    // An empty strip renders as "No frames kept for this session", which is
-    // also the honest rendering of a failed fetch.
-    const observations: TimelineObs[] = r.ok ? (await r.json()).observations : [];
-    setStrips((prev) => ({ ...prev, [s.session_id]: tape(observations) }));
+    try {
+      const r = await fetch(
+        `/api/v1/timeline?crossing_id=${s.crossing_id}&from=${from}&to=${to}`,
+      );
+      if (!r.ok) throw new Error(`timeline ${r.status}`);
+      const observations: TimelineObs[] = (await r.json()).observations;
+      setStrips((prev) => ({ ...prev, [s.session_id]: tape(observations) }));
+    } catch {
+      // Deliberately not cached: only a store that answered can say a session
+      // kept no frames, and leaving the strip unset lets a re-expand retry.
+      setStripFailed((prev) => ({ ...prev, [s.session_id]: true }));
+    }
   };
 
   if (failed) {
@@ -149,7 +156,14 @@ export default function SessionLog() {
 
                 {open && (
                   <div class="tape">
-                    {!strip && <p class="loading">Pulling the tape...</p>}
+                    {!strip && !stripFailed[s.session_id] && (
+                      <p class="loading">Pulling the tape...</p>
+                    )}
+                    {!strip && stripFailed[s.session_id] && (
+                      <p class="empty">
+                        The history store is not answering; the tape will be back.
+                      </p>
+                    )}
                     {strip && strip.length === 0 && (
                       <p class="empty">No frames kept for this session.</p>
                     )}

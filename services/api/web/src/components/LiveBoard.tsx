@@ -69,6 +69,7 @@ export default function LiveBoard() {
   const [timelines, setTimelines] = useState<Record<string, TimelineObs[]>>({});
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null);
+  const [timelineFailed, setTimelineFailed] = useState(false);
   // The value is never read; each tick just re-renders the live durations.
   const [, setTick] = useState(0);
   // Refs, not state: the guard must be visible to concurrent calls
@@ -76,8 +77,11 @@ export default function LiveBoard() {
   // every input event, and a state-based guard let every one of them race
   // through and refetch all three crossings. The generation counter keeps an
   // overlapping narrower load (drag, then widen immediately) from landing
-  // late and clobbering the wider data.
+  // late and clobbering the wider data. appliedHours is the window whose
+  // observations are actually in `timelines`, which is what a failed load
+  // must fall back to.
   const loadedHours = useRef(0);
+  const appliedHours = useRef(0);
   const loadGeneration = useRef(0);
 
   // The panel's habit line loads the first time any crossing is selected.
@@ -110,7 +114,6 @@ export default function LiveBoard() {
   // reloads when the window widens past what has been fetched.
   const loadTimelines = async (hours: number) => {
     if (loadedHours.current >= hours) return;
-    const previous = loadedHours.current;
     loadedHours.current = hours;
     const generation = ++loadGeneration.current;
     try {
@@ -121,11 +124,18 @@ export default function LiveBoard() {
           return [id, (await r.json()).observations] as const;
         }),
       );
-      if (generation === loadGeneration.current) setTimelines(Object.fromEntries(entries));
+      if (generation === loadGeneration.current) {
+        setTimelines(Object.fromEntries(entries));
+        appliedHours.current = hours;
+        setTimelineFailed(false);
+      }
     } catch {
-      // Fall back to the window already on screen so a later scrub retries;
+      // Fall back to the window actually on screen so a later scrub retries;
       // a superseding load owns the guard now and must not be rolled back.
-      if (generation === loadGeneration.current) loadedHours.current = previous;
+      if (generation === loadGeneration.current) {
+        loadedHours.current = appliedHours.current;
+        setTimelineFailed(true);
+      }
     }
   };
 
@@ -291,6 +301,14 @@ export default function LiveBoard() {
         </span>
       </div>
 
+      {/* Without this the board would render a history-store outage as three
+          crossings with no recent signal - a detector failure, not a store one. */}
+      {timelineFailed && (
+        <p class="empty scrub-note">
+          The history store is not answering; the past will be back.
+        </p>
+      )}
+
       <div class="crossings-list">
         {board.crossings.map((c) => {
           const g = GEOMETRY[c.crossing_id];
@@ -452,6 +470,7 @@ const css = `
   .scrub .track { flex-basis: 100%; order: 10; }
   .scrub .when { min-width: 0; }
 }
+.scrub-note { margin: -0.5rem 0 1rem; font-size: 0.85rem; }
 .lanes { display: grid; gap: 2px; padding: 2px 8px 0; }
 .lane { position: relative; height: 3px; background: var(--panel); border-radius: 2px; }
 .blocked-seg { position: absolute; top: 0; height: 100%; background: var(--signal-red); border-radius: 2px; }
