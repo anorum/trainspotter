@@ -219,12 +219,39 @@ async def test_backfill_replaces_a_changed_boundary_session(pool) -> None:
 async def test_backfill_removes_a_phantom_outright(pool) -> None:
     """The 678 dawn-inversion case: the old detector invented a session, the
     new scan of the same window finds nothing, and the phantom must vanish
-    rather than survive as the window's only record."""
+    rather than survive as the window's only record. Emptying a window is
+    destructive enough to be opt-in, which is what the operator declares here."""
     await db.upsert_batch(pool, [], [_sess("phantom", detector_version="motion/1", is_open=False)])
-    await db.load_backfill(pool, [], [], [_window(-60, 120)])
+    await db.load_backfill(pool, [], [], [_window(-60, 120)], allow_empty_window=True)
 
     rows = await db.session_list(pool, "SE_12TH_CLINTON", limit=10)
     assert rows == []
+
+
+async def test_backfill_refuses_to_empty_a_window_it_cannot_replace(pool) -> None:
+    """The partial-scan footgun: re-scoring one camera of a two-camera crossing
+    derives no sessions from the witness that saw nothing - or, for a
+    `scores: false` camera, from a window of pure unscored UNKNOWNs - while the
+    window still spans the crossing. Deleting the other camera's real trains and
+    inserting nothing would erase them from the lanes, the sessions API, and the
+    board with nothing to replace them, so the load refuses and the transaction
+    rolls back untouched."""
+    real = _sess("real-train", detector_version="motion/1", is_open=False)
+    await db.upsert_batch(pool, [], [real])
+
+    with pytest.raises(db.EmptyWindowError, match="SE_12TH_CLINTON"):
+        await db.load_backfill(
+            pool,
+            [_obs(5, state="UNKNOWN", detector_version="unscored/1", camera="odot-679")],
+            [],
+            [_window(-60, 120)],
+        )
+
+    rows = await db.session_list(pool, "SE_12TH_CLINTON", limit=10)
+    assert [r["session_id"] for r in rows] == ["real-train"], "the refusal is a full rollback"
+    async with pool.acquire() as conn:
+        count = await conn.fetchval("SELECT count(*) FROM observations")
+    assert count == 0, "the observations in the same transaction rolled back too"
 
 
 async def test_backfill_touches_only_its_window_and_crossing(pool) -> None:

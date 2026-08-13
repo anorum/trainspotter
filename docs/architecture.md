@@ -66,6 +66,8 @@ CLIs: `blockade-capture` (run/once), `blockade-inventory` (fetch/list/resolve - 
 
 Turns frames into `ObservationRecord`s: one judgement (BLOCKED / CLEAR / UNKNOWN, confidence, reason) per crossing per tick.
 UNKNOWN is a first-class honest answer; a detector must never raise and never guess.
+Cameras whose view does not include the crossing carry `scores: false` in the roster (today 677 and 679): they emit zero-inference UNKNOWNs stamped `unscored/1`, so the board keeps their pictures while consensus, sessions, alerts, and analytics all ignore them.
+That covers new rows; their historical judgements stay authoritative for past instants until a re-score and backfill layers `unscored/1` over them - which has to re-score the crossing's other cameras in the same pass, because that is what rebuilds its sessions.
 Every record is stamped with the `detector_version` that produced it, so rows from different detectors are never silently mixed.
 
 Detectors are interchangeable by config (`BLOCKADE_DETECTOR`); production runs `auto`, a per-camera router:
@@ -101,7 +103,9 @@ One pod serving both the JSON API and the static site, plus the Postgres materia
 - **Backfill** (`blockade-api backfill obs.jsonl`): loads a re-scored window; see the data contract below.
 - **Frames** (`/api/v1/frames/...`): S3 reads behind a content-addressed disk LRU, with a path-pattern guard.
 - **Web** (`web/`): static Astro build baked into the image; three pages, one Preact island each - the board (schematic corridor map, SSE, time scrubber), the train sheet, and patterns.
-  `npm run check` typechecks under Astro strict; CI runs it for web changes.
+  The scrubber is the one place the consensus rule above exists twice: `LiveState` only ever holds the present, so answering "what did the board show at 05:45" happens client-side over `/timeline` rows, in `web/src/lib/scrub.ts`.
+  That copy is pinned against the reducer's own scenarios in `scrub.test.ts`, so the two cannot drift silently.
+  `npm run check` typechecks under Astro strict and `npm test` runs those scenarios; CI runs both for web changes.
 
 ### Postgres (deploy/postgres)
 
@@ -158,7 +162,9 @@ A deploy-manifest test asserts every ServiceMonitor actually selects a Service, 
 ### Common tasks
 
 - **Retrain a camera**: follow [docs/training.md](training.md) (label, train, exam against gold labels, `aws s3 cp` the ONNX to `references/`, rollout restart the detector, then backfill the improved history).
-- **Backfill after a detector change**: `blockade-detect scan --camera X --until <now-20min>` then `blockade-api backfill obs.jsonl --dry-run`, then for real; only the re-scored crossing's history changes.
+- **Backfill after a detector change**: `blockade-detect scan --until <now-20min>` over *every* camera on the crossing, then `blockade-api backfill obs.jsonl --dry-run`, then for real; only the re-scored crossing's history changes.
+  Scanning one camera of a two-camera crossing is the trap: the sessions are derived from all its witnesses at once, so a partial scan rebuilds the window from half the evidence, and a scan of a `scores: false` camera rebuilds it from none.
+  The plan reads the roster and refuses any window whose crossing has a scoring camera missing from the scan, and the load refuses a second time if a window would end up with no sessions at all; `--allow-empty-window` is the deliberate override for windows that predate a camera or whose sessions really were phantoms.
   The step-by-step runbook, including reaching Postgres, is in [services/api/README.md](../services/api/README.md).
 - **Add a camera**: add it to `TARGET_CAMERAS` in `inventory.py`, run `blockade-inventory resolve`, recreate the ConfigMap; it scores UNKNOWN until it has a reference model (and earns its track band from its first hand-labeled blockages via `blockade-detect band`).
 - **Debug one frame**: `uv run blockade-detect explain path/to/frame.jpg`.

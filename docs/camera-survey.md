@@ -3,9 +3,12 @@
 **Status: closed 2026-08-12.** Capture started 2026-08-08 21:24 PDT; all six cameras resolved and
 have been returning frames continuously since. The survey's job is done: usability now shows up
 empirically as per-camera detector performance (odot-682 cannot resolve the tracks at night, which
-the blocked-biased consensus absorbs; odot-679's view favors Division over the Clinton crossing),
-and the per-camera model workflow in [docs/architecture.md](architecture.md) replaced the idea of
-a hand-maintained usability field. The night-one findings below stand as the record.
+the blocked-biased consensus absorbs), and the per-camera model workflow in
+[docs/architecture.md](architecture.md) replaced the idea of a hand-maintained usability field.
+The exception is a question no detector metric could answer: odot-677 and odot-679 turned out not
+to show their crossing at all, which Alex established by eye on 2026-08-12 - they are `scores:
+false` now, captured and shown but never judged. The night-one findings below stand as the record,
+with those two verdicts revised in place.
 
 ## Findings that already change the design
 
@@ -100,8 +103,9 @@ table is kept as the vocabulary the verdicts use.
 45.50329, -122.65457 · labelled "212 - SE Milwaukie @ Gideon St"
 Night: streetlights and headlights dominate; vehicle bodies are hard to separate from background.
 **Rail structure visible in frame** - candidate for a direct train signal.
-Verdict: **usable**, but the weakest detector performance of the three crossings, and the pair most
-in need of more hand labels. A train on 2026-08-11 (~11:41-11:49 PDT) was reported missed here by
+Verdict: **usable**, but the weakest detector performance of the three crossings, and - now that
+`odot-677` is non-scoring and this is the crossing's only witness - the camera most in need of more
+hand labels. A train on 2026-08-11 (~11:41-11:49 PDT) was reported missed here by
 the operator, corroborated by what the other two crossings recorded that day; its gold labels are
 still queued for entry, so `data/labels/labels.jsonl` does not yet carry it. That gap is the point:
 Milwaukie has the thinnest ground truth of the three crossings - two records for 676, one for 677,
@@ -109,9 +113,10 @@ and no BLOCKED example at either.
 
 ### Portland - 11th at Milwaukie S - `odot-677`, `SE_11TH_MILWAUKIE`
 45.50314, -122.65414 · labelled "213 - SE Milwaukie @ Gideon St"
-Also overlooks the rail corridor. Darker frame than 676; a large unlit region occupies the left
-third. Verdict: **usable**, with the same caveat as 676 - Milwaukie is the crossing that most needs
-hand-labelled blocks.
+Verdict revised 2026-08-12 on Alex's inspection: **non-scoring** - the view shows the Gideon
+intersection and the crossing is not in frame, overturning the night-one read. Its reference
+detector had been emitting ~100 BLOCKEDs/day of traffic noise. Now `scores: false` in the roster:
+captured and shown on the board, never judged.
 
 ### Portland - 12th at Clinton - `odot-678`, `SE_12TH_CLINTON`
 45.50360, -122.65381 · labelled "214 - SE 12th @ Clinton"
@@ -121,8 +126,11 @@ production classifier.
 
 ### Portland - 12th at Division - `odot-679`, `SE_12TH_CLINTON`
 45.50494, -122.65360 · largest payload of the six (~29 KB), suggesting more scene detail.
-Verdict: **marginal** for the crossing it is assigned to - the view favors Division, so it
-contributes little to Clinton and its consensus weight there is small.
+Verdict revised 2026-08-12 on Alex's inspection: **non-scoring** - the view looks north at the
+Division intersection and the Clinton crossing is entirely out of frame. "Marginal" understated
+it: its reference detector emitted ~123 BLOCKEDs/day that the blocked-biased consensus amplified
+into phantom board states and padded sessions. Now `scores: false` in the roster: captured and
+shown, never judged.
 
 ### Portland - 8th at Division - `odot-681`, `SE_8TH_DIVISION`
 45.50573, -122.65745 · ~300 m from the crossings, the furthest of the set.
@@ -146,9 +154,13 @@ The per-crossing usability tally this section was going to hold was never filled
 is not worth reconstructing as one: usability turned out to be per camera and per lighting
 condition rather than a single verdict, and it now shows up empirically in detector performance.
 The verdicts above do settle the question it was meant to answer, and the answer matters.
-SE_12TH_CLINTON effectively runs on one strong camera: `odot-679`'s view favors Division, so it
-contributes little to Clinton, and the single-usable-camera caveat above applies there - which is
-precisely why `odot-678` was the first camera to get a trained classifier.
+SE_12TH_CLINTON runs on `odot-678` alone: `odot-679` cannot see the Clinton crossing at all, so it
+is non-scoring and contributes nothing - which is precisely why `odot-678` was the first camera to
+get a trained classifier.
+SE_11TH_MILWAUKIE is in the same position on `odot-676` alone, since `odot-677` watches the Gideon
+intersection. The single-usable-camera caveat above therefore applies in full to two of the three
+crossings: neither has a second witness to outvote a glare-blind frame, and a detector outage at
+either shows up as UNKNOWN rather than as a wrong answer.
 SE_8TH_DIVISION is the half case, two usable cameras by day and one after dark, since `odot-682`
 cannot resolve the tracks at night.
 

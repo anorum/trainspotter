@@ -21,6 +21,7 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from blockade.config import CameraRoster
 from blockade.schemas import BlockageSession, ObservationRecord
 from blockade.sessions import SessionParams, derive_sessions
 
@@ -76,11 +77,103 @@ class BackfillPlan:
         return "\n".join(lines)
 
 
-def plan(observations: list[ObservationRecord], now: datetime | None = None) -> BackfillPlan:
-    """Derive sessions and per-crossing rebuild windows from a scan's output."""
+COVERAGE_SLACK = SessionParams().gap
+"""How far inside a window's edge a camera's own rows may start or end.
+
+One session gap: a hole shorter than that cannot hide or split a session, so
+it costs the rebuild nothing. Anything wider means the scan stopped seeing
+that camera partway through the span it is about to rewrite.
+"""
+
+
+def _witnesses(roster: CameraRoster | None) -> dict[str, set[str]]:
+    """Which cameras a crossing's sessions are derived from, per crossing.
+
+    The non-scoring ones are not witnesses: they publish UNKNOWN by policy and
+    a re-score that omits them loses nothing.
+    """
+    out: dict[str, set[str]] = {}
+    for camera in roster.enabled() if roster else []:
+        if camera.scores:
+            out.setdefault(camera.crossing_id, set()).add(camera.camera_id)
+    return out
+
+
+def _coverage_failure(
+    group: list[ObservationRecord], window: Window, expected: set[str]
+) -> str | None:
+    """Why this window cannot be rebuilt from these observations, if it cannot.
+
+    A window is deleted and re-derived whole, so every scoring camera has to
+    cover it whole. Presence is not coverage: ``scan`` drops frames whose bytes
+    are no longer in the local cache and reports only what survived, so a
+    single surviving row is enough to make a three-day scan of a camera look
+    complete while the blockages only that camera witnessed are deleted with
+    nothing to replace them.
+    """
+    spans: dict[str, tuple[datetime, datetime]] = {}
+    for o in group:
+        first, last = spans.get(o.camera_id, (o.captured_at, o.captured_at))
+        spans[o.camera_id] = (min(first, o.captured_at), max(last, o.captured_at))
+
+    absent = sorted(expected - spans.keys())
+    if absent:
+        return (
+            f"the scan covers {', '.join(sorted(spans))}, but the crossing is also "
+            f"watched by {', '.join(absent)}. Its sessions are derived from every "
+            "scoring camera at once, so loading this would rebuild "
+            f"{window.start:%Y-%m-%d %H:%M} .. {window.end:%Y-%m-%d %H:%M} UTC from "
+            "part of the evidence and delete what the missing camera saw. Re-score "
+            "them together - drop --camera, or scan each and concatenate the JSONL. "
+            "If this window predates the missing camera, re-run with "
+            "--allow-empty-window."
+        )
+
+    short = [
+        (camera_id, spans[camera_id])
+        for camera_id in sorted(expected)
+        if spans[camera_id][0] - window.start > COVERAGE_SLACK
+        or window.end - spans[camera_id][1] > COVERAGE_SLACK
+    ]
+    if short:
+        covered = "; ".join(
+            f"{camera_id} only {start:%Y-%m-%d %H:%M} .. {end:%Y-%m-%d %H:%M}"
+            for camera_id, (start, end) in short
+        )
+        return (
+            f"the window to rebuild is {window.start:%Y-%m-%d %H:%M} .. "
+            f"{window.end:%Y-%m-%d %H:%M} UTC, but {covered}. The rebuild covers the "
+            "whole window from every scoring camera at once, so the span that camera "
+            "is missing from would be re-derived without it and the blockages only it "
+            "witnessed deleted. `scan` drops frames whose bytes have left the local "
+            "cache without failing, which is what a hole like this usually means: "
+            "re-sync that camera's frames for the window and scan again. If it really "
+            "was down for that span, re-run with --allow-empty-window."
+        )
+    return None
+
+
+def plan(
+    observations: list[ObservationRecord],
+    now: datetime | None = None,
+    *,
+    roster: CameraRoster | None = None,
+    allow_empty_window: bool = False,
+) -> BackfillPlan:
+    """Derive sessions and per-crossing rebuild windows from a scan's output.
+
+    Refuses a scan whose every witness does not cover every window it would
+    rewrite. Sessions are a per-crossing projection of all its cameras at once,
+    but the load's unit is the window, so a scan of one camera of two rebuilds
+    that window from half the evidence and deletes what the other camera saw -
+    silently, because the plan looks complete. ``allow_empty_window`` waives it
+    for the legitimate edges: a window predating a camera, one a camera was
+    genuinely down for, or one whose sessions really were phantoms.
+    """
     if not observations:
         raise BackfillError("no observations to load")
     now = now or datetime.now(UTC)
+    witnesses = _witnesses(roster)
 
     windows: list[Window] = []
     by_crossing: dict[str, list[ObservationRecord]] = {}
@@ -96,6 +189,10 @@ def plan(observations: list[ObservationRecord], now: datetime | None = None) -> 
                 "Streaming owns now; backfill only history. Scan with --until, or "
                 "re-run once the window is old enough."
             )
+        if not allow_empty_window:
+            failure = _coverage_failure(group, window, witnesses.get(crossing_id, set()))
+            if failure:
+                raise BackfillError(f"{crossing_id}: {failure}")
         windows.append(window)
 
     # Same parameters as the streaming job; a divergence here would make batch

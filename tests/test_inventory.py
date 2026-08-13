@@ -88,3 +88,21 @@ def test_name_matching_tolerates_formatting_drift(inventory):
     cameras, missing = resolve(inventory, {"portland-12thatclinton": "SE_12TH_CLINTON"})
     assert missing == []
     assert cameras[0]["camera_id"] == "odot-678"
+
+
+def test_resolve_marks_the_track_blind_cameras_non_scoring(inventory):
+    """677 and 679 cannot see their crossings (verified by eye 2026-08-12); a
+    roster regen must carry that policy rather than silently re-enfranchise
+    them. Matching goes through the same normalisation as name resolution, so
+    formatting drift cannot drop the flag."""
+    from poller.inventory import NON_SCORING_CAMERAS, TARGET_CAMERAS, resolve
+
+    assert set(TARGET_CAMERAS) >= NON_SCORING_CAMERAS, "a typo here would be a silent no-op"
+
+    resolved, missing = resolve(inventory)
+    assert not missing
+    by_id = {c["camera_id"]: c for c in resolved}
+    assert by_id["odot-677"].get("scores") is False
+    assert by_id["odot-679"].get("scores") is False
+    for cam_id in ("odot-676", "odot-678", "odot-681", "odot-682"):
+        assert "scores" not in by_id[cam_id], "the default stays invisible in the roster"

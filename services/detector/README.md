@@ -7,6 +7,6 @@ The `blockade-detect` CLI carries the service and the operator tools:
 
 - `run` - the streaming service: Kafka frames in, observations out.
 - `scan` - score manifest frames on disk; the replay/backfill route.
-- `explain <image>` - score one frame with the deployed detector build and print the judgement.
+- `explain <image>` - print what the pod would publish for one frame, from the deployed detector build (a non-scoring camera's frame included, unjudged).
 - `band <camera> --blocked-dir ...` - derive a camera's track band from hand-labeled blocked frames.
 - `spotcheck` - grow the label set with VLM spot-checks (needs `ANTHROPIC_API_KEY`).

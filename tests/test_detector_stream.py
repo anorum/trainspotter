@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 from blockade.config import Settings
 from blockade.schemas import CapturedAtSource, CrossingState, FetchStatus, FrameRecord
-from detector.runner import Scorer, score_frames
+from detector.runner import UNSCORED_VERSION, Scorer, score_frames
 
 FIXTURES = Path(__file__).parent / "fixtures" / "frames"
 CLEAR_NIGHT = FIXTURES / "odot-678" / "clear-night.jpg"
@@ -119,3 +119,76 @@ def test_a_scored_fixture_frame_reads_clear(settings: Settings) -> None:
     assert observation is not None
     assert observation.state is CrossingState.CLEAR
     assert observation.crossing_id == "SE_12TH_CLINTON"
+
+
+def test_a_non_scoring_camera_emits_an_inert_unknown(settings: Settings) -> None:
+    """odot-679 watches the Division intersection, so it must not vote. The
+    board still needs its frames, so the scorer mints an UNKNOWN without
+    reading bytes or consulting a model, stamped as policy not as failure."""
+
+    def forbidden_read(object_key: str) -> bytes | None:
+        raise AssertionError("a non-scoring camera's bytes must never be read")
+
+    scorer = Scorer(settings, forbidden_read)
+    obs = scorer.score(frame("odot-679", 0))
+
+    assert obs is not None
+    assert obs.state is CrossingState.UNKNOWN
+    assert obs.confidence == 0.0
+    assert obs.detector_version == UNSCORED_VERSION
+    assert obs.object_key == "frames/odot-679/x/0.jpg"
+
+
+def test_the_unscored_stamp_stays_in_the_namespace_the_board_reads(settings: Settings) -> None:
+    """`detector_version` is a wire contract, not just an audit label. These rows
+    are persisted and served to the board, and the scrubbed view tells a policy
+    UNKNOWN from a camera that genuinely refused to judge by the `unscored/`
+    prefix alone (UNSCORED_PREFIX in services/api/web/src/lib/scrub.ts). Stamp
+    them outside that namespace and the blind cameras' heartbeats count as
+    witnesses again, so a dead 678 hides behind 679's ticking - the same failure
+    test_api_state pins on the server side."""
+    scorer = Scorer(settings, lambda key: pytest.fail("a non-scoring camera reads no bytes"))
+
+    obs = scorer.score(frame("odot-679", 0))
+
+    assert obs is not None
+    assert obs.detector_version.startswith("unscored/")
+
+
+def test_explain_prints_what_the_pod_would_publish_for_a_non_scoring_camera(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """explain promises its output is the record the pod would have published
+    for the same bytes. Running the real model on a camera the pod never scores
+    would hand the operator debugging that very camera a confident BLOCKED or
+    CLEAR the pipeline cannot emit."""
+    import detector.runner as runner
+    from typer.testing import CliRunner
+
+    roster = tmp_path / "cameras.yaml"
+    roster.write_text(
+        "cameras:\n"
+        "  - camera_id: odot-679\n"
+        "    name: Portland - 12th at Division\n"
+        "    crossing_id: SE_12TH_CLINTON\n"
+        "    image_url: http://example.test/679.jpg\n"
+        "    scores: false\n"
+    )
+    monkeypatch.setattr(
+        runner, "get_settings", lambda: Settings(camera_config_path=roster, detector="reference")
+    )
+    monkeypatch.setattr(
+        runner,
+        "build_detector",
+        lambda **kwargs: pytest.fail("a non-scoring camera must consult no model"),
+    )
+    image = tmp_path / "odot-679" / "frame.jpg"
+    image.parent.mkdir()
+    image.write_bytes(b"never read")
+
+    result = CliRunner().invoke(runner.app, ["explain", str(image)])
+
+    assert result.exit_code == 0, result.output
+    assert "state=UNKNOWN" in result.stdout
+    assert "confidence=0.00" in result.stdout
+    assert f"detector_version={UNSCORED_VERSION}" in result.stdout

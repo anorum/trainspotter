@@ -35,4 +35,8 @@ jobs:
       # `astro check` is the typecheck; `astro build` does not run one, so
       # both are needed to keep the strict tsconfig honest.
       - run: npm run check
+      # The scrubbed board re-implements the live reducer's consensus in
+      # TypeScript, because the reducer only ever holds the present. That copy
+      # gets executed here.
+      - run: npm test
       - run: npm run build

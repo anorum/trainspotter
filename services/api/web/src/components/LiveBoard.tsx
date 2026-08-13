@@ -17,6 +17,7 @@ import {
   worstHours,
 } from "../lib/analytics";
 import { COLORS, GEOMETRY, type State } from "../lib/crossings";
+import { stateAt, type TimelineObs } from "../lib/scrub";
 
 interface CameraInfo {
   camera_id: string;
@@ -38,13 +39,6 @@ interface Crossing {
 interface Status {
   generated_at: string;
   crossings: Crossing[];
-}
-
-interface TimelineObs {
-  captured_at: string;
-  state: State;
-  object_key: string | null;
-  camera_id: string;
 }
 
 interface SessionRow {
@@ -188,22 +182,26 @@ export default function LiveBoard() {
   const board = useMemo(() => {
     if (!status) return null;
     if (!scrubbing) return status;
-    // Time-travel view: each crossing shows its state at the scrubbed instant.
+    // Time-travel view: each crossing shows its state at the scrubbed instant,
+    // by the same rules the live reducer applies to the same question. They
+    // live in lib/scrub.ts, where they are tested. The open session and the
+    // latest observation are dropped because both are statements about now,
+    // and `since` with them: the live board's is the instant consensus
+    // changed state, which a walk over one crossing's rows cannot recover, and
+    // a "since" that tracks the slider rather than the train would make a
+    // twenty-minute blockage unreadable as one. The tile renders the bare
+    // state instead.
     const at = new Date(scrubT!);
+    const atMs = at.getTime();
     return {
       generated_at: at.toISOString(),
       crossings: status.crossings.map((c) => {
-        const past = (timelines[c.crossing_id] ?? []).filter(
-          (o) => new Date(o.captured_at) <= at,
-        );
-        const last = past[past.length - 1];
-        const frames = new Map<string, TimelineObs>();
-        for (const o of past) if (o.object_key) frames.set(o.camera_id, o);
+        const { state, stale, frames } = stateAt(timelines[c.crossing_id] ?? [], atMs);
         return {
           ...c,
-          state: last ? last.state : ("UNKNOWN" as State),
-          stale: !last,
-          since: last?.captured_at ?? null,
+          state,
+          stale,
+          since: null,
           open_session: null,
           latest_observation: null,
           cameras: c.cameras.map((cam) => {

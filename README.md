@@ -73,6 +73,10 @@ The cameras see the **rails**, not just the roadway.
 The original design (docs/history/design.md) assumed otherwise and proposed detecting the traffic queue as a proxy; daylight frames show track structure and crossing signals directly, so the detector looks for a train rather than inferring one from stopped cars.
 That is a stronger signal: a queue of stopped vehicles might be a train, a red light, or rush hour, whereas a train on the tracks is either visible or it is not.
 
+Four of the six do, anyway.
+The other two turned out to watch a neighbouring intersection with their crossing out of frame, so they carry `scores: false` in the roster: still captured, still shown on the board, never judged, because a view with no crossing in it can only contribute traffic noise.
+[docs/camera-survey.md](docs/camera-survey.md) records which ones and why.
+
 At night a train reads as a long horizontal mass spanning the frame, hiding the road markings and the far side of the intersection.
 That contrast is unmistakable even at 328x240.
 
@@ -155,6 +159,7 @@ The site the API serves is an Astro app with its own toolchain, gated by the sep
 cd services/api/web
 npm ci
 npm run check    # astro check, against a strict tsconfig; `astro build` does not typecheck
+npm test         # vitest, over the board logic the server cannot answer for
 npm run build
 ```
 

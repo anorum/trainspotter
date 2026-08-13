@@ -63,6 +63,15 @@ TARGET_CAMERAS: dict[str, str] = {
     "Portland - 8th at Division Place": "SE_8TH_DIVISION",
 }
 
+# Verified by eye 2026-08-12: these two views do not include their crossing (677
+# watches the Gideon intersection, 679 the Division one), so they are captured and
+# shown but never judged. Kept here so `resolve` regenerates the roster with the
+# same policy instead of silently re-enfranchising them.
+NON_SCORING_CAMERAS: set[str] = {
+    "Portland - 11th at Milwaukie S",
+    "Portland - 12th at Division",
+}
+
 # Documented field names first; the rest are tolerated in case the schema drifts.
 ID_FIELDS = ("device-id", "deviceId", "device_id", "id")
 NAME_FIELDS = ("device-name", "deviceName", "device_name", "name")
@@ -83,6 +92,11 @@ def _normalise(text: str) -> str:
     """Fold case, punctuation, and spacing so 'Portland - 11th at Milwaukie N'
     matches 'Portland-11th at Milwaukie  N' and similar formatting drift."""
     return "".join(ch for ch in text.casefold() if ch.isalnum())
+
+
+# Derived through _normalise itself, so the policy lookup below and the target
+# lookup can never drift apart if the matching rule ever grows a step.
+_NON_SCORING_NORMALISED = {_normalise(name) for name in NON_SCORING_CAMERAS}
 
 
 def _find_camera_list(payload: Any) -> list[dict[str, Any]]:
@@ -205,6 +219,10 @@ def resolve(payload: Any, targets: dict[str, str] | None = None) -> tuple[list[d
                 "source": CameraSource.ODOT_INVENTORY.value,
                 "lat": float(lat) if lat is not None else None,
                 "lon": float(lon) if lon is not None else None,
+                # Emitted only when False, so regenerating leaves every scoring
+                # camera byte-identical; written here rather than appended
+                # because the YAML dump keeps insertion order.
+                **({"scores": False} if _normalise(target_name) in _NON_SCORING_NORMALISED else {}),
                 "poll_interval_seconds": 30.0,
                 "enabled": True,
             }

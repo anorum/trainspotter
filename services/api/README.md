@@ -14,10 +14,13 @@ When a detector gets better, its new word reaches Postgres through this loop, ne
 1. Re-score the window with the new detector, wherever the frame corpus and manifests live in the poller layout (`var/frames/frames/...` and `var/manifests/{camera_id}/{YYYY-MM-DD-HH}.jsonl`; the poller PVC has them, or pull the window down from S3):
 
    ```
-   uv run blockade-detect scan --camera odot-678 \
+   uv run blockade-detect scan \
      --since 2026-08-09T00:00:00Z --until 2026-08-12T00:00:00Z \
-     --output obs-678.jsonl
+     --output obs.jsonl
    ```
+
+   Cover every camera on the crossing, not just the one whose detector changed - drop `--camera` as above, or scan each and concatenate the JSONL.
+   A crossing's sessions are derived from all its witnesses at once, so a scan of one camera of two rebuilds the window from half the evidence, and a scan of a `scores: false` camera (677, 679) rebuilds it from none at all.
 
 2. Reach Postgres (from a workstation, port-forward: `kubectl -n blockade port-forward svc/postgres 5432`).
 
@@ -25,7 +28,7 @@ When a detector gets better, its new word reaches Postgres through this loop, ne
 
    ```
    BLOCKADE_DATABASE_URL=postgresql://blockade:...@localhost:5432/blockade \
-     uv run blockade-api backfill obs-678.jsonl
+     uv run blockade-api backfill obs.jsonl
    ```
 
    `--dry-run` first prints the plan - per-crossing windows, session counts, detector versions - without touching the database.
@@ -33,5 +36,10 @@ When a detector gets better, its new word reaches Postgres through this loop, ne
 The load is one transaction and is safe to re-run.
 Observations join the store as a new versioned layer and the timeline resolves latest-ingest-wins per instant, so the old detector's word stays on record but stops being the answer.
 Sessions are a projection and get rebuilt: every session starting inside the re-scored window is replaced by what the new derivation found, which is how a phantom session disappears instead of surviving next to its correction.
+A partial scan is refused rather than loaded, because the delete would otherwise be silent and unrecoverable from the board.
+The plan checks the roster: every scoring camera on a crossing must appear in the observations before any window of that crossing is rewritten, so the 681-only scan of a crossing 682 also watches stops before it deletes what 682 saw.
+The load then refuses a second time, inside the transaction, if a window would be left with no sessions at all - the shape the roster check cannot see, such as a crossing whose only witness was removed from the roster after the fact.
+Both give way to `--allow-empty-window`, for a window that predates a camera or whose sessions really were the phantom.
+It applies to every window in the file, so load a legitimately-empty crossing on its own rather than disarming the check for the others.
 The command refuses windows reaching within one session gap of now - that edge belongs to the streaming sessionizer.
 Scan windows should extend a little beyond the period of interest on both sides, so no real session straddles the window boundary.
