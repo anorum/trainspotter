@@ -184,19 +184,24 @@ export default function LiveBoard() {
     if (!scrubbing) return status;
     // Time-travel view: each crossing shows its state at the scrubbed instant,
     // by the same rules the live reducer applies to the same question. They
-    // live in lib/scrub.ts, where they are tested; the open session and the
-    // latest observation are dropped because both are statements about now.
+    // live in lib/scrub.ts, where they are tested. The open session and the
+    // latest observation are dropped because both are statements about now,
+    // and `since` with them: the live board's is the instant consensus
+    // changed state, which a walk over one crossing's rows cannot recover, and
+    // a "since" that tracks the slider rather than the train would make a
+    // twenty-minute blockage unreadable as one. The tile renders the bare
+    // state instead.
     const at = new Date(scrubT!);
     const atMs = at.getTime();
     return {
       generated_at: at.toISOString(),
       crossings: status.crossings.map((c) => {
-        const { state, stale, since, frames } = stateAt(timelines[c.crossing_id] ?? [], atMs);
+        const { state, stale, frames } = stateAt(timelines[c.crossing_id] ?? [], atMs);
         return {
           ...c,
           state,
           stale,
-          since,
+          since: null,
           open_session: null,
           latest_observation: null,
           cameras: c.cameras.map((cam) => {

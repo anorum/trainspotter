@@ -5,14 +5,16 @@
  * holds the present, and the slider asks about the past - so the scenarios
  * that matter are pinned on both sides. Every case here is one the corridor
  * actually produces: a blockage ending, a glare-blind camera disagreeing with
- * a camera that sees the train, a detector going quiet, and the two cameras
- * that cannot see their crossing at all.
+ * a camera that sees the train, a detector going quiet, glare ruining a view,
+ * and the two cameras that cannot see their crossing at all.
  */
 
 import { describe, expect, it } from "vitest";
 import { STALE_AFTER_MS, stateAt, type TimelineObs } from "./scrub";
 
 const T0 = Date.UTC(2026, 7, 12, 5, 45, 0);
+const SCORED = "classifier/abc123";
+const UNSCORED = "unscored/1";
 
 function at(seconds: number): number {
   return T0 + seconds * 1000;
@@ -22,13 +24,17 @@ function row(
   seconds: number,
   camera: string,
   state: TimelineObs["state"],
-  objectKey: string | null = `frames/${camera}/${seconds}.jpg`,
+  {
+    version = SCORED,
+    objectKey = `frames/${camera}/${seconds}.jpg`,
+  }: { version?: string; objectKey?: string | null } = {},
 ): TimelineObs {
   return {
     captured_at: new Date(at(seconds)).toISOString(),
     state,
     object_key: objectKey,
     camera_id: camera,
+    detector_version: version,
   };
 }
 
@@ -54,7 +60,6 @@ describe("stateAt", () => {
 
     expect(result.state).toBe("CLEAR");
     expect(result.stale).toBe(false);
-    expect(result.since).toBe(new Date(at(120)).toISOString());
   });
 
   it("holds BLOCKED when another camera's fresh CLEAR disagrees", () => {
@@ -66,10 +71,7 @@ describe("stateAt", () => {
       row(39, "odot-682", "CLEAR"),
     );
 
-    const result = stateAt(rows, at(40));
-
-    expect(result.state).toBe("BLOCKED");
-    expect(result.since).toBe(new Date(at(37)).toISOString());
+    expect(stateAt(rows, at(40)).state).toBe("BLOCKED");
   });
 
   it("reads UNKNOWN and stale once every judgement is older than the bound", () => {
@@ -83,17 +85,46 @@ describe("stateAt", () => {
     expect(fresh.state).toBe("BLOCKED");
     expect(stale.state).toBe("UNKNOWN");
     expect(stale.stale).toBe(true);
-    expect(stale.since).toBeNull();
   });
 
-  it("keeps a non-scoring camera's frames while its UNKNOWNs never vote", () => {
-    // 679 watches the Division intersection with the crossing out of frame,
-    // so it publishes a zero-inference UNKNOWN every tick. The board keeps
-    // showing its picture; the crossing's state stays 678's word.
+  it("counts a fresh UNKNOWN from a camera that looked as a witness", () => {
+    // Glare ruins 678's view. The camera looked and refused to judge, which is
+    // not the same as no camera looking: the live board reports UNKNOWN with
+    // stale false, so the tile reads "unknown" rather than "no recent signal".
     const rows = timeline(
       row(0, "odot-678", "BLOCKED"),
-      row(10, "odot-679", "UNKNOWN"),
-      row(40, "odot-679", "UNKNOWN"),
+      row(30, "odot-678", "UNKNOWN"),
+    );
+
+    const result = stateAt(rows, at(60));
+
+    expect(result.state).toBe("UNKNOWN");
+    expect(result.stale).toBe(false);
+  });
+
+  it("does not count a non-scoring camera's policy UNKNOWNs as a witness", () => {
+    // 679 watches the Division intersection with the crossing out of frame, so
+    // it publishes a zero-inference UNKNOWN every tick without ever looking.
+    // A crossing watched only by that camera has no witness at all.
+    const rows = timeline(
+      row(0, "odot-679", "UNKNOWN", { version: UNSCORED }),
+      row(30, "odot-679", "UNKNOWN", { version: UNSCORED }),
+    );
+
+    const result = stateAt(rows, at(60));
+
+    expect(result.state).toBe("UNKNOWN");
+    expect(result.stale).toBe(true);
+    expect(result.frames.get("odot-679")?.captured_at).toBe(new Date(at(30)).toISOString());
+  });
+
+  it("keeps a non-scoring camera's frames while its rows never vote", () => {
+    // The board keeps showing 679's picture; the crossing's state stays 678's
+    // word, which its own UNKNOWN heartbeat must not be able to override.
+    const rows = timeline(
+      row(0, "odot-678", "BLOCKED"),
+      row(10, "odot-679", "UNKNOWN", { version: UNSCORED }),
+      row(40, "odot-679", "UNKNOWN", { version: UNSCORED }),
     );
 
     const result = stateAt(rows, at(60));
@@ -104,19 +135,13 @@ describe("stateAt", () => {
     expect(result.frames.get("odot-678")?.captured_at).toBe(new Date(at(0)).toISOString());
   });
 
-  it("treats a camera's newer UNKNOWN as withdrawing its older judgement", () => {
-    // Glare ruins 678's view at 05:45:30. A refusal to judge is the camera's
-    // current word, so the crossing has no witness rather than a two-minute-old
-    // BLOCKED still standing.
-    const rows = timeline(
-      row(0, "odot-678", "BLOCKED"),
-      row(30, "odot-678", "UNKNOWN"),
-    );
+  it("still counts a blind camera's pre-policy judgements", () => {
+    // 679 scored for months before the policy landed, and those rows carry a
+    // real detector's version. They stay authoritative for past instants until
+    // the re-score and backfill layer unscored/1 over them.
+    const rows = timeline(row(0, "odot-679", "BLOCKED"));
 
-    const result = stateAt(rows, at(60));
-
-    expect(result.state).toBe("UNKNOWN");
-    expect(result.stale).toBe(true);
+    expect(stateAt(rows, at(30)).state).toBe("BLOCKED");
   });
 
   it("ignores rows after the scrubbed instant", () => {
@@ -128,7 +153,6 @@ describe("stateAt", () => {
     const result = stateAt(rows, at(30));
 
     expect(result.state).toBe("CLEAR");
-    expect(result.frames.has("odot-678")).toBe(true);
     expect(result.frames.get("odot-678")?.captured_at).toBe(new Date(at(0)).toISOString());
   });
 
@@ -138,7 +162,7 @@ describe("stateAt", () => {
     // blanking to "No frame yet".
     const rows = timeline(
       row(0, "odot-678", "CLEAR"),
-      row(30, "odot-678", "CLEAR", null),
+      row(30, "odot-678", "CLEAR", { objectKey: null }),
     );
 
     const result = stateAt(rows, at(60));
@@ -147,8 +171,6 @@ describe("stateAt", () => {
   });
 
   it("reports UNKNOWN and stale for a crossing with no rows at all", () => {
-    const result = stateAt([], at(0));
-
-    expect(result).toEqual({ state: "UNKNOWN", stale: true, since: null, frames: new Map() });
+    expect(stateAt([], at(0))).toEqual({ state: "UNKNOWN", stale: true, frames: new Map() });
   });
 });

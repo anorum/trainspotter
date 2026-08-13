@@ -16,6 +16,20 @@ export interface TimelineObs {
   state: State;
   object_key: string | null;
   camera_id: string;
+  detector_version: string;
+}
+
+/** Marks the zero-inference UNKNOWNs a camera that cannot see its crossing
+ *  publishes every tick. They are policy, not observation: the camera never
+ *  looked, so unlike a glare-ruined frame it is not a witness that refused to
+ *  judge. Rows a blind camera produced before the policy landed still carry a
+ *  real detector's version and still count, until the re-score and backfill
+ *  layer `unscored/1` over them - which is why that backfill follows the
+ *  merge. */
+const UNSCORED_PREFIX = "unscored/";
+
+function isPolicyUnknown(o: TimelineObs): boolean {
+  return o.state === "UNKNOWN" && o.detector_version.startsWith(UNSCORED_PREFIX);
 }
 
 /** How long a judgement stands as a measurement rather than a memory.
@@ -27,26 +41,26 @@ export const STALE_AFTER_MS = 6 * 60_000;
 export interface ScrubbedState {
   state: State;
   stale: boolean;
-  since: string | null;
   /** Each camera's latest frame at or before the instant, at any age - the
    *  non-scoring cameras' pictures time-travel even though their rows never
    *  vote. */
   frames: Map<string, TimelineObs>;
 }
 
-/** The crossing's state at `atMs`, by the four rules the live consensus applies.
+/** The crossing's state at `atMs`, by the rules the live consensus applies.
  *
  * One vote per camera: a camera's latest row at that instant is its word, so
  * its own newer CLEAR supersedes its older BLOCKED rather than standing beside
  * it. Fresh votes only: an older judgement is a memory, and a dead detector
- * must never leave BLOCKED frozen on screen. Judgements only: UNKNOWN is a
- * refusal to judge - a glare-ruined frame, or a camera that does not view the
- * crossing and publishes a zero-inference UNKNOWN every tick - never an
- * assertion about the crossing. And blocked-biased among what remains, because
- * a camera that sees a train outranks one that sees nothing: the glare-blind
- * camera's CLEAR two seconds later must not clear a crossing with a train
- * across it. No fresh judgement at all is UNKNOWN and stale, which is the
- * truth - at that instant the crossing had no witness.
+ * must never leave BLOCKED frozen on screen. Blocked-biased among the
+ * judgements, because a camera that sees a train outranks one that sees
+ * nothing: the glare-blind camera's CLEAR two seconds later must not clear a
+ * crossing with a train across it. And a fresh UNKNOWN from a camera that
+ * actually looked is a witness that refused to judge, not an absence of one -
+ * it cannot outvote a judgement, but it does mean the crossing was watched, so
+ * the board says UNKNOWN rather than "no recent signal". Only the policy
+ * UNKNOWNs of a camera that cannot see the crossing are absent from the vote
+ * entirely; they still carry their picture into `frames`.
  *
  * `rows` must be ascending by captured_at, which is what /api/v1/timeline
  * returns; the scan stops at the instant instead of walking the tail of a
@@ -60,13 +74,15 @@ export function stateAt(rows: readonly TimelineObs[], atMs: number): ScrubbedSta
     const t = new Date(o.captured_at).getTime();
     if (t > atMs) break;
     if (o.object_key) frames.set(o.camera_id, o);
-    votes.set(o.camera_id, { t, obs: o });
+    if (!isPolicyUnknown(o)) votes.set(o.camera_id, { t, obs: o });
   }
 
   let blocked: { t: number; obs: TimelineObs } | undefined;
   let clear: { t: number; obs: TimelineObs } | undefined;
+  let witness: { t: number; obs: TimelineObs } | undefined;
   for (const vote of votes.values()) {
     if (vote.t < freshFrom) continue;
+    if (!witness || vote.t > witness.t) witness = vote;
     if (vote.obs.state === "BLOCKED") {
       if (!blocked || vote.t > blocked.t) blocked = vote;
     } else if (vote.obs.state === "CLEAR") {
@@ -74,11 +90,10 @@ export function stateAt(rows: readonly TimelineObs[], atMs: number): ScrubbedSta
     }
   }
 
-  const winner = blocked ?? clear;
+  const winner = blocked ?? clear ?? witness;
   return {
     state: winner ? winner.obs.state : "UNKNOWN",
     stale: !winner,
-    since: winner ? winner.obs.captured_at : null,
     frames,
   };
 }
