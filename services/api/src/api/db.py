@@ -67,11 +67,17 @@ async def upsert_batch(pool: asyncpg.Pool, observations: list[dict], sessions: l
         await _upsert(conn, observations, sessions)
 
 
+class EmptyWindowError(Exception):
+    """A window would delete a crossing's sessions and put nothing back."""
+
+
 async def load_backfill(
     pool: asyncpg.Pool,
     observations: list[dict],
     sessions: list[dict],
     windows: list[dict],
+    *,
+    allow_empty_window: bool = False,
 ) -> None:
     """Load a re-derived window: observations join the versioned layers as
     usual, but sessions inside the window are replaced outright.
@@ -84,9 +90,39 @@ async def load_backfill(
     new derivation found is the projection being rebuilt, not history being
     edited. One transaction, so a crash mid-load leaves the old projection
     intact rather than a window with no sessions at all.
+
+    A crossing's sessions are derived from all of its cameras at once, so a
+    scan that covered only some of them derives too few - and a scan of a
+    camera that can no longer score derives none at all. Wiping a window and
+    replacing it with nothing is therefore refused unless the caller says
+    that is what it meant: an empty derivation is the expected result of a
+    phantom being retracted, and the disastrous result of re-scoring one
+    witness out of two. ``allow_empty_window`` is the former.
     """
     async with pool.acquire() as conn, conn.transaction():
         for w in windows:
+            if not allow_empty_window and not any(
+                s["crossing_id"] == w["crossing_id"] for s in sessions
+            ):
+                doomed = await conn.fetchval(
+                    """SELECT count(*) FROM sessions
+                       WHERE crossing_id = $1 AND started_at BETWEEN $2 AND $3""",
+                    w["crossing_id"],
+                    w["window_start"],
+                    w["window_end"],
+                )
+                if doomed:
+                    raise EmptyWindowError(
+                        f"{w['crossing_id']}: the new derivation has no sessions, but "
+                        f"{doomed} existing session(s) start inside "
+                        f"{w['window_start']:%Y-%m-%d %H:%M} .. "
+                        f"{w['window_end']:%Y-%m-%d %H:%M} UTC and would be deleted with "
+                        "nothing to replace them. Sessions are derived from every camera "
+                        "on the crossing at once, so re-score all of them together - drop "
+                        "--camera, or scan each and concatenate the JSONL - and load that. "
+                        "If this window genuinely holds no blockage, re-run with "
+                        "--allow-empty-window."
+                    )
             await conn.execute(
                 """DELETE FROM sessions
                    WHERE crossing_id = $1 AND started_at BETWEEN $2 AND $3""",

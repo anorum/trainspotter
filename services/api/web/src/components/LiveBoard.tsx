@@ -196,29 +196,38 @@ export default function LiveBoard() {
     if (!status) return null;
     if (!scrubbing) return status;
     // Time-travel view: each crossing shows its state at the scrubbed instant,
-    // by the two rules the live reducer applies to the same question. The state
-    // comes from judgements only - an UNKNOWN row is a refusal to judge (a
-    // glare-ruined frame, or a camera that does not view the crossing at all
-    // and publishes a zero-inference UNKNOWN every tick), never an assertion
-    // about the crossing. And the judgement has to be fresh at that instant: an
-    // older one is a memory, so a crossing whose witnesses went quiet reads
-    // UNKNOWN and stale rather than holding a red dot from hours earlier.
-    // Frames still come from every row, at any age, so those cameras' pictures
-    // time-travel with the rest.
+    // by the three rules the live reducer applies to the same question.
+    // Judgements only: an UNKNOWN row is a refusal to judge (a glare-ruined
+    // frame, or a camera that does not view the crossing at all and publishes
+    // a zero-inference UNKNOWN every tick), never an assertion about the
+    // crossing. Fresh only: an older judgement is a memory, so a crossing
+    // whose witnesses went quiet reads UNKNOWN and stale rather than holding a
+    // red dot from hours earlier. And blocked-biased among what is left - a
+    // camera that sees a train outranks one that sees nothing, because the
+    // glare-blind camera's CLEAR two seconds later must not clear a crossing
+    // with a train across it. Frames come from every row at any age, so the
+    // non-scoring cameras' pictures time-travel with the rest.
     const at = new Date(scrubT!);
-    const freshFrom = at.getTime() - STALE_AFTER_MS;
+    const atMs = at.getTime();
+    const freshFrom = atMs - STALE_AFTER_MS;
     return {
       generated_at: at.toISOString(),
       crossings: status.crossings.map((c) => {
-        const past = (timelines[c.crossing_id] ?? []).filter(
-          (o) => new Date(o.captured_at) <= at,
-        );
-        let last: TimelineObs | undefined;
-        for (const o of past) {
-          if (o.state !== "UNKNOWN" && new Date(o.captured_at).getTime() >= freshFrom) last = o;
-        }
+        // One pass over rows the timeline endpoint already returns ascending
+        // by captured_at, so the scan stops at the scrubbed instant rather
+        // than walking the tail of a 30-day window on every drag frame.
         const frames = new Map<string, TimelineObs>();
-        for (const o of past) if (o.object_key) frames.set(o.camera_id, o);
+        let blocked: TimelineObs | undefined;
+        let clear: TimelineObs | undefined;
+        for (const o of timelines[c.crossing_id] ?? []) {
+          const t = new Date(o.captured_at).getTime();
+          if (t > atMs) break;
+          if (o.object_key) frames.set(o.camera_id, o);
+          if (t < freshFrom) continue;
+          if (o.state === "BLOCKED") blocked = o;
+          else if (o.state === "CLEAR") clear = o;
+        }
+        const last = blocked ?? clear;
         return {
           ...c,
           state: last ? last.state : ("UNKNOWN" as State),

@@ -41,6 +41,11 @@ def backfill(
         ..., help="Observations JSONL from `blockade-detect scan`."
     ),
     dry_run: bool = typer.Option(False, help="Print the plan without touching the database."),
+    allow_empty_window: bool = typer.Option(
+        False,
+        "--allow-empty-window",
+        help="Let a window delete a crossing's sessions and put nothing back.",
+    ),
 ) -> None:
     """Load a re-scored history window into Postgres.
 
@@ -48,6 +53,10 @@ def backfill(
     this rebuilds the sessions those observations imply and loads both. The
     timeline keeps every version's word per instant; sessions inside the
     window are replaced by the new derivation. Safe to re-run.
+
+    Re-score every camera on a crossing together: the sessions are derived
+    from all of them at once, so a partial scan is refused rather than allowed
+    to delete the witnesses it did not look at.
     """
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     from blockade.schemas import ObservationRecord
@@ -79,11 +88,17 @@ def backfill(
     async def load() -> None:
         pool = await db.connect(settings.database_url)
         try:
-            await db.load_backfill(pool, *bf.plan_rows(p))
+            await db.load_backfill(
+                pool, *bf.plan_rows(p), allow_empty_window=allow_empty_window
+            )
         finally:
             await pool.close()
 
-    asyncio.run(load())
+    try:
+        asyncio.run(load())
+    except db.EmptyWindowError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from exc
     typer.echo("loaded")
 
 
