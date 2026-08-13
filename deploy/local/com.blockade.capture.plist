@@ -4,7 +4,7 @@
 
   docs/history/design.md calls for a systemd unit on a Pi; this is the same idea
   for a Mac. It is a stopgap that starts the clock tonight - the durable home is
-  the k3s Deployment in deploy/capture/. Every day without capture is a day
+  the k3s Deployment in deploy/poller/. Every day without capture is a day
   permanently missing from the corpus, because ODOT overwrites each image with
   the next.
 
@@ -31,9 +31,10 @@
         <string>run</string>
         <string>blockade-capture</string>
         <string>run</string>
-        <!-- No object store until this is productionised. Frames are therefore
-             kept indefinitely rather than expired: the local disk is the only
-             copy, and ODOT has already overwritten the originals. -->
+        <!-- Development mode: no object store, so frames stay on the local
+             disk and the TTL sweeper is disabled. Production capture runs on
+             the k3s cluster and writes every frame to S3; this agent is the
+             workstation stand-in, not the durable path. -->
         <string>--local-only</string>
     </array>
 

@@ -50,11 +50,10 @@ the target set and gives another angle on the 12th crossing. Not enabled; worth 
 survey finds any of the paired cameras unusable.
 
 
-The Phase 0 gate. Visually inspect all six feeds before writing any detector, and record what is
-actually there rather than what the camera name implies. Some cameras will not be usable, and
-finding that out now is much cheaper than discovering it while tuning thresholds.
-
-Fill this in after 24-48 hours of capture.
+This was the Phase 0 gate: inspect all six feeds before writing any detector, and record what is
+actually there rather than what the camera name implies. The premise held - two of the six turned
+out to be materially weaker than their names suggest, and finding that out early was much cheaper
+than discovering it while tuning thresholds.
 
 ## How to run the survey
 
@@ -81,9 +80,12 @@ refreshes, and that interval sets the real detection latency.
 
 ## Per-camera findings
 
-For each camera, attach sample frames at **noon, dusk, night, and in rain**, then record:
+The verdicts below were reached from the operating record rather than from the frame-by-frame
+inspection originally planned here: production detector performance per camera, across day, dusk,
+night, and rain, settled every one of these fields faster than a sit-down survey would have. The
+table is kept as the vocabulary the verdicts use.
 
-| Field | What to record |
+| Field | What it means |
 | --- | --- |
 | Framing | Does the view actually cover the approach lanes? How much of the frame is usable road? |
 | Sightline to rails | Any direct view of the tracks? If yes, that camera can carry a second, independent train signal |
@@ -97,28 +99,35 @@ For each camera, attach sample frames at **noon, dusk, night, and in rain**, the
 ### Portland - 11th at Milwaukie N - `odot-676`, `SE_11TH_MILWAUKIE`
 45.50329, -122.65457 · labelled "212 - SE Milwaukie @ Gideon St"
 Night: streetlights and headlights dominate; vehicle bodies are hard to separate from background.
-**Rail structure visible in frame** - candidate for a direct train signal. Day/dusk/rain pending.
-Verdict: **pending**.
+**Rail structure visible in frame** - candidate for a direct train signal.
+Verdict: **usable**, but the weakest detector performance of the three crossings, and the pair most
+in need of more hand labels: a confirmed train on 2026-08-11 was missed here that both other
+crossings caught.
 
 ### Portland - 11th at Milwaukie S - `odot-677`, `SE_11TH_MILWAUKIE`
 45.50314, -122.65414 · labelled "213 - SE Milwaukie @ Gideon St"
 Also overlooks the rail corridor. Darker frame than 676; a large unlit region occupies the left
-third. Verdict: **pending**.
+third. Verdict: **usable**, with the same caveat as 676 - Milwaukie is the crossing that most needs
+hand-labelled blocks.
 
 ### Portland - 12th at Clinton - `odot-678`, `SE_12TH_CLINTON`
 45.50360, -122.65381 · labelled "214 - SE 12th @ Clinton"
-Clean view straight down the roadway with the intersection centred - the most promising framing for
-queue detection of the four seen so far. Verdict: **pending**.
+Clean view straight down the roadway with the intersection centred - the most promising framing of
+the six, and the promise held. Verdict: **usable, excellent**; this is the camera that carries the
+production classifier.
 
 ### Portland - 12th at Division - `odot-679`, `SE_12TH_CLINTON`
 45.50494, -122.65360 · largest payload of the six (~29 KB), suggesting more scene detail.
-Verdict: **pending**.
+Verdict: **marginal** for the crossing it is assigned to - the view favors Division, so it
+contributes little to Clinton and its consensus weight there is small.
 
 ### Portland - 8th at Division - `odot-681`, `SE_8TH_DIVISION`
-45.50573, -122.65745 · ~300 m from the crossings, the furthest of the set. Verdict: **pending**.
+45.50573, -122.65745 · ~300 m from the crossings, the furthest of the set.
+Verdict: **usable**, on per-camera calibrated thresholds (`pixel_delta` 20).
 
 ### Portland - 8th at Division Place - `odot-682`, `SE_8TH_DIVISION`
-45.50476, -122.65796 · Verdict: **pending**.
+45.50476, -122.65796 · Verdict: **usable by day**; it cannot resolve the tracks at night, which the
+blocked-biased consensus absorbs - its partner 681 carries the crossing after dark.
 
 ### Portland - Division at 12th - `odot-1250` (not enabled)
 45.50493, -122.65372 · A second angle on the 12th crossing, 53 m from `odot-679`. Held in reserve.

@@ -18,7 +18,8 @@ Sessions are per crossing while training is per camera, and that gap is the shar
 `build_manifest` selects its windows by `crossing_id`, then labels BLOCKED every frame of whichever camera you pointed it at that falls inside a core.
 Sessions open on a blocked-biased consensus across both of a crossing's cameras, so the partner camera inherits positives its own view never justified: `odot-679` favors Division over the Clinton crossing it is paired with, and `odot-682` cannot resolve the tracks at night.
 Core positives are therefore trustworthy only for the camera whose view actually drove the session - `odot-678` at Clinton, `odot-681` at Division.
-For the weak partner, spot-check the positives before training and lean on hand-curated `data/blocks/{camera_id}/` labels instead; a model taught that a clear-looking frame is BLOCKED is precisely the false-positive generator this section exists to prevent.
+For the weak partner, spot-check the core positives before training and fold in that camera's own hand-saved blocks as explicit BLOCKED rows, which section 2 shows how to do; a model taught that a clear-looking frame is BLOCKED is precisely the false-positive generator this section exists to prevent.
+The other remedy is to build `session_files` from that camera's own observations - `blockade-detect scan --camera odot-679` then `derive_sessions` over the result - so the windows come only from what that view actually produced.
 
 **VLM-sweep CLEARs** are the good negatives.
 `blockade-detect spotcheck` walks frames at a stride and records Haiku's judgement; the manifest takes the ones labelled CLEAR at confidence 0.8 or above.
@@ -35,12 +36,12 @@ Stratifying that draw by hour is the obvious improvement to `build_manifest` if 
 `build_manifest` skips every frame whose key appears in it, so gold is the exam and never the textbook.
 The moment gold enters training, the exam stops measuring anything.
 
-Two things sit outside the manifest and are worth more of your time than anything in it.
-Hand-saved BLOCKED frames under `data/blocks/{camera_id}/` are the scarce resource: they feed `blockade-detect band`, which derives the camera's track band from real blockages, and they are what you adjudicate gold from.
+Two things sit outside what `build_manifest` assembles and are worth more of your time than anything in it.
+Hand-saved BLOCKED frames under `data/blocks/{camera_id}/` are the scarce resource: they feed `blockade-detect band`, which derives the camera's track band from real blockages, they are what you adjudicate gold from, and section 2 folds them into training as their own label source.
 Roughly 30-40 of them, spanning night, dawn, and day, is what made `odot-678` near-perfect.
 Hard negatives - dawn phantoms, gates down with no train, trains on a far siding, MAX trains - are what kill false positives, and finding them is human work.
 Adjudicate them in bulk: group strict-detector flags into clusters of three or more consecutive flags within six minutes and judge each cluster at a glance from a composite contact sheet, because the neighbours carry context a single frame does not.
-Adjudicated frames reach training only as gold exclusions or through the sources above, so check that the ones you care about actually landed in the manifest.
+Beyond hand-saved blocks, adjudicated frames reach training only as gold exclusions or through the sources above, so check that the ones you care about actually landed in the manifest.
 
 ## 2. Assemble and train
 
@@ -48,14 +49,17 @@ Both steps are plain functions, called from a workstation script with the `train
 There is no runtime CLI for either: torch is about 2GB of workstation-only weight that never belongs in a serving image.
 
 **Get the corpus onto the workstation.**
-`blockade-sync` only ever uploads, so pull the frames down yourself, and keep the S3 layout when you do:
+`blockade-sync` only ever uploads, so pull the frames down yourself, into a directory named for the camera:
 
 ```bash
-aws s3 sync s3://pdx-trainspotter/frames/odot-678 var/frames/frames/odot-678
+aws s3 sync s3://pdx-trainspotter/frames/odot-678 var/training/corpus/odot-678
 ```
 
-The doubled `frames/` is not a typo: the local cache mirrors S3 keys exactly, because `LocalFrameCache` resolves a path as `root / key` and `var/frames` is that root.
-`build_manifest` does not actually need that layout: it mints each object key canonically, from the `camera_id` argument you pass plus the epoch-ms timestamp in the filename, and never reads the frame's directory at all.
+Do not sync into `var/frames`: that is `local_cache_dir`, the poller's TTL-swept read cache, and its hourly sweep deletes any JPEG whose mtime is past the TTL.
+`aws s3 sync` preserves each object's S3 timestamp as the local mtime, so a historical corpus is eligible for deletion the moment it lands, on any workstation whose capture is talking to S3 rather than running `--local-only`.
+The failure is silent - `load_examples` skips manifest rows whose frame it cannot find - so training would just proceed on a quietly shrinking set.
+
+`build_manifest` does not care where the frames live: it mints each object key canonically, from the `camera_id` argument you pass plus the epoch-ms timestamp in the filename, and never reads the frame's directory at all.
 That is worth knowing for the trap it creates - point `frames_dir` at a directory holding another camera's frames and every key is minted under the camera you named rather than the one the pixels came from, silently.
 `load_examples` is the consumer that does depend on the layout, because it only accepts a frame whose path contains the camera id as a directory component - so a flat dump of JPEGs matches nothing, loads zero examples, and trains on an empty set without raising.
 
@@ -63,7 +67,7 @@ That is worth knowing for the trap it creates - point `frames_dir` at a director
 
 ```bash
 mkdir -p var/training
-uv run blockade-detect spotcheck --frames-dir var/frames/frames \
+uv run blockade-detect spotcheck --frames-dir var/training/corpus \
   --camera odot-678 --labels var/training/sweep.jsonl
 ```
 
@@ -87,7 +91,7 @@ from detector.dataset import build_manifest, write_manifest
 examples = build_manifest(
     camera_id="odot-678",
     crossing_id="SE_12TH_CLINTON",
-    frames_dir=Path("var/frames/frames/odot-678"),
+    frames_dir=Path("var/training/corpus/odot-678"),
     session_files=[Path("var/training/sessions-odot-678.jsonl")],
     sweep_file=Path("var/training/sweep.jsonl"),
     gold_labels=Path("data/labels/labels.jsonl"),
@@ -96,6 +100,30 @@ write_manifest(examples, Path("var/training/manifest-odot-678.jsonl"))
 ```
 
 A missing `sweep_file` is not an error - `build_manifest` skips the source when the file does not exist - so check the assembled manifest actually contains `vlm-sweep` examples rather than assuming it does.
+
+**Fold in the hand-saved blocks.**
+`build_manifest` does not read `data/blocks/`, but the manifest is plain `Example` JSONL, so appending them is a few lines - and this is how the production `odot-678` model was trained.
+For a weak partner camera it is the difference between a usable model and one taught that a clear-looking frame is BLOCKED.
+
+```python
+import json
+
+camera = "odot-678"
+with open(f"var/training/manifest-{camera}.jsonl", "a") as fh:
+    for frame in sorted(Path(f"data/blocks/{camera}").iterdir()):
+        if frame.suffix.lower() in {".jpg", ".jpeg", ".png"}:
+            fh.write(json.dumps({
+                "object_key": f"blocks/{camera}/{frame.name}",
+                "camera_id": camera,
+                "label": "BLOCKED",
+                "source": "hand-blocks",
+                "split": "train",
+            }) + "\n")
+```
+
+Then pass `data/blocks` as a second entry in `frames_roots` below.
+`load_examples` resolves each row by basename and accepts the hit whose path contains the camera id, which `data/blocks/{camera_id}/` satisfies - so the rows above find their pixels without the frames being moved or renamed.
+A `dataset.py` helper that folded these in automatically would be a worthwhile small addition; today it is glue you write once.
 
 Then train.
 One model per camera: MobileNetV3-small, ImageNet backbone frozen, the full classifier head fine-tuned.
@@ -107,7 +135,7 @@ from detector.train_classifier import train
 
 metrics = train(
     manifest=Path("var/training/manifest-odot-678.jsonl"),
-    frames_roots=[Path("var/frames")],
+    frames_roots=[Path("var/training/corpus"), Path("data/blocks")],
     out_onnx=Path("var/training/classifier-odot-678.onnx"),
     epochs=12,
 )
