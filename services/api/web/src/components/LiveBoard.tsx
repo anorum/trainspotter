@@ -69,7 +69,9 @@ export default function LiveBoard() {
   const [timelines, setTimelines] = useState<Record<string, TimelineObs[]>>({});
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null);
-  const [timelineFailed, setTimelineFailed] = useState(false);
+  // One indicator for the whole history store, which both the lanes and the
+  // scrub timelines read: either failing raises it, either succeeding clears it.
+  const [historyFailed, setHistoryFailed] = useState(false);
   // The value is never read; each tick just re-renders the live durations.
   const [, setTick] = useState(0);
   // Refs, not state: the guard must be visible to concurrent calls
@@ -96,11 +98,21 @@ export default function LiveBoard() {
       .then((r) => (r.ok ? r.json() : null))
       .then((body) => body && setStatus(body), () => {});
     // The lanes under the scrubber: blockages findable by eye before
-    // scrubbing, so the history is worth a drag in the first place. Without
-    // the history store the lanes are simply empty.
+    // scrubbing, so the history is worth a drag in the first place. Empty
+    // lanes are a claim about the corridor, so a store that cannot answer
+    // says so instead.
     fetch("/api/v1/sessions?limit=500")
-      .then((r) => (r.ok ? r.json() : { sessions: [] }))
-      .then((body) => setSessions(body.sessions), () => {});
+      .then((r) => {
+        if (!r.ok) throw new Error(`sessions ${r.status}`);
+        return r.json();
+      })
+      .then(
+        (body) => {
+          setSessions(body.sessions);
+          setHistoryFailed(false);
+        },
+        () => setHistoryFailed(true),
+      );
     const source = new EventSource("/api/v1/events");
     source.addEventListener("status", (e) => setStatus(JSON.parse((e as MessageEvent).data)));
     const timer = setInterval(() => setTick((t) => t + 1), 1000);
@@ -113,7 +125,12 @@ export default function LiveBoard() {
   // Scrub data loads lazily the first time the slider moves off "now", and
   // reloads when the window widens past what has been fetched.
   const loadTimelines = async (hours: number) => {
-    if (loadedHours.current >= hours) return;
+    if (loadedHours.current >= hours) {
+      // Gate on committed data, not the guard: a wider load still in flight
+      // owns loadedHours and has proved nothing about the store yet.
+      if (appliedHours.current >= hours) setHistoryFailed(false);
+      return;
+    }
     loadedHours.current = hours;
     const generation = ++loadGeneration.current;
     try {
@@ -127,14 +144,14 @@ export default function LiveBoard() {
       if (generation === loadGeneration.current) {
         setTimelines(Object.fromEntries(entries));
         appliedHours.current = hours;
-        setTimelineFailed(false);
+        setHistoryFailed(false);
       }
     } catch {
       // Fall back to the window actually on screen so a later scrub retries;
       // a superseding load owns the guard now and must not be rolled back.
       if (generation === loadGeneration.current) {
         loadedHours.current = appliedHours.current;
-        setTimelineFailed(true);
+        setHistoryFailed(true);
       }
     }
   };
@@ -301,9 +318,10 @@ export default function LiveBoard() {
         </span>
       </div>
 
-      {/* Without this the board would render a history-store outage as three
-          crossings with no recent signal - a detector failure, not a store one. */}
-      {timelineFailed && (
+      {/* Without this the board would render a history-store outage as empty
+          lanes and crossings with no recent signal - a corridor with nothing
+          on it and dead detectors, rather than a store that cannot answer. */}
+      {historyFailed && (
         <p class="empty scrub-note">
           The history store is not answering; the past will be back.
         </p>
