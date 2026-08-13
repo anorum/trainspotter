@@ -142,9 +142,15 @@ usable camera still produces a signal, but with materially lower confidence, whi
 confidence on every `crossing.observations.v1` record is per camera and the board's consensus is
 blocked-biased rather than a vote.
 
-The per-crossing usability tally this section was going to hold was never filled in, and is not
-worth reconstructing: usability turned out to be per camera and per lighting condition rather than
-a single verdict, and it now shows up empirically in detector performance instead.
+The per-crossing usability tally this section was going to hold was never filled in as a table, and
+is not worth reconstructing as one: usability turned out to be per camera and per lighting
+condition rather than a single verdict, and it now shows up empirically in detector performance.
+The verdicts above do settle the question it was meant to answer, and the answer matters.
+SE_12TH_CLINTON effectively runs on one strong camera: `odot-679`'s view favors Division, so it
+contributes little to Clinton, and the single-usable-camera caveat above applies there - which is
+precisely why `odot-678` was the first camera to get a trained classifier.
+SE_8TH_DIVISION is the half case, two usable cameras by day and one after dark, since `odot-682`
+cannot resolve the tracks at night.
 
 ## Hand-timestamped blockages
 

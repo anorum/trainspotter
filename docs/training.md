@@ -27,15 +27,19 @@ Reproducing that layout by hand takes two steps, and both are easy to get subtly
 Frames resolve as `local_cache_dir / object_key`, and the key already begins with `frames/`, so the corpus has to land at `var/frames/frames/{camera_id}/{Y}/{m}/{d}/{H}/` - one more `frames/` than the section 2 sync uses:
 
 ```bash
-aws s3 sync s3://pdx-trainspotter/frames var/frames/frames
+cam=odot-679
+aws s3 sync "s3://pdx-trainspotter/frames/$cam" "var/frames/frames/$cam"
 ```
+
+This is the one place the runbook puts a corpus inside `var/frames`, and it does so only because `score_frames` reads nowhere else; section 2 tells you to avoid that directory for exactly the reason it matters here.
+`var/frames` is the poller's TTL-swept cache, and a synced corpus carries its S3 timestamps as mtimes, so on a box where capture is running against S3 the sweeper can delete these frames within the hour.
+Do this on a machine that is not capturing, or on the `--local-only` workstation where the sweeper is off, and treat a corpus that shrinks between runs as swept rather than mispathed.
 
 Manifests are matched by `--camera` on the parent directory name and globbed as `*.jsonl`, while S3 keeps them gzipped and nested as `manifests/{camera}/{Y}/{m}/{d}/{H}.jsonl.gz`.
 Syncing that nesting verbatim leaves the parent as the day and matches nothing; flattening it naively collides, because every day contributes its own `13.jsonl`.
 The layout the poller writes, and the one `--camera` expects, is flat files directly under the camera directory:
 
 ```bash
-cam=odot-679
 aws s3 sync "s3://pdx-trainspotter/manifests/$cam" "var/scratch/$cam"
 mkdir -p "var/manifests/$cam"
 find "var/scratch/$cam" -name '*.jsonl.gz' | while read -r f; do
