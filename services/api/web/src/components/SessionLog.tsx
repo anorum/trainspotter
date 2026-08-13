@@ -7,8 +7,8 @@
  * timestamped, from the camera that saw the most.
  */
 
-import { useEffect, useMemo, useState } from "preact/hooks";
-import { COLORS, crossingLabel } from "../lib/crossings";
+import { useEffect, useState } from "preact/hooks";
+import { COLORS, GEOMETRY, crossingLabel } from "../lib/crossings";
 
 interface Session {
   session_id: string;
@@ -27,47 +27,31 @@ interface TimelineObs {
   camera_id: string;
 }
 
-const FILTERS = ["ALL", "SE_8TH_DIVISION", "SE_12TH_CLINTON", "SE_11TH_MILWAUKIE"];
+// GEOMETRY already knows the crossings and their corridor order.
+const FILTERS = ["ALL", ...Object.keys(GEOMETRY)];
 const STRIP_FRAMES = 10;
 const PAD_MS = 2 * 60_000;
 
 export default function SessionLog() {
   const [sessions, setSessions] = useState<Session[] | null>(null);
+  const [failed, setFailed] = useState(false);
   const [filter, setFilter] = useState("ALL");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [strips, setStrips] = useState<Record<string, TimelineObs[]>>({});
+  const [stripFailed, setStripFailed] = useState<Record<string, boolean>>({});
   const [featured, setFeatured] = useState<Record<string, string>>({});
 
   useEffect(() => {
     fetch("/api/v1/sessions?limit=200")
-      .then((r) => r.json())
-      .then((body) => setSessions(body.sessions));
+      .then((r) => {
+        if (!r.ok) throw new Error(`sessions ${r.status}`);
+        return r.json();
+      })
+      .then(
+        (body) => setSessions(body.sessions),
+        () => setFailed(true),
+      );
   }, []);
-
-  const shown = useMemo(() => {
-    if (!sessions) return null;
-    return sessions.filter((s) => filter === "ALL" || s.crossing_id === filter);
-  }, [sessions, filter]);
-
-  const longest = useMemo(
-    () => Math.max(1, ...(shown ?? []).map((s) => s.duration_seconds ?? 0)),
-    [shown],
-  );
-
-  const byDay = useMemo(() => {
-    const groups: [string, Session[]][] = [];
-    for (const s of shown ?? []) {
-      const day = new Date(s.started_at).toLocaleDateString(undefined, {
-        weekday: "long",
-        month: "long",
-        day: "numeric",
-      });
-      const last = groups[groups.length - 1];
-      if (last && last[0] === day) last[1].push(s);
-      else groups.push([day, [s]]);
-    }
-    return groups;
-  }, [shown]);
 
   const toggle = async (s: Session) => {
     if (expanded === s.session_id) {
@@ -76,18 +60,44 @@ export default function SessionLog() {
     }
     setExpanded(s.session_id);
     if (strips[s.session_id]) return;
+    setStripFailed((prev) => ({ ...prev, [s.session_id]: false }));
     const from = new Date(new Date(s.started_at).getTime() - PAD_MS).toISOString();
     const to = s.ended_at
       ? new Date(new Date(s.ended_at).getTime() + PAD_MS).toISOString()
       : new Date().toISOString();
-    const r = await fetch(
-      `/api/v1/timeline?crossing_id=${s.crossing_id}&from=${from}&to=${to}`,
-    );
-    const observations: TimelineObs[] = (await r.json()).observations;
-    setStrips((prev) => ({ ...prev, [s.session_id]: tape(observations) }));
+    try {
+      const r = await fetch(
+        `/api/v1/timeline?crossing_id=${s.crossing_id}&from=${from}&to=${to}`,
+      );
+      if (!r.ok) throw new Error(`timeline ${r.status}`);
+      const observations: TimelineObs[] = (await r.json()).observations;
+      setStrips((prev) => ({ ...prev, [s.session_id]: tape(observations) }));
+    } catch {
+      // Deliberately not cached: only a store that answered can say a session
+      // kept no frames, and leaving the strip unset lets a re-expand retry.
+      setStripFailed((prev) => ({ ...prev, [s.session_id]: true }));
+    }
   };
 
-  if (!shown) return <p class="loading">Pulling the sheet...</p>;
+  if (failed) {
+    return <p class="empty">The history store is not answering; the sheet will be back.</p>;
+  }
+  if (!sessions) return <p class="loading">Pulling the sheet...</p>;
+
+  // Plain derivations: at <=200 rows there is nothing worth memoizing.
+  const shown = sessions.filter((s) => filter === "ALL" || s.crossing_id === filter);
+  const longest = Math.max(1, ...shown.map((s) => s.duration_seconds ?? 0));
+  const byDay: [string, Session[]][] = [];
+  for (const s of shown) {
+    const day = new Date(s.started_at).toLocaleDateString(undefined, {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+    });
+    const last = byDay[byDay.length - 1];
+    if (last && last[0] === day) last[1].push(s);
+    else byDay.push([day, [s]]);
+  }
 
   return (
     <div class="sheet">
@@ -146,7 +156,14 @@ export default function SessionLog() {
 
                 {open && (
                   <div class="tape">
-                    {!strip && <p class="loading">Pulling the tape...</p>}
+                    {!strip && !stripFailed[s.session_id] && (
+                      <p class="loading">Pulling the tape...</p>
+                    )}
+                    {!strip && stripFailed[s.session_id] && (
+                      <p class="empty">
+                        The history store is not answering; the tape will be back.
+                      </p>
+                    )}
                     {strip && strip.length === 0 && (
                       <p class="empty">No frames kept for this session.</p>
                     )}
@@ -240,8 +257,6 @@ const css = `
 .row { display: grid; grid-template-columns: 14px minmax(9rem, max-content) 9ch 1fr 11ch; align-items: center; gap: 0.9rem; width: 100%; padding: 0.6rem 0.25rem; background: none; border: 0; color: var(--crossbuck); cursor: pointer; text-align: left; font-size: 1rem; }
 .entry.open .row { background: var(--panel); }
 .aspect { width: 12px; height: 12px; border-radius: 50%; }
-.pulse { animation: pulse 2.4s ease-in-out infinite; }
-@keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.45 } }
 .name { font-size: 1.15rem; }
 .start, .dur { color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
 .dur { text-align: right; }
@@ -256,7 +271,6 @@ const css = `
 .still.picked img { border-color: var(--signal-amber); }
 .still figcaption { color: var(--muted); font-size: 0.7rem; text-align: center; margin-top: 0.15rem; }
 .scored { color: var(--muted); font-size: 0.75rem; margin: 0.5rem 0 0; }
-.empty, .loading { color: var(--muted); }
 
 @media (max-width: 640px) {
   .row { grid-template-columns: 12px 1fr 9ch 11ch; gap: 0.6rem; }

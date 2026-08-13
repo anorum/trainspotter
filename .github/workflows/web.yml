@@ -1,0 +1,38 @@
+# Typechecks and builds the API's frontend.
+#
+# Separate from checks.yml so the path filter can be the workflow's own:
+# GitHub has no per-job `paths`, and putting one on checks.yml would gate the
+# Python job too. Node is only needed here, so a Python-only change skips this
+# workflow entirely rather than paying for an npm install.
+name: web
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "services/api/web/**"
+      - ".github/workflows/web.yml"
+  pull_request:
+    paths:
+      - "services/api/web/**"
+      - ".github/workflows/web.yml"
+
+defaults:
+  run:
+    working-directory: services/api/web
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: services/api/web/package-lock.json
+      - run: npm ci
+      # `astro check` is the typecheck; `astro build` does not run one, so
+      # both are needed to keep the strict tsconfig honest.
+      - run: npm run check
+      - run: npm run build

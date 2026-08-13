@@ -53,8 +53,34 @@ export function hourOfDay(a: CrossingAnalytics): HourSlot[] {
   return day;
 }
 
-export function share(slot: HourSlot): number {
+/** Blocked share of the scoreable checks in a slot. Internal: callers want
+ * heat() for the tint or worstHours() for the prose, not the raw ratio. */
+function share(slot: HourSlot): number {
   return slot.scoreable ? slot.blocked / slot.scoreable : 0;
+}
+
+/** Cell background for an hour slot, or undefined for untinted.
+ *
+ * One scale for the board's hour strip and the patterns timetable - they must
+ * read as the same instrument. The floor (18%) keeps a rare-but-real hour
+ * visible; the x2 saturates at a 50% blocked share, which is as bad as these
+ * crossings get.
+ */
+export function heat(slot: HourSlot): string | undefined {
+  const s = share(slot);
+  if (s <= 0) return undefined;
+  const pct = Math.round(18 + 82 * Math.min(1, s * 2));
+  return `background: color-mix(in srgb, var(--signal-red) ${pct}%, var(--panel))`;
+}
+
+/** 12-hour clock label: compact "6A" for axes, "6 AM" for prose. Hours wrap,
+ * so 24 is the midnight that closes an axis. */
+export function hourLabel(h: number, style: "axis" | "prose" = "axis"): string {
+  const x = ((h % 24) + 24) % 24;
+  const clock = x % 12 === 0 ? 12 : x % 12;
+  const meridiem = x < 12 ? "AM" : "PM";
+  if (style === "prose") return `${clock} ${meridiem}`;
+  return `${clock}${meridiem[0]}`;
 }
 
 /** "worst around 6-8 AM": the contiguous run of hours at or near the peak. */
@@ -67,12 +93,7 @@ export function worstHours(a: CrossingAnalytics): string | null {
   let end = start;
   while (shares[(start + 23) % 24] >= peak * 0.6 && end - start < 5) start--;
   while (shares[(end + 1) % 24] >= peak * 0.6 && end - start < 5) end++;
-  const fmt = (h: number) => {
-    const x = ((h % 24) + 24) % 24;
-    if (x === 0) return "12 AM";
-    if (x === 12) return "12 PM";
-    return x < 12 ? `${x} AM` : `${x - 12} PM`;
-  };
+  const fmt = (h: number) => hourLabel(h, "prose");
   return start === end ? `around ${fmt(start)}` : `${fmt(start)}-${fmt(end + 1)}`;
 }
 

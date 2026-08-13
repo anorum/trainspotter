@@ -1,0 +1,52 @@
+---
+/** The one page shell: head, masthead, main, footer. Every page is this
+ * frame plus one island. */
+import "../styles/global.css";
+import Masthead from "../components/Masthead.astro";
+
+interface Props {
+  title: string;
+  description: string;
+  active: "board" | "log" | "patterns";
+}
+
+const { title, description, active } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+  </head>
+  <body>
+    <Masthead active={active} />
+    <main>
+      <slot />
+    </main>
+    <footer>
+      <p>
+        Detection from public ODOT/PBOT traffic cameras on the Brooklyn
+        Subdivision. States are automated estimates, not official information.
+      </p>
+    </footer>
+
+    <style>
+      main {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 1rem 1.5rem;
+      }
+      footer {
+        max-width: 1100px;
+        margin: 2rem auto 0;
+        padding: 1rem 1.5rem;
+        border-top: 1px solid var(--hairline);
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
+    </style>
+  </body>
+</html>

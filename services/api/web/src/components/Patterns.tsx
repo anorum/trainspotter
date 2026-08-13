@@ -12,8 +12,9 @@ import {
   type AnalyticsResponse,
   type CrossingAnalytics,
   fetchAnalytics,
+  heat,
+  hourLabel,
   percent,
-  share,
   worstHours,
 } from "../lib/analytics";
 import { GEOMETRY, crossingLabel } from "../lib/crossings";
@@ -32,11 +33,15 @@ const DURATION_BINS: [number, string][] = [
 
 export default function Patterns() {
   const [data, setData] = useState<AnalyticsResponse | null>(null);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    fetchAnalytics().then(setData);
+    fetchAnalytics().then(setData, () => setFailed(true));
   }, []);
 
+  if (failed) {
+    return <p class="empty">The history store is not answering; patterns will be back.</p>;
+  }
   if (!data) return <p class="loading">Working through the record...</p>;
   if (!data.available) {
     return (
@@ -55,6 +60,7 @@ export default function Patterns() {
     <div class="patterns">
       {Object.keys(GEOMETRY).map((id) => {
         const a = data.crossings[id];
+        const worst = a && worstHours(a);
         return (
           <section key={id} class="crossing">
             <header>
@@ -67,7 +73,7 @@ export default function Patterns() {
                     month: "short",
                     day: "numeric",
                   })}
-                  {worstHours(a) && <> · worst {worstHours(a)}</>}
+                  {worst && <> · worst {worst}</>}
                 </p>
               ) : (
                 <p class="data sumline">no observations yet</p>
@@ -100,26 +106,19 @@ function Timetable({ a, now }: { a: CrossingAnalytics; now: Date }) {
     <div class="timetable" role="img" aria-label="Hour-of-week blockage grid">
       <div class="corner" />
       {Array.from({ length: 24 }, (_, h) => (
-        <div class="hour-label data">{h % 6 === 0 ? formatHour(h) : ""}</div>
+        <div class="hour-label data">{h % 6 === 0 ? hourLabel(h) : ""}</div>
       ))}
       {DOW_ORDER.map((dow) => (
         <>
           <div class="dow-label display">{DOW_LABEL[dow]}</div>
           {Array.from({ length: 24 }, (_, h) => {
             const slot = a.hour_of_week[dow * 24 + h];
-            const s = share(slot);
             const current = dow === now.getDay() && h === now.getHours();
             return (
               <div
                 class={`cell ${current ? "current" : ""} ${slot.scoreable === 0 ? "nodata" : ""}`}
-                style={
-                  s > 0
-                    ? `background: color-mix(in srgb, var(--signal-red) ${Math.round(
-                        18 + 82 * Math.min(1, s * 2),
-                      )}%, var(--panel))`
-                    : undefined
-                }
-                title={`${DOW_LABEL[dow]} ${formatHour(h)}: ${
+                style={heat(slot)}
+                title={`${DOW_LABEL[dow]} ${hourLabel(h)}: ${
                   slot.scoreable
                     ? `train seen in ${slot.blocked} of ${slot.scoreable} checks`
                     : "no checks yet"
@@ -178,12 +177,6 @@ function Daily({ a }: { a: CrossingAnalytics }) {
   );
 }
 
-function formatHour(h: number): string {
-  if (h === 0) return "12A";
-  if (h === 12) return "12P";
-  return h < 12 ? `${h}A` : `${h - 12}P`;
-}
-
 const css = `
 .patterns .crossing { margin: 1.5rem 0 2.5rem; }
 .patterns h2 { margin: 0; font-size: 1.5rem; }
@@ -210,7 +203,6 @@ const css = `
 .day-tick { color: var(--muted); font-size: 0.65rem; }
 
 .note { color: var(--muted); font-size: 0.8rem; margin-top: 0.5rem; max-width: 60ch; }
-.empty, .loading { color: var(--muted); }
 
 @media (max-width: 640px) {
   .pair { grid-template-columns: 1fr; }

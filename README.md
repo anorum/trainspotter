@@ -150,6 +150,15 @@ uv run ruff check .
 Tests run against recorded HTTP fixtures rather than hand-written fakes, and the label set in [data/labels/](data/labels/) records whether each judgement came from visual inspection or from a human observer, because those are not equally authoritative.
 Hand-labeled BLOCKED training frames live in [data/blocks/](data/blocks/), one directory per camera, kept in git for the same reason as the labels: slow to produce, and reproducible from nothing else once ODOT overwrites the image.
 
+The site the API serves is an Astro app with its own toolchain, gated by the separate `web` workflow so a Python-only change never pays for an npm install:
+
+```bash
+cd services/api/web
+npm ci
+npm run check    # astro check, against a strict tsconfig; `astro build` does not typecheck
+npm run build
+```
+
 ## Licence
 
 MIT.

@@ -55,3 +55,10 @@ a { color: var(--crossbuck); }
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Shared by the islands: the signal pulse and the quiet-text states. In
+   global.css so they exist before hydration - component CSS ships inside the
+   JSX and cannot style the pre-hydration loading line. */
+.pulse { animation: pulse 2.4s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.45 } }
+.loading, .empty { color: var(--muted); }
