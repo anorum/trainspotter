@@ -23,7 +23,7 @@ The remedy that works for a camera with no hand-saved frames of its own - which 
 `scan` does not read the corpus section 2 assembles: it takes its frame list from the local manifests and reads image bytes from the local cache, and both want the poller's own layout rather than a convenient one.
 The easy way is to run it on the capture workstation, where the poller already writes both and `--local-only` keeps the sweeper off.
 
-Reproducing that layout by hand takes two steps, and both are easy to get subtly wrong.
+Reproducing what it needs by hand takes three steps, and each is easy to get subtly wrong.
 Frames resolve as `local_cache_dir / object_key`, and the key already begins with `frames/`, so the corpus has to land at `var/frames/frames/{camera_id}/{Y}/{m}/{d}/{H}/` - one more `frames/` than the section 2 sync uses:
 
 ```bash
@@ -48,7 +48,17 @@ find "var/scratch/$cam" -name '*.jsonl.gz' | while read -r f; do
 done
 ```
 
-Frames it cannot read are skipped without complaint, so zero observations means one of these two paths is wrong rather than that nothing happened.
+Third, `scan` needs the reference models and, unlike `run`, never fetches them: `_ensure_references` sits on the streaming path only.
+With an empty `var/references/` the reference detector is built holding no models at all, and every frame scores UNKNOWN with reason "no reference image for this camera and lighting".
+
+```bash
+aws s3 sync s3://pdx-trainspotter/references var/references
+```
+
+The three failures look different, which is the only way to tell them apart afterwards.
+Frames `scan` cannot read are skipped without complaint, so zero observations means the frame or manifest path is wrong.
+A full observations file with no sessions, every record UNKNOWN, means the references are missing rather than any path being wrong.
+The capture workstation has all three already, which is why running there is the easy way.
 Where hand-saved blocks do exist, section 2 folds them in as explicit BLOCKED rows.
 
 **VLM-sweep CLEARs** are the good negatives.
@@ -75,8 +85,14 @@ Beyond hand-saved blocks, adjudicated frames reach training only as gold exclusi
 
 ## 2. Assemble and train
 
-Both steps are plain functions, called from a workstation script with the `train` extra installed.
-There is no runtime CLI for either: torch is about 2GB of workstation-only weight that never belongs in a serving image.
+Both steps are plain functions, called from a workstation script rather than a CLI: torch is about 2GB of workstation-only weight that never belongs in a serving image.
+The `train` extra carrying it belongs to `blockade-core`, and the workspace's dev group leaves it out on purpose, so ask for it on the command that runs your script:
+
+```bash
+uv run --extra train python train_odot_678.py
+```
+
+A plain `uv run` gives you a checkout without torch, and `train_classifier` imports it inside the function body, so the module imports either way and the failure surfaces only when you call `train`.
 
 **Get the corpus onto the workstation.**
 `blockade-sync` only ever uploads, so pull the frames down yourself, into a directory named for the camera:
