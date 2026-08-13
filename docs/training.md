@@ -20,6 +20,9 @@ Sessions open on a blocked-biased consensus across both of a crossing's cameras,
 Core positives are therefore trustworthy only for the camera whose view actually drove the session - `odot-678` at Clinton, `odot-681` at Division.
 For the weak partner, spot-check the core positives before training; a model taught that a clear-looking frame is BLOCKED is precisely the false-positive generator this section exists to prevent.
 The remedy that works for a camera with no hand-saved frames of its own - which is `odot-679` and `odot-682` today - is to build `session_files` from that camera's own observations: `blockade-detect scan --camera odot-679` then `derive_sessions` over the result, so the windows come only from what that view actually produced.
+`scan` does not read the corpus section 2 assembles: it takes its frame list from `var/manifests/{camera_id}/*.jsonl` and reads image bytes from the local cache at `var/frames/`, so it wants both of those populated.
+The easy way is to run it on the capture workstation, where the poller already writes both and `--local-only` keeps the sweeper off; otherwise decompress the S3 manifests into `var/manifests/{camera_id}/` and place the frames under `var/frames/` first.
+Frames it cannot read are skipped without complaint, so zero observations means the paths are wrong rather than that nothing happened.
 Where hand-saved blocks do exist, section 2 folds them in as explicit BLOCKED rows.
 
 **VLM-sweep CLEARs** are the good negatives.
@@ -109,6 +112,7 @@ This step presumes hand-saved frames already exist for that camera: `data/blocks
 Choose the exam before you append, because here the gold guarantee is yours to keep rather than the code's.
 `build_manifest` enforces gold-out-of-training by object key, and these rows carry `blocks/...` keys that check never sees, so nothing stops you training on the very frames you plan to be graded against.
 Hold out every block you have already adjudicated into `data/labels/labels.jsonl`.
+Nothing links the two files mechanically - gold keys are `frames/{camera}/{Y}/{m}/{d}/{H}/{epoch_ms}-{hash8}.jpg` while blocks are hand-named PNGs carrying no timestamp - so the match is visual, against the `captured_at` of the gold record you adjudicated from.
 On a thin-gold camera, choose the held-out exam positives first and keep them out of the append: `odot-676` has thirteen blocks and no BLOCKED gold at all, so folding in all thirteen would leave section 3 with nothing honest to grade.
 
 ```python
@@ -116,7 +120,7 @@ import json
 from pathlib import Path
 
 camera = "odot-678"
-held_out = {"block1.png", "block2.png"}  # the exam for this camera; never trained on
+held_out = {"image copy 2.png", "image copy 3.png"}  # this camera's exam; never trained on
 
 with open(f"var/training/manifest-{camera}.jsonl", "a") as fh:
     for frame in sorted(Path(f"data/blocks/{camera}").iterdir()):
@@ -170,7 +174,12 @@ Build it however you like, but do not ship without the two numbers side by side.
 Cameras with thin gold need a substitute exam.
 Hold out the hand-saved positives as the test set - the `held_out` set from section 2, which is why that set has to be chosen before the fold-in rather than after - and add a false-positive screen over quiet frames the model has never seen.
 A model that passes on held-out positives but lights up on quiet frames has not earned a rollout.
-Every camera this applies to is thin for a reason: `odot-676` and `odot-677` have no BLOCKED gold at all, and `odot-679` and `odot-682` have no gold records, so on those the substitute exam is the only exam there is.
+
+That substitute needs hand-saved positives to exist, and for three cameras they do not.
+`odot-677`, `odot-679`, and `odot-682` have no BLOCKED gold and no blocks in `data/blocks/`, so there is nothing to grade a model against and no gate they can pass.
+The false-positive screen alone does not close that: it cannot detect a missed train, which is the error class this whole gate exists to hold down.
+For those cameras the workflow starts at section 1 rather than here - hand-save a handful of BLOCKED frames spanning night, dawn, and day first.
+No model ships without an exam it could have failed.
 
 ## 4. Ship
 

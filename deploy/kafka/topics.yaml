@@ -1,7 +1,8 @@
 ---
 # Frame metadata. Never image bytes - object storage plus a reference, always
-# (docs/architecture.md, data contracts). A test asserts message size so a future change
-# cannot quietly start publishing images.
+# (docs/architecture.md, data contracts). What enforces that is FrameRecord being
+# extra="forbid", covered by test_frame_record_rejects_unknown_fields: an image
+# field cannot be added to the payload without failing the schema tests.
 apiVersion: kafka.strimzi.io/v1
 kind: KafkaTopic
 metadata:
