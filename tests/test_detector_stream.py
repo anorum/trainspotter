@@ -137,3 +137,42 @@ def test_a_non_scoring_camera_emits_an_inert_unknown(settings: Settings) -> None
     assert obs.confidence == 0.0
     assert obs.detector_version == UNSCORED_VERSION
     assert obs.object_key == "frames/odot-679/x/0.jpg"
+
+
+def test_explain_prints_what_the_pod_would_publish_for_a_non_scoring_camera(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """explain promises its output is the record the pod would have published
+    for the same bytes. Running the real model on a camera the pod never scores
+    would hand the operator debugging that very camera a confident BLOCKED or
+    CLEAR the pipeline cannot emit."""
+    import detector.runner as runner
+    from typer.testing import CliRunner
+
+    roster = tmp_path / "cameras.yaml"
+    roster.write_text(
+        "cameras:\n"
+        "  - camera_id: odot-679\n"
+        "    name: Portland - 12th at Division\n"
+        "    crossing_id: SE_12TH_CLINTON\n"
+        "    image_url: http://example.test/679.jpg\n"
+        "    scores: false\n"
+    )
+    monkeypatch.setattr(
+        runner, "get_settings", lambda: Settings(camera_config_path=roster, detector="reference")
+    )
+    monkeypatch.setattr(
+        runner,
+        "build_detector",
+        lambda **kwargs: pytest.fail("a non-scoring camera must consult no model"),
+    )
+    image = tmp_path / "odot-679" / "frame.jpg"
+    image.parent.mkdir()
+    image.write_bytes(b"never read")
+
+    result = CliRunner().invoke(runner.app, ["explain", str(image)])
+
+    assert result.exit_code == 0, result.output
+    assert "state=UNKNOWN" in result.stdout
+    assert "confidence=0.00" in result.stdout
+    assert f"detector_version={UNSCORED_VERSION}" in result.stdout

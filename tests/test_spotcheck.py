@@ -191,6 +191,11 @@ cameras:
     name: Portland - 12th at Clinton
     crossing_id: SE_12TH_CLINTON
     image_url: http://example.test/678.jpg
+  - camera_id: odot-679
+    name: Portland - 12th at Division
+    crossing_id: SE_12TH_CLINTON
+    image_url: http://example.test/679.jpg
+    scores: false
   - camera_id: odot-681
     name: Portland - 8th at Division
     crossing_id: SE_8TH_DIVISION
@@ -198,29 +203,23 @@ cameras:
 """
 
 
-def test_the_cli_labels_each_camera_under_its_own_id(tmp_path, monkeypatch) -> None:
-    """A sweep over several cameras must attribute every label to the camera
-    whose directory the frame came from.
-
-    The judge and the object-key builder are per-camera functions the sweep
-    calls back into, and the camera they carry is what lands in the label
-    file. Bind that camera once for the whole loop and every label - crossing
-    id, camera id, object key - is filed under whichever camera happened to be
-    last, silently poisoning the training set.
-    """
+def install_fake_vlm(monkeypatch) -> list[str]:
+    """Stand a scripted model in for the paid one and return the list it
+    appends a camera id to for every frame it is asked to judge - which is the
+    list of API calls the sweep would have paid for."""
     import blockade.detect.vlm as vlm_module
     from blockade.schemas import ObservationRecord
-    from detector.runner import app
-    from typer.testing import CliRunner
+
+    judged: list[str] = []
 
     class FakeVlm:
         version = "fake-model/deadbeef"
 
         def __init__(self, settings) -> None:
-            self.seen: list[str] = []
+            pass
 
         def classify(self, image, camera, captured_at, object_key) -> ObservationRecord:
-            self.seen.append(camera.camera_id)
+            judged.append(camera.camera_id)
             return ObservationRecord(
                 crossing_id=camera.crossing_id,
                 camera_id=camera.camera_id,
@@ -234,15 +233,37 @@ def test_the_cli_labels_each_camera_under_its_own_id(tmp_path, monkeypatch) -> N
             )
 
     monkeypatch.setattr(vlm_module, "VlmDetector", FakeVlm)
+    return judged
+
+
+def stage_frames(tmp_path: Path, monkeypatch, camera_ids: tuple[str, ...]) -> Path:
+    """A roster on disk and a directory of frames for each named camera."""
     roster = tmp_path / "cameras.yaml"
     roster.write_text(ROSTER_YAML)
     monkeypatch.setenv("BLOCKADE_CAMERA_CONFIG_PATH", str(roster))
-
     frames_dir = tmp_path / "frames"
-    for camera_id in ("odot-678", "odot-681"):
+    for camera_id in camera_ids:
         camera_dir = frames_dir / camera_id
         camera_dir.mkdir(parents=True)
         timeline(camera_dir, n=8, cadence_minutes=15)
+    return frames_dir
+
+
+def test_the_cli_labels_each_camera_under_its_own_id(tmp_path, monkeypatch) -> None:
+    """A sweep over several cameras must attribute every label to the camera
+    whose directory the frame came from.
+
+    The judge and the object-key builder are per-camera functions the sweep
+    calls back into, and the camera they carry is what lands in the label
+    file. Bind that camera once for the whole loop and every label - crossing
+    id, camera id, object key - is filed under whichever camera happened to be
+    last, silently poisoning the training set.
+    """
+    from detector.runner import app
+    from typer.testing import CliRunner
+
+    install_fake_vlm(monkeypatch)
+    frames_dir = stage_frames(tmp_path, monkeypatch, ("odot-678", "odot-681"))
     labels = tmp_path / "labels.jsonl"
 
     result = CliRunner().invoke(
@@ -258,3 +279,55 @@ def test_the_cli_labels_each_camera_under_its_own_id(tmp_path, monkeypatch) -> N
         assert record["reason"] == f"scripted for {record['camera_id']}", record
     assert {r["camera_id"] for r in records} == {"odot-678", "odot-681"}
     assert {r["crossing_id"] for r in records} == {"SE_12TH_CLINTON", "SE_8TH_DIVISION"}
+
+
+def test_the_sweep_spends_no_calls_on_a_non_scoring_camera(tmp_path, monkeypatch) -> None:
+    """odot-679 has frames like any other camera, but its view does not include
+    the crossing. Every judgement bought for it is money spent on a picture of
+    an intersection, and the label lands in the training set as ground truth
+    about a crossing that is not in the frame."""
+    from detector.runner import app
+    from typer.testing import CliRunner
+
+    judged = install_fake_vlm(monkeypatch)
+    frames_dir = stage_frames(tmp_path, monkeypatch, ("odot-678", "odot-679", "odot-681"))
+    labels = tmp_path / "labels.jsonl"
+
+    result = CliRunner().invoke(
+        app,
+        ["spotcheck", "--frames-dir", str(frames_dir), "--labels", str(labels)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert judged, "the sweep judged nothing at all"
+    assert "odot-679" not in judged, "an API call was spent on the non-scoring camera"
+    records = [json.loads(line) for line in labels.read_text().splitlines() if line.strip()]
+    assert {r["camera_id"] for r in records} == {"odot-678", "odot-681"}
+
+
+def test_pointing_the_sweep_at_a_non_scoring_camera_fails_loudly(tmp_path, monkeypatch) -> None:
+    """Asking for that camera by name is a mistake worth an error: silently
+    sweeping nothing would read as a camera with no frames yet."""
+    from detector.runner import app
+    from typer.testing import CliRunner
+
+    judged = install_fake_vlm(monkeypatch)
+    frames_dir = stage_frames(tmp_path, monkeypatch, ("odot-679",))
+    labels = tmp_path / "labels.jsonl"
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "spotcheck",
+            "--frames-dir",
+            str(frames_dir),
+            "--labels",
+            str(labels),
+            "--camera",
+            "odot-679",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert judged == []
+    assert not labels.exists()

@@ -72,10 +72,6 @@ NON_SCORING_CAMERAS: set[str] = {
     "Portland - 12th at Division",
 }
 
-_NON_SCORING_NORMALISED = {
-    "".join(ch for ch in name.casefold() if ch.isalnum()) for name in NON_SCORING_CAMERAS
-}
-
 # Documented field names first; the rest are tolerated in case the schema drifts.
 ID_FIELDS = ("device-id", "deviceId", "device_id", "id")
 NAME_FIELDS = ("device-name", "deviceName", "device_name", "name")
@@ -96,6 +92,11 @@ def _normalise(text: str) -> str:
     """Fold case, punctuation, and spacing so 'Portland - 11th at Milwaukie N'
     matches 'Portland-11th at Milwaukie  N' and similar formatting drift."""
     return "".join(ch for ch in text.casefold() if ch.isalnum())
+
+
+# Derived through _normalise itself, so the policy lookup below and the target
+# lookup can never drift apart if the matching rule ever grows a step.
+_NON_SCORING_NORMALISED = {_normalise(name) for name in NON_SCORING_CAMERAS}
 
 
 def _find_camera_list(payload: Any) -> list[dict[str, Any]]:

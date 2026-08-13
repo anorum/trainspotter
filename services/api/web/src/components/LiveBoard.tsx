@@ -189,6 +189,13 @@ export default function LiveBoard() {
     if (!status) return null;
     if (!scrubbing) return status;
     // Time-travel view: each crossing shows its state at the scrubbed instant.
+    // The state comes from judgements only - the last row at or before the
+    // instant that actually claims BLOCKED or CLEAR. An UNKNOWN row is a
+    // refusal to judge (a glare-ruined frame, or a camera that does not view
+    // the crossing at all and publishes a zero-inference UNKNOWN every tick),
+    // never an assertion about the crossing, which is the same rule the live
+    // consensus applies. Frames still come from every row, so those cameras'
+    // pictures time-travel with the rest.
     const at = new Date(scrubT!);
     return {
       generated_at: at.toISOString(),
@@ -196,7 +203,8 @@ export default function LiveBoard() {
         const past = (timelines[c.crossing_id] ?? []).filter(
           (o) => new Date(o.captured_at) <= at,
         );
-        const last = past[past.length - 1];
+        let last: TimelineObs | undefined;
+        for (const o of past) if (o.state !== "UNKNOWN") last = o;
         const frames = new Map<string, TimelineObs>();
         for (const o of past) if (o.object_key) frames.set(o.camera_id, o);
         return {

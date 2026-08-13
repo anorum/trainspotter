@@ -55,6 +55,29 @@ UNSCORED_VERSION = "unscored/1"
 """Stamped on the zero-inference UNKNOWNs from cameras that cannot see the
 crossing, so those rows are auditable as policy rather than a model's failure."""
 
+UNSCORED_REASON = "camera does not view the crossing; frame kept for context"
+
+
+def unscored(camera: Camera, captured_at: datetime, object_key: str) -> ObservationRecord:
+    """What a non-scoring camera's frame earns instead of a judgement.
+
+    No bytes read and no model consulted for a camera that cannot see the
+    crossing (see `Camera.scores` for why it must not vote). The frame still
+    earns an observation, so the board keeps showing it - an UNKNOWN, which
+    neither consensus nor sessions act on. Every entrypoint that would
+    otherwise score the frame mints it here, so what the pod publishes and what
+    an operator is shown for the same bytes cannot drift apart.
+    """
+    return observation(
+        camera,
+        captured_at,
+        object_key,
+        state=CrossingState.UNKNOWN,
+        confidence=0.0,
+        reason=UNSCORED_REASON,
+        version=UNSCORED_VERSION,
+    )
+
 
 def _utc(stamp: str) -> datetime:
     """Frame timestamps are always UTC-aware. A naive bound would raise on
@@ -94,19 +117,7 @@ class Scorer:
         if camera is None or record.object_key is None or record.is_duplicate:
             return None
         if not camera.scores:
-            # No bytes read and no model consulted for a camera that cannot see
-            # the crossing (see `Camera.scores` for why it must not vote). The
-            # frame still earns an observation, so the board keeps showing it -
-            # an UNKNOWN, which neither consensus nor sessions act on.
-            return observation(
-                camera,
-                record.captured_at,
-                record.object_key,
-                state=CrossingState.UNKNOWN,
-                confidence=0.0,
-                reason="camera does not view the crossing; frame kept for context",
-                version=UNSCORED_VERSION,
-            )
+            return unscored(camera, record.captured_at, record.object_key)
         image = self._read_bytes(record.object_key)
         if image is None:
             return None
@@ -181,12 +192,14 @@ def explain(
     ),
     camera: str = typer.Option("", help="Camera id when the path does not contain one."),
 ) -> None:
-    """Score one frame and print the judgement. The debugging path.
+    """Score one frame and print the record. The debugging path.
 
     Builds the same detector the deployment builds (BLOCKADE_DETECTOR), so
     what this prints is what the pod would have published for the same bytes.
     The reason line carries the evidence; every detector writes one for
-    exactly this audit.
+    exactly this audit. A non-scoring camera is published unjudged, so that is
+    what prints for one - the promise above holds for every camera or it is
+    not worth making.
     """
     settings = get_settings()
     roster = {c.camera_id: c for c in load_roster(settings.camera_config_path).enabled()}
@@ -201,13 +214,23 @@ def explain(
         )
         raise typer.Exit(code=1)
 
-    detector = build_detector(settings=settings)
     captured_at = datetime.fromtimestamp(image.stat().st_mtime, tz=UTC)
-    observation = detector.classify(image.read_bytes(), cam, captured_at, image.name)
-    typer.echo(f"state={observation.state.value}")
-    typer.echo(f"confidence={observation.confidence:.2f}")
-    typer.echo(f"reason={observation.reason}")
-    typer.echo(f"detector_version={observation.detector_version}")
+    if cam.scores:
+        record = build_detector(settings=settings).classify(
+            image.read_bytes(), cam, captured_at, image.name
+        )
+    else:
+        typer.secho(
+            f"{cam.camera_id} is non-scoring (its view does not include the "
+            "crossing), so the pod reads no bytes and consults no model for it.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+        record = unscored(cam, captured_at, image.name)
+    typer.echo(f"state={record.state.value}")
+    typer.echo(f"confidence={record.confidence:.2f}")
+    typer.echo(f"reason={record.reason}")
+    typer.echo(f"detector_version={record.detector_version}")
 
 
 @app.command()
