@@ -13,7 +13,8 @@
 
 ## Context
 
-DESIGN.md assumed a homelab deployment with MinIO already present. In fact the k3s cluster exists
+docs/history/design.md assumed a homelab deployment with MinIO already present. In fact the k3s
+cluster exists
 but MinIO and Postgres do not, and running the system on AWS is acceptable if it is cheap.
 
 That splits into two decisions that interact: where compute runs, and where objects live.

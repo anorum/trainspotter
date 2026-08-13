@@ -125,15 +125,14 @@ Verdict: **pending**.
 
 ## Summary
 
-| Crossing | Cameras usable | Consensus possible? |
-| --- | --- | --- |
-| SE_11TH_MILWAUKIE | ? / 2 | ? |
-| SE_12TH_CLINTON | ? / 2 | ? |
-| SE_8TH_DIVISION | ? / 2 | ? |
-
 Cross-camera consensus needs at least two usable cameras per crossing. A crossing left with one
-usable camera still produces a signal, but with materially lower confidence - record that here so
-the confidence values in `crossing.state.v1` can be justified rather than invented.
+usable camera still produces a signal, but with materially lower confidence, which is why the
+confidence on every `crossing.observations.v1` record is per camera and the board's consensus is
+blocked-biased rather than a vote.
+
+The per-crossing usability tally this section was going to hold was never filled in, and is not
+worth reconstructing: usability turned out to be per camera and per lighting condition rather than
+a single verdict, and it now shows up empirically in detector performance instead.
 
 ## Hand-timestamped blockages
 
@@ -142,8 +141,6 @@ labels for Phase 1 threshold tuning, and the only ground truth this project will
 FRA blocked-crossing reports are explicitly unverified and not a representative sample, so they
 are used as weak evaluation labels only, never as a training target.
 
-| # | Crossing | Observed start (UTC) | Observed end (UTC) | How observed | Notes |
-| --- | --- | --- | --- | --- | --- |
-| 1 | | | | | |
-| 2 | | | | | |
-| 3 | | | | | |
+Those observations live in `data/labels/sessions.jsonl`, which carries the full record: observed
+start and end in both local and UTC, the precision of each boundary, the observer, and what the
+detector said about the same frames. That file is the record; the table drafted here never was.
