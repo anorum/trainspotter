@@ -20,9 +20,31 @@ Sessions open on a blocked-biased consensus across both of a crossing's cameras,
 Core positives are therefore trustworthy only for the camera whose view actually drove the session - `odot-678` at Clinton, `odot-681` at Division.
 For the weak partner, spot-check the core positives before training; a model taught that a clear-looking frame is BLOCKED is precisely the false-positive generator this section exists to prevent.
 The remedy that works for a camera with no hand-saved frames of its own - which is `odot-679` and `odot-682` today - is to build `session_files` from that camera's own observations: `blockade-detect scan --camera odot-679` then `derive_sessions` over the result, so the windows come only from what that view actually produced.
-`scan` does not read the corpus section 2 assembles: it takes its frame list from `var/manifests/{camera_id}/*.jsonl` and reads image bytes from the local cache at `var/frames/`, so it wants both of those populated.
-The easy way is to run it on the capture workstation, where the poller already writes both and `--local-only` keeps the sweeper off; otherwise decompress the S3 manifests into `var/manifests/{camera_id}/` and place the frames under `var/frames/` first.
-Frames it cannot read are skipped without complaint, so zero observations means the paths are wrong rather than that nothing happened.
+`scan` does not read the corpus section 2 assembles: it takes its frame list from the local manifests and reads image bytes from the local cache, and both want the poller's own layout rather than a convenient one.
+The easy way is to run it on the capture workstation, where the poller already writes both and `--local-only` keeps the sweeper off.
+
+Reproducing that layout by hand takes two steps, and both are easy to get subtly wrong.
+Frames resolve as `local_cache_dir / object_key`, and the key already begins with `frames/`, so the corpus has to land at `var/frames/frames/{camera_id}/{Y}/{m}/{d}/{H}/` - one more `frames/` than the section 2 sync uses:
+
+```bash
+aws s3 sync s3://pdx-trainspotter/frames var/frames/frames
+```
+
+Manifests are matched by `--camera` on the parent directory name and globbed as `*.jsonl`, while S3 keeps them gzipped and nested as `manifests/{camera}/{Y}/{m}/{d}/{H}.jsonl.gz`.
+Syncing that nesting verbatim leaves the parent as the day and matches nothing; flattening it naively collides, because every day contributes its own `13.jsonl`.
+The layout the poller writes, and the one `--camera` expects, is flat files directly under the camera directory:
+
+```bash
+cam=odot-679
+aws s3 sync "s3://pdx-trainspotter/manifests/$cam" "var/scratch/$cam"
+mkdir -p "var/manifests/$cam"
+find "var/scratch/$cam" -name '*.jsonl.gz' | while read -r f; do
+  hour=$(echo "$f" | sed -E 's|.*/([0-9]{4})/([0-9]{2})/([0-9]{2})/([0-9]{2})\.jsonl\.gz|\1-\2-\3-\4|')
+  gunzip -c "$f" > "var/manifests/$cam/$hour.jsonl"
+done
+```
+
+Frames it cannot read are skipped without complaint, so zero observations means one of these two paths is wrong rather than that nothing happened.
 Where hand-saved blocks do exist, section 2 folds them in as explicit BLOCKED rows.
 
 **VLM-sweep CLEARs** are the good negatives.
