@@ -61,6 +61,9 @@ const WINDOWS: [number, string][] = [
   [720, "30D"],
 ];
 
+/** How long a failed history load silences the scrubber's retries. */
+const RETRY_COOLDOWN_MS = 5_000;
+
 export default function LiveBoard() {
   const [status, setStatus] = useState<Status | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -69,9 +72,11 @@ export default function LiveBoard() {
   const [timelines, setTimelines] = useState<Record<string, TimelineObs[]>>({});
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null);
-  // One indicator for the whole history store, which both the lanes and the
-  // scrub timelines read: either failing raises it, either succeeding clears it.
-  const [historyFailed, setHistoryFailed] = useState(false);
+  // Two surfaces read the history store, and each owns its own flag: a
+  // recovered timeline says nothing about lanes that were never refetched.
+  // They share one note, so the board never stacks two outage lines.
+  const [lanesFailed, setLanesFailed] = useState(false);
+  const [timelineFailed, setTimelineFailed] = useState(false);
   // The value is never read; each tick just re-renders the live durations.
   const [, setTick] = useState(0);
   // Refs, not state: the guard must be visible to concurrent calls
@@ -85,22 +90,20 @@ export default function LiveBoard() {
   const loadedHours = useRef(0);
   const appliedHours = useRef(0);
   const loadGeneration = useRef(0);
+  // A failed load rolls the guard back, so without this every further input
+  // event would start another three fetches against an already sick store.
+  const retryAfter = useRef(0);
 
   // The panel's habit line loads the first time any crossing is selected.
   useEffect(() => {
     if (selected && !analytics) fetchAnalytics().then(setAnalytics, () => {});
   }, [selected]);
 
-  useEffect(() => {
-    // If the first status fetch fails the page stays on "Contacting the
-    // board..." and the EventSource below retries into the same state.
-    fetch("/api/v1/status")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((body) => body && setStatus(body), () => {});
-    // The lanes under the scrubber: blockages findable by eye before
-    // scrubbing, so the history is worth a drag in the first place. Empty
-    // lanes are a claim about the corridor, so a store that cannot answer
-    // says so instead.
+  // The lanes under the scrubber: blockages findable by eye before scrubbing,
+  // so the history is worth a drag in the first place. Empty lanes are a
+  // claim about the corridor, so a store that cannot answer says so instead -
+  // and stays retryable, because this is the one surface with no live feed.
+  const loadLanes = () =>
     fetch("/api/v1/sessions?limit=500")
       .then((r) => {
         if (!r.ok) throw new Error(`sessions ${r.status}`);
@@ -109,10 +112,18 @@ export default function LiveBoard() {
       .then(
         (body) => {
           setSessions(body.sessions);
-          setHistoryFailed(false);
+          setLanesFailed(false);
         },
-        () => setHistoryFailed(true),
+        () => setLanesFailed(true),
       );
+
+  useEffect(() => {
+    // If the first status fetch fails the page stays on "Contacting the
+    // board..." and the EventSource below retries into the same state.
+    fetch("/api/v1/status")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body) => body && setStatus(body), () => {});
+    void loadLanes();
     const source = new EventSource("/api/v1/events");
     source.addEventListener("status", (e) => setStatus(JSON.parse((e as MessageEvent).data)));
     const timer = setInterval(() => setTick((t) => t + 1), 1000);
@@ -128,9 +139,10 @@ export default function LiveBoard() {
     if (loadedHours.current >= hours) {
       // Gate on committed data, not the guard: a wider load still in flight
       // owns loadedHours and has proved nothing about the store yet.
-      if (appliedHours.current >= hours) setHistoryFailed(false);
+      if (appliedHours.current >= hours) setTimelineFailed(false);
       return;
     }
+    if (Date.now() < retryAfter.current) return;
     loadedHours.current = hours;
     const generation = ++loadGeneration.current;
     try {
@@ -144,14 +156,18 @@ export default function LiveBoard() {
       if (generation === loadGeneration.current) {
         setTimelines(Object.fromEntries(entries));
         appliedHours.current = hours;
-        setHistoryFailed(false);
+        retryAfter.current = 0;
+        setTimelineFailed(false);
+        // The store is evidently back; the lanes have no other way to learn it.
+        if (lanesFailed) void loadLanes();
       }
     } catch {
       // Fall back to the window actually on screen so a later scrub retries;
       // a superseding load owns the guard now and must not be rolled back.
       if (generation === loadGeneration.current) {
         loadedHours.current = appliedHours.current;
-        setHistoryFailed(true);
+        retryAfter.current = Date.now() + RETRY_COOLDOWN_MS;
+        setTimelineFailed(true);
       }
     }
   };
@@ -321,7 +337,7 @@ export default function LiveBoard() {
       {/* Without this the board would render a history-store outage as empty
           lanes and crossings with no recent signal - a corridor with nothing
           on it and dead detectors, rather than a store that cannot answer. */}
-      {historyFailed && (
+      {(lanesFailed || timelineFailed) && (
         <p class="empty scrub-note">
           The history store is not answering; the past will be back.
         </p>
