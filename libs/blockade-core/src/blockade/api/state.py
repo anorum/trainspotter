@@ -30,7 +30,12 @@ from blockade.api.models import CameraFrameInfo, CrossingStatus, StatusResponse
 from blockade.schemas import BlockageSession, CrossingState, ObservationRecord
 
 DEFAULT_STALE_AFTER = timedelta(minutes=6)
-"""Three times the ~2 minute worst observed camera cadence."""
+"""Three times the ~2 minute worst camera cadence observed when this was chosen.
+
+ODOT has since been measured refreshing every four to five minutes, so this is now
+closer to one cadence than to three - see deploy/poller/README.md on why the interval
+moves. Widening it is a policy change, not a comment fix.
+"""
 
 
 class LiveState:

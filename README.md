@@ -136,7 +136,7 @@ It is spent on the camera inventory alone, which refreshes every 24 hours, so it
 Image polling goes directly to the per-camera URL and does not consume quota.
 
 Polling is conditional (`If-None-Match` / `If-Modified-Since`), floored at 15s, and sends a `User-Agent` naming the project and a contact address.
-About half of all polls return 304 and transfer nothing.
+Most polls return 304 and transfer nothing, since the cameras refresh more slowly than we poll.
 Getting the key revoked ends the project.
 
 ### Tests

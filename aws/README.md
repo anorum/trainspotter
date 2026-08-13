@@ -8,6 +8,9 @@ setup only.
 The sessionizer that replaced the Flink job rebuilds its state by replaying Kafka, so nothing
 writes there any more and the prefix can be deleted whenever convenient.
 
+This recipe creates a bucket of your own, `blockade-<account-id>`; the production instance runs
+against `pdx-trainspotter`, which is the name the rest of the docs and the deploy manifests use.
+
 ```bash
 BUCKET=blockade-$(aws sts get-caller-identity --query Account --output text)
 aws s3api create-bucket --bucket "$BUCKET" --region us-west-2 \

@@ -24,9 +24,9 @@ class AlertPolicy:
     confirmations: int = 2
     """Consecutive BLOCKED observations before firing.
 
-    One frame can be wrong; two consecutive ones are much less likely to be. At a
-    ~2 minute cadence this costs a couple of minutes of latency against a
-    blockage that typically runs for tens of minutes.
+    One frame can be wrong; two consecutive ones are much less likely to be. At the
+    observed few-minute camera refresh cadence this costs a few minutes of latency
+    against a blockage that typically runs for tens of minutes.
     """
 
     clear_confirmations: int = 3
