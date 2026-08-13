@@ -17,6 +17,7 @@ import {
   worstHours,
 } from "../lib/analytics";
 import { COLORS, GEOMETRY, type State } from "../lib/crossings";
+import { stateAt, type TimelineObs } from "../lib/scrub";
 
 interface CameraInfo {
   camera_id: string;
@@ -40,13 +41,6 @@ interface Status {
   crossings: Crossing[];
 }
 
-interface TimelineObs {
-  captured_at: string;
-  state: State;
-  object_key: string | null;
-  camera_id: string;
-}
-
 interface SessionRow {
   crossing_id: string;
   started_at: string;
@@ -60,13 +54,6 @@ const WINDOWS: [number, string][] = [
   [168, "7D"],
   [720, "30D"],
 ];
-
-/** How long a judgement stands as a measurement rather than a memory.
- *  Mirrors DEFAULT_STALE_AFTER in the API's live reducer
- *  (libs/blockade-core/src/blockade/api/state.py); the two have to move
- *  together, or the scrubbed board and the live board disagree about whether
- *  the same instant had a witness. */
-const STALE_AFTER_MS = 6 * 60_000;
 
 /** How long a failed history load silences the scrubber's retries. */
 const RETRY_COOLDOWN_MS = 5_000;
@@ -196,43 +183,20 @@ export default function LiveBoard() {
     if (!status) return null;
     if (!scrubbing) return status;
     // Time-travel view: each crossing shows its state at the scrubbed instant,
-    // by the three rules the live reducer applies to the same question.
-    // Judgements only: an UNKNOWN row is a refusal to judge (a glare-ruined
-    // frame, or a camera that does not view the crossing at all and publishes
-    // a zero-inference UNKNOWN every tick), never an assertion about the
-    // crossing. Fresh only: an older judgement is a memory, so a crossing
-    // whose witnesses went quiet reads UNKNOWN and stale rather than holding a
-    // red dot from hours earlier. And blocked-biased among what is left - a
-    // camera that sees a train outranks one that sees nothing, because the
-    // glare-blind camera's CLEAR two seconds later must not clear a crossing
-    // with a train across it. Frames come from every row at any age, so the
-    // non-scoring cameras' pictures time-travel with the rest.
+    // by the same rules the live reducer applies to the same question. They
+    // live in lib/scrub.ts, where they are tested; the open session and the
+    // latest observation are dropped because both are statements about now.
     const at = new Date(scrubT!);
     const atMs = at.getTime();
-    const freshFrom = atMs - STALE_AFTER_MS;
     return {
       generated_at: at.toISOString(),
       crossings: status.crossings.map((c) => {
-        // One pass over rows the timeline endpoint already returns ascending
-        // by captured_at, so the scan stops at the scrubbed instant rather
-        // than walking the tail of a 30-day window on every drag frame.
-        const frames = new Map<string, TimelineObs>();
-        let blocked: TimelineObs | undefined;
-        let clear: TimelineObs | undefined;
-        for (const o of timelines[c.crossing_id] ?? []) {
-          const t = new Date(o.captured_at).getTime();
-          if (t > atMs) break;
-          if (o.object_key) frames.set(o.camera_id, o);
-          if (t < freshFrom) continue;
-          if (o.state === "BLOCKED") blocked = o;
-          else if (o.state === "CLEAR") clear = o;
-        }
-        const last = blocked ?? clear;
+        const { state, stale, since, frames } = stateAt(timelines[c.crossing_id] ?? [], atMs);
         return {
           ...c,
-          state: last ? last.state : ("UNKNOWN" as State),
-          stale: !last,
-          since: last?.captured_at ?? null,
+          state,
+          stale,
+          since,
           open_session: null,
           latest_observation: null,
           cameras: c.cameras.map((cam) => {

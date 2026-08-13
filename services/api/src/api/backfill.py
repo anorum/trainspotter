@@ -21,6 +21,7 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from blockade.config import CameraRoster
 from blockade.schemas import BlockageSession, ObservationRecord
 from blockade.sessions import SessionParams, derive_sessions
 
@@ -76,11 +77,40 @@ class BackfillPlan:
         return "\n".join(lines)
 
 
-def plan(observations: list[ObservationRecord], now: datetime | None = None) -> BackfillPlan:
-    """Derive sessions and per-crossing rebuild windows from a scan's output."""
+def _witnesses(roster: CameraRoster | None) -> dict[str, set[str]]:
+    """Which cameras a crossing's sessions are derived from, per crossing.
+
+    The non-scoring ones are not witnesses: they publish UNKNOWN by policy and
+    a re-score that omits them loses nothing.
+    """
+    out: dict[str, set[str]] = {}
+    for camera in roster.enabled() if roster else []:
+        if camera.scores:
+            out.setdefault(camera.crossing_id, set()).add(camera.camera_id)
+    return out
+
+
+def plan(
+    observations: list[ObservationRecord],
+    now: datetime | None = None,
+    *,
+    roster: CameraRoster | None = None,
+    allow_empty_window: bool = False,
+) -> BackfillPlan:
+    """Derive sessions and per-crossing rebuild windows from a scan's output.
+
+    Refuses a scan that does not cover every witness of a crossing it would
+    rewrite. Sessions are a per-crossing projection of all its cameras at once,
+    but the load's unit is the window, so a scan of one camera of two rebuilds
+    that window from half the evidence and deletes what the other camera saw -
+    silently, because the plan looks complete. ``allow_empty_window`` waives it
+    for the legitimate edges: a window predating a camera, or one whose
+    sessions really were phantoms.
+    """
     if not observations:
         raise BackfillError("no observations to load")
     now = now or datetime.now(UTC)
+    witnesses = _witnesses(roster)
 
     windows: list[Window] = []
     by_crossing: dict[str, list[ObservationRecord]] = {}
@@ -95,6 +125,19 @@ def plan(observations: list[ObservationRecord], now: datetime | None = None) -> 
                 f"the live edge (now minus {int(LIVE_EDGE.total_seconds() // 60)}min). "
                 "Streaming owns now; backfill only history. Scan with --until, or "
                 "re-run once the window is old enough."
+            )
+        seen = {o.camera_id for o in group}
+        missing = sorted(witnesses.get(crossing_id, set()) - seen)
+        if missing and not allow_empty_window:
+            raise BackfillError(
+                f"{crossing_id}: the scan covers {', '.join(sorted(seen))}, but the "
+                f"crossing is also watched by {', '.join(missing)}. Its sessions are "
+                "derived from every scoring camera at once, so loading this would "
+                f"rebuild {window.start:%Y-%m-%d %H:%M} .. {window.end:%Y-%m-%d %H:%M} "
+                "UTC from part of the evidence and delete what the missing camera saw. "
+                "Re-score them together - drop --camera, or scan each and concatenate "
+                "the JSONL. If this window predates the missing camera, re-run with "
+                "--allow-empty-window."
             )
         windows.append(window)
 

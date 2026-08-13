@@ -36,7 +36,10 @@ When a detector gets better, its new word reaches Postgres through this loop, ne
 The load is one transaction and is safe to re-run.
 Observations join the store as a new versioned layer and the timeline resolves latest-ingest-wins per instant, so the old detector's word stays on record but stops being the answer.
 Sessions are a projection and get rebuilt: every session starting inside the re-scored window is replaced by what the new derivation found, which is how a phantom session disappears instead of surviving next to its correction.
-A window whose new derivation is empty while real sessions start inside it is refused outright, with the all-witnesses recipe in the message - that is the shape a partial scan takes, and the delete would otherwise be silent and unrecoverable from the board.
-When a window truly holds no blockage and the old rows are the phantom, say so with `--allow-empty-window`.
+A partial scan is refused rather than loaded, because the delete would otherwise be silent and unrecoverable from the board.
+The plan checks the roster: every scoring camera on a crossing must appear in the observations before any window of that crossing is rewritten, so the 681-only scan of a crossing 682 also watches stops before it deletes what 682 saw.
+The load then refuses a second time, inside the transaction, if a window would be left with no sessions at all - the shape the roster check cannot see, such as a crossing whose only witness was removed from the roster after the fact.
+Both give way to `--allow-empty-window`, for a window that predates a camera or whose sessions really were the phantom.
+It applies to every window in the file, so load a legitimately-empty crossing on its own rather than disarming the check for the others.
 The command refuses windows reaching within one session gap of now - that edge belongs to the streaming sessionizer.
 Scan windows should extend a little beyond the period of interest on both sides, so no real session straddles the window boundary.

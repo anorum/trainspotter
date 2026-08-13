@@ -44,7 +44,11 @@ def backfill(
     allow_empty_window: bool = typer.Option(
         False,
         "--allow-empty-window",
-        help="Let a window delete a crossing's sessions and put nothing back.",
+        help=(
+            "Load a window whose rebuild is not backed by every witness of the "
+            "crossing: a scan missing one of its scoring cameras, or a derivation "
+            "that would leave the window with no sessions at all."
+        ),
     ),
 ) -> None:
     """Load a re-scored history window into Postgres.
@@ -59,6 +63,7 @@ def backfill(
     to delete the witnesses it did not look at.
     """
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    from blockade.config import load_roster
     from blockade.schemas import ObservationRecord
 
     from api import backfill as bf
@@ -69,13 +74,26 @@ def backfill(
         typer.secho("BLOCKADE_DATABASE_URL is not set.", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1)
 
+    try:
+        roster = load_roster(settings.camera_config_path)
+    except (FileNotFoundError, ValueError) as exc:
+        typer.secho(
+            f"{exc}\n\nThe roster is how this command knows which cameras witness a "
+            "crossing, and a scan missing one of them rebuilds its window from part "
+            "of the evidence. Point BLOCKADE_CAMERA_CONFIG_PATH at the roster this "
+            "history was captured with.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=1) from exc
+
     records = [
         ObservationRecord.model_validate_json(line)
         for line in observations.read_text().splitlines()
         if line.strip()
     ]
     try:
-        p = bf.plan(records)
+        p = bf.plan(records, roster=roster, allow_empty_window=allow_empty_window)
     except bf.BackfillError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc
