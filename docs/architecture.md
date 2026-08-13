@@ -159,5 +159,6 @@ A deploy-manifest test asserts every ServiceMonitor actually selects a Service, 
 
 - **Retrain a camera**: follow [docs/training.md](training.md) (label, train, exam against gold labels, `aws s3 cp` the ONNX to `references/`, rollout restart the detector, then backfill the improved history).
 - **Backfill after a detector change**: `blockade-detect scan --camera X --until <now-20min>` then `blockade-api backfill obs.jsonl --dry-run`, then for real; only the re-scored crossing's history changes.
+  The step-by-step runbook, including reaching Postgres, is in [services/api/README.md](../services/api/README.md).
 - **Add a camera**: add it to `TARGET_CAMERAS` in `inventory.py`, run `blockade-inventory resolve`, recreate the ConfigMap; it scores UNKNOWN until it has a reference model (and earns its track band from its first hand-labeled blockages via `blockade-detect band`).
 - **Debug one frame**: `uv run blockade-detect explain path/to/frame.jpg`.

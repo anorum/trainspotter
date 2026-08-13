@@ -29,10 +29,9 @@ price.
 **Keep every frame indefinitely.** No sampling, no expiry of the archive.
 
 **Collect 24–48 hours before starting Phase 1**, rather than the two weeks docs/history/design.md
-suggests. That
-two-week target serves *prediction*, which needs months of sessions regardless; *detection* only
-needs enough variety to set thresholds, and a day spanning daylight, dusk, night, and a few real
-blockages provides it. Thresholds keep improving as the corpus grows.
+suggests. That two-week target serves *prediction*, which needs months of sessions regardless;
+*detection* only needs enough variety to set thresholds, and a day spanning daylight, dusk, night,
+and a few real blockages provides it. Thresholds keep improving as the corpus grows.
 
 ## Consequences
 
