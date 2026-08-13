@@ -1,5 +1,9 @@
 # Blockade — SE Portland Rail Crossing Blockage Detection
 
+> **Historical record.** This is the original pre-implementation proposal, kept as a record of what was planned and why.
+> What actually got built diverged substantially: Postgres instead of Iceberg, AWS S3 instead of MinIO, a plain consumer sessionizer instead of two Flink jobs, per-camera classifiers and reference differencing instead of a fine-tuned YOLO, no TriMet suppression, and different topic names.
+> The current truth is [docs/architecture.md](../architecture.md).
+
 **Status:** design / pre-implementation
 **Audience:** Claude Code (implementation agent) and the repo owner
 **Repo intent:** public, open source, portfolio-quality

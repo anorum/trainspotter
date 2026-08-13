@@ -12,8 +12,9 @@ The answer is only obvious once the detector exists, and it does not. Two things
 frames:
 
 1. **Calibration.** The detector is a vehicle-count and motion threshold, and thresholds are
-   meaningless until measured against real queues at 3pm, at midnight, and in rain. DESIGN.md calls
-   for 200–400 hand-labeled frames spanning those conditions. Only kept frames can be labeled.
+   meaningless until measured against real queues at 3pm, at midnight, and in rain.
+   docs/history/design.md calls for 200–400 hand-labeled frames spanning those conditions. Only
+   kept frames can be labeled.
 
 2. **Re-tuning by replay.** The first thresholds will be wrong. Improving them means asking "would
    this version have caught last Tuesday's blockage?", which is a re-run over stored frames.
@@ -27,10 +28,10 @@ price.
 
 **Keep every frame indefinitely.** No sampling, no expiry of the archive.
 
-**Collect 24–48 hours before starting Phase 1**, rather than the two weeks DESIGN.md suggests. That
-two-week target serves *prediction*, which needs months of sessions regardless; *detection* only
-needs enough variety to set thresholds, and a day spanning daylight, dusk, night, and a few real
-blockages provides it. Thresholds keep improving as the corpus grows.
+**Collect 24–48 hours before starting Phase 1**, rather than the two weeks docs/history/design.md
+suggests. That two-week target serves *prediction*, which needs months of sessions regardless;
+*detection* only needs enough variety to set thresholds, and a day spanning daylight, dusk, night,
+and a few real blockages provides it. Thresholds keep improving as the corpus grows.
 
 ## Consequences
 

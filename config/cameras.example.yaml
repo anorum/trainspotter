@@ -5,10 +5,10 @@
 # hand-written cameras.yaml with `source: manual` works identically -- the poller
 # never talks to the ODOT API, only to the image URLs listed here.
 #
-# Camera names are from DESIGN.md section 2.1. The image_url values below are
-# PLACEHOLDERS: the real ones come from the inventory endpoint's per-camera URL
-# field. Do not guess them into cameras.yaml -- an unverified URL that 404s looks
-# identical in the metrics to a camera that is genuinely down.
+# Camera names are from docs/history/design.md section 2.1. The image_url values
+# below are PLACEHOLDERS: the real ones come from the inventory endpoint's
+# per-camera URL field. Do not guess them into cameras.yaml -- an unverified URL
+# that 404s looks identical in the metrics to a camera that is genuinely down.
 #
 # lat/lon are optional and feed the map pin only: a crossing takes the coordinates
 # of the first camera that carries them, and has no pin if none do. `notes` is

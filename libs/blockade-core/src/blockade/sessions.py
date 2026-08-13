@@ -44,9 +44,10 @@ class SessionParams:
     min_duration: timedelta = DEFAULT_MIN_DURATION
     """Sessions shorter than this are dropped.
 
-    DESIGN.md scopes the project to blockages of five minutes or more, and short
-    detections are overwhelmingly noise: of eighteen sessions found on one camera
-    in nineteen hours, eight were under five minutes and none of those were real.
+    docs/history/design.md scopes the project to blockages of five minutes or
+    more, and short detections are overwhelmingly noise: of eighteen sessions
+    found on one camera in nineteen hours, eight were under five minutes and
+    none of those were real.
     """
 
     min_observations: int = 2

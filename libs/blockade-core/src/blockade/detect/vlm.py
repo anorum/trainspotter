@@ -1,6 +1,6 @@
 """Classify a crossing frame with a vision model.
 
-Replaces the ONNX-plus-hand-labelled-thresholds path in DESIGN.md section 3. That
+Replaces the original design's ONNX-plus-hand-labelled-thresholds path. That
 design existed to compensate for a detector that cannot interpret a scene; a
 vision model can, which removes the ROI editor, the labelling task, and the
 threshold tuning along with it.

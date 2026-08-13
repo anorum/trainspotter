@@ -371,10 +371,10 @@ def derive_band(
     profiles, and drops one-off obstructions such as a vehicle stopped below the
     tracks, which appear in only a frame or two.
 
-    Derived rather than hand-drawn: DESIGN.md called for ROI polygons clicked out
-    per camera, which does not survive more cameras. This is the same idea
-    obtained from data, so a new camera acquires its band once it has seen a
-    blockage and needs no human.
+    Derived rather than hand-drawn: docs/history/design.md called for ROI
+    polygons clicked out per camera, which does not survive more cameras. This
+    is the same idea obtained from data, so a new camera acquires its band once
+    it has seen a blockage and needs no human.
     """
     if not row_profiles:
         return None

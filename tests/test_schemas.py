@@ -1,8 +1,8 @@
 """Schema invariants, above all the stability of ``session_id``.
 
-DESIGN.md section 5 calls an unstable session ID expensive to retrofit: every
-downstream consumer uses it for idempotency, so instability means duplicate
-alerts and broken upserts on replay.
+docs/history/design.md section 5 calls an unstable session ID expensive to
+retrofit: every downstream consumer uses it for idempotency, so instability
+means duplicate alerts and broken upserts on replay.
 """
 
 from __future__ import annotations

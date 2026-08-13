@@ -1,3 +1,7 @@
+> **Historical record.** Despite the name, this is the EARLIER of the two design documents - the first hand-off draft.
+> What actually got built diverged substantially: the fine-tuned YOLO detector below was never built (per-camera MobileNetV3-small classifiers with a reference-differencing fallback instead), the Iceberg upsert-by-timestamp sinks became Postgres, the `raw-detections` topic became `crossing.observations.v1`, and the streaming analytics branch became a plain Kafka consumer.
+> The current truth is [docs/architecture.md](../architecture.md).
+
 Grade Crossing Blockage Detector — Design Doc
 Author: Alex Norum Status: Draft for implementation (hand-off to Claude Code) Guiding principle: Simple beats complex. Build only what we need. The detector stays dumb; smarts live in cheap layers around it.
 

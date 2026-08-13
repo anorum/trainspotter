@@ -1,16 +1,15 @@
 # AWS setup
 
-One bucket, three prefixes:
-
-| Prefix | Contents |
-| --- | --- |
-| `frames/` | JPEGs, `frames/{camera_id}/{yyyy}/{mm}/{dd}/{HH}/{epoch_ms}.jpg` |
-| `manifests/` | Hourly gzipped JSONL, the backfill corpus |
-| `warehouse/` | Iceberg tables (Phase 3) |
+One bucket. Its prefixes and key formats are documented in
+[docs/architecture.md](../docs/architecture.md) under "S3 layout"; this file covers the account
+setup only.
 
 `flink/` (the `checkpoints/` and `savepoints/` prefixes under it) used to hold Flink state.
 The sessionizer that replaced the Flink job rebuilds its state by replaying Kafka, so nothing
 writes there any more and the prefix can be deleted whenever convenient.
+
+This recipe creates a bucket of your own, `blockade-<account-id>`; the production instance runs
+against `pdx-trainspotter`, which is the name the rest of the docs and the deploy manifests use.
 
 ```bash
 BUCKET=blockade-$(aws sts get-caller-identity --query Account --output text)
@@ -31,12 +30,12 @@ aws iam create-policy --policy-name blockade-s3 \
 
 ## Notes
 
-**Lifecycle applies to `frames/` only.** Manifests are tiny and are read during every backfill;
-Iceberg metadata must stay in Standard or the maintenance jobs get slow and expensive. Transitioning
-small objects is also counterproductive - Glacier classes bill a 128 KB minimum per object and a
-40 KB overhead, so a 50 KB JPEG is not obviously cheaper in Glacier than in Standard-IA. The
-transitions below are set at 90 days for that reason, and are worth re-checking against real object
-sizes once a few months of frames exist.
+**Lifecycle applies to `frames/` only.** Manifests are tiny and are read during every backfill.
+Transitioning small objects is counterproductive anyway - Glacier classes bill a 128 KB minimum per
+object, which is why `lifecycle.json` filters on `ObjectSizeGreaterThan` and its transitions
+effectively never fire at the measured ~21 KB per frame. See
+[ADR 0003](../docs/adr/0003-storage-and-deployment-target.md) for the measurements and the cost
+reasoning behind that.
 
 **No versioning.** Frames are written once and never modified; versioning would only accumulate
 delete markers during cache sweeps.

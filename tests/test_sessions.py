@@ -54,7 +54,8 @@ def test_genuinely_separate_blockages_stay_separate():
 
 def test_short_detections_are_dropped():
     """Eight of eighteen sessions found on one camera in nineteen hours were
-    under five minutes, and none were real. DESIGN.md scopes them out."""
+    under five minutes, and none were real. docs/history/design.md scopes them
+    out."""
     sessions = derive_sessions([obs(0), obs(2), obs(3)])
 
     assert sessions == []
