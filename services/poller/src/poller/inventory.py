@@ -47,7 +47,7 @@ CAMERA_CONFIG_PATH = REPO_ROOT / "config" / "cameras.yaml"
 
 INVENTORY_ENVELOPE_KEY = "CCTVInventoryRequest"
 
-# From DESIGN.md section 2.1. Two cameras per crossing is deliberate: simultaneous
+# Two cameras per crossing is deliberate (docs/history/design.md section 2.1): simultaneous
 # stopped queues on multiple approaches is a far stronger signal than any single
 # camera, and is the main reason to run all six.
 #

@@ -1,8 +1,11 @@
 # Camera survey
 
-**Status: in progress.** Capture started 2026-08-08 21:24 PDT. All six cameras resolved and
-returning frames. Findings below are from the first night frames only - day, dusk, and rain
-samples still needed before the verdicts are final.
+**Status: closed 2026-08-12.** Capture started 2026-08-08 21:24 PDT; all six cameras resolved and
+have been returning frames continuously since. The survey's job is done: usability now shows up
+empirically as per-camera detector performance (odot-682 cannot resolve the tracks at night, which
+the blocked-biased consensus absorbs; odot-679's view favors Division over the Clinton crossing),
+and the per-camera model workflow in [docs/architecture.md](architecture.md) replaced the idea of
+a hand-maintained usability field. The night-one findings below stand as the record.
 
 ## Findings that already change the design
 

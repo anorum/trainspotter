@@ -1,3 +1,6 @@
+> **Historical record.** Despite the name, this is the EARLIER of the two design documents - the first hand-off draft.
+> The current truth is [docs/architecture.md](../architecture.md).
+
 Grade Crossing Blockage Detector — Design Doc
 Author: Alex Norum Status: Draft for implementation (hand-off to Claude Code) Guiding principle: Simple beats complex. Build only what we need. The detector stays dumb; smarts live in cheap layers around it.
 

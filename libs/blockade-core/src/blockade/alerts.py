@@ -1,8 +1,8 @@
 """Alert branch: fire once at the front of a train, then stay quiet.
 
-DESIGN2 section 6. This is the fast path - it reads raw observations directly
-and makes a provisional call immediately, where the analytics branch takes its
-time and revises. Same stream, two consumers, different tolerances.
+The fast path: it reads raw observations directly and makes a provisional
+call immediately, where the analytics branch takes its time and revises.
+Same stream, two consumers, different tolerances.
 
 The whole design is one idea: **alert on the transition, not on the state.**
 A crossing that is blocked for seventy minutes is one event, not thirty-five

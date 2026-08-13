@@ -1,6 +1,6 @@
 ---
 # Frame metadata. Never image bytes - object storage plus a reference, always
-# (DESIGN.md section 10.3). A test asserts message size so a future change
+# (docs/architecture.md, data contracts). A test asserts message size so a future change
 # cannot quietly start publishing images.
 apiVersion: kafka.strimzi.io/v1
 kind: KafkaTopic
@@ -19,7 +19,7 @@ spec:
     retention.ms: 604800000
     segment.bytes: 67108864
 ---
-# Raw detections, one per frame scored. DESIGN2 section 5: the immutable record
+# Raw observations, one per frame scored: the immutable record
 # of what the detector saw. Never edited; interpretation lives downstream.
 apiVersion: kafka.strimzi.io/v1
 kind: KafkaTopic

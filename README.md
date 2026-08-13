@@ -10,12 +10,13 @@ There is no public feed of freight train positions.
 **ODOT does not archive its camera images** - each is overwritten by the next - so the history this project builds does not exist anywhere else.
 That is the point of the project.
 
-Design notes: [design.md](design.md), [design2.md](design2.md).
+Architecture: [docs/architecture.md](docs/architecture.md) - what each piece owns and the contracts between them.
 Decisions: [docs/adr/](docs/adr/).
+Original proposals, kept as history: [docs/history/](docs/history/).
 
-**Status: capturing since 2026-08-08.**
-Six cameras, ~5,700 frames, zero capture errors.
-Three blockages observed and recorded as ground truth; the detector found all three.
+**Status: live.**
+Capturing six cameras continuously since 2026-08-08; the full pipeline - detection, sessions, alerts, the web board, and the Postgres history store - runs on the k3s cluster and serves [blockade.home.alexnorum.com](http://blockade.home.alexnorum.com) on the LAN.
+The first per-camera trained classifier (12th & Clinton) is in production behind the auto router, and its improved history has been backfilled.
 
 ---
 
@@ -69,7 +70,7 @@ Collapsing it to "not blocked" would assert something false about hours the came
 ### What the frames actually show
 
 The cameras see the **rails**, not just the roadway.
-design.md assumed otherwise and proposed detecting the traffic queue as a proxy; daylight frames show track structure and crossing signals directly, so the detector looks for a train rather than inferring one from stopped cars.
+The original design (docs/history/design.md) assumed otherwise and proposed detecting the traffic queue as a proxy; daylight frames show track structure and crossing signals directly, so the detector looks for a train rather than inferring one from stopped cars.
 That is a stronger signal: a queue of stopped vehicles might be a train, a red light, or rush hour, whereas a train on the tracks is either visible or it is not.
 
 At night a train reads as a long horizontal mass spanning the frame, hiding the road markings and the far side of the intersection.
@@ -81,7 +82,7 @@ That contrast is unmistakable even at 328x240.
 An earlier version of this file claimed roughly fifteen spurious sessions a day.
 That number was never measured - it was `sessions found` minus `sessions independently confirmed`, which silently assumes an unconfirmed detection is a wrong one.
 It is not: freight movements through Brooklyn Yard are frequent, and one session picked out as a textbook false positive turned out, on checking, to be a real train.
-Over 36 hours the detector finds about ten sessions a day on one camera, which is what design.md describes as normal for these crossings.
+Over 36 hours the detector finds about ten sessions a day on one camera, which matches what the original design describes as normal for these crossings.
 
 Measuring it properly needs ground truth that nobody can produce by watching a camera around the clock, which is the strongest argument for building the alert path early: an alert is a prompt to go and check, so the system generates its own verification.
 
@@ -101,7 +102,6 @@ Cameras differ enough to need different settings, which is why the reference, th
 ## Attribution
 
 Camera imagery courtesy of the **Portland Bureau of Transportation** (PBOT), served via the **Oregon Department of Transportation** TripCheck API.
-Transit data courtesy of **TriMet**.
 None of them endorse this project.
 See their respective terms of use.
 
@@ -121,10 +121,9 @@ uv run blockade-capture run --local-only  # continuous; metrics on :9102
 `resolve` exits non-zero and names any camera it cannot find.
 Cameras get renamed and decommissioned, and silently capturing five of six would not be obvious for weeks.
 
-**`--local-only` is the current mode**, since object storage is deferred until this is productionised.
-In that mode the local frames are the only copy, so the 7-day cache TTL is disabled and frames are kept indefinitely - sweeping them would permanently destroy imagery ODOT overwrote long ago.
-Budget roughly 100 MB/day.
-`blockade-sync` uploads everything captured in the meantime once a bucket exists, so nothing is lost by deferring.
+`--local-only` runs capture with no object store - useful for development.
+In that mode the local frames are the only copy, so the cache TTL is disabled and frames are kept indefinitely; budget roughly 100 MB/day.
+Production runs with S3, where every frame lands in `pdx-trainspotter` and `blockade-sync` repairs any gap.
 
 On macOS, [deploy/local/com.blockade.capture.plist](deploy/local/com.blockade.capture.plist) runs capture as a LaunchAgent.
 It only runs while you are logged in and the machine is awake, which is why the durable home is the k3s Deployment in [deploy/poller/](deploy/poller/).

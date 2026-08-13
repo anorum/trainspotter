@@ -5,7 +5,7 @@ topics, the Postgres history store, and the serving API all use these
 definitions, so the captured corpus replays through the streaming pipeline
 with no translation layer.
 
-Corresponds to DESIGN.md section 5.
+Schema numbering and rationale trace to docs/history/design.md section 5.
 
 Event-time rule: ``captured_at`` is the event time, everywhere, always. Never
 ``fetched_at``, never processing time.
@@ -58,7 +58,7 @@ class FrameRecord(BaseRecord):
 
     Also the line format of the Phase 0 JSONL manifest, which is the backfill
     source for the entire pipeline. Never carries image bytes: object storage
-    plus a reference, per DESIGN.md section 10.3.
+    plus a reference, always (docs/history/design.md section 10.3).
     """
 
     camera_id: str
@@ -150,7 +150,7 @@ class BlockageSession(BaseRecord):
         Assigned when the session opens and never regenerated when it updates or
         closes. Every downstream consumer -- API, MQTT, future notifier -- uses it
         for idempotency, so an unstable ID means duplicate alerts and broken
-        upserts on replay. DESIGN.md section 5 flags this as expensive to retrofit.
+        upserts on replay. The original design flagged this as expensive to retrofit.
 
         Normalised to UTC before hashing: a naive or local-time input would make the
         ID depend on the machine that computed it, so a replay on a differently
