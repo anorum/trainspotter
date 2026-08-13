@@ -93,6 +93,13 @@ export default function LiveBoard() {
   // A failed load rolls the guard back, so without this every further input
   // event would start another three fetches against an already sick store.
   const retryAfter = useRef(0);
+  // The lanes can fail while a timeline load is mid-flight, so the recovery
+  // check below the awaits must read live state, not the render's closure.
+  const lanesFailedRef = useRef(false);
+  const markLanes = (failed: boolean) => {
+    lanesFailedRef.current = failed;
+    setLanesFailed(failed);
+  };
 
   // The panel's habit line loads the first time any crossing is selected.
   useEffect(() => {
@@ -112,9 +119,9 @@ export default function LiveBoard() {
       .then(
         (body) => {
           setSessions(body.sessions);
-          setLanesFailed(false);
+          markLanes(false);
         },
-        () => setLanesFailed(true),
+        () => markLanes(true),
       );
 
   useEffect(() => {
@@ -142,7 +149,12 @@ export default function LiveBoard() {
       if (appliedHours.current >= hours) setTimelineFailed(false);
       return;
     }
-    if (Date.now() < retryAfter.current) return;
+    if (Date.now() < retryAfter.current) {
+      // Still unavailable, and the scrubber now spans a window the data does
+      // not cover - say so rather than render the gap as dead detectors.
+      setTimelineFailed(true);
+      return;
+    }
     loadedHours.current = hours;
     const generation = ++loadGeneration.current;
     try {
@@ -159,7 +171,7 @@ export default function LiveBoard() {
         retryAfter.current = 0;
         setTimelineFailed(false);
         // The store is evidently back; the lanes have no other way to learn it.
-        if (lanesFailed) void loadLanes();
+        if (lanesFailedRef.current) void loadLanes();
       }
     } catch {
       // Fall back to the window actually on screen so a later scrub retries;
