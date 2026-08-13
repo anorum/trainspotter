@@ -14,6 +14,10 @@ import { STALE_AFTER_MS, stateAt, type TimelineObs } from "./scrub";
 
 const T0 = Date.UTC(2026, 7, 12, 5, 45, 0);
 const SCORED = "classifier/abc123";
+/** The literal the detector stamps on a non-scoring camera's rows
+ *  (UNSCORED_VERSION in services/detector/src/detector/runner.py), written out
+ *  here rather than derived, so this end of the contract breaks if that one
+ *  moves out of the namespace scrub.ts matches on. */
 const UNSCORED = "unscored/1";
 
 function at(seconds: number): number {

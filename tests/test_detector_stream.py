@@ -139,6 +139,22 @@ def test_a_non_scoring_camera_emits_an_inert_unknown(settings: Settings) -> None
     assert obs.object_key == "frames/odot-679/x/0.jpg"
 
 
+def test_the_unscored_stamp_stays_in_the_namespace_the_board_reads(settings: Settings) -> None:
+    """`detector_version` is a wire contract, not just an audit label. These rows
+    are persisted and served to the board, and the scrubbed view tells a policy
+    UNKNOWN from a camera that genuinely refused to judge by the `unscored/`
+    prefix alone (UNSCORED_PREFIX in services/api/web/src/lib/scrub.ts). Stamp
+    them outside that namespace and the blind cameras' heartbeats count as
+    witnesses again, so a dead 678 hides behind 679's ticking - the same failure
+    test_api_state pins on the server side."""
+    scorer = Scorer(settings, lambda key: pytest.fail("a non-scoring camera reads no bytes"))
+
+    obs = scorer.score(frame("odot-679", 0))
+
+    assert obs is not None
+    assert obs.detector_version.startswith("unscored/")
+
+
 def test_explain_prints_what_the_pod_would_publish_for_a_non_scoring_camera(
     tmp_path: Path, monkeypatch
 ) -> None:

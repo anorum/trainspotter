@@ -140,6 +140,39 @@ def test_rescoring_only_a_blind_camera_is_refused():
         backfill.plan(records, now=NOW, roster=CORRIDOR)
 
 
+def test_a_camera_that_drops_out_partway_through_the_window_is_refused():
+    """Presence is not coverage. `scan` drops frames whose bytes have been swept
+    out of the local TTL cache and reports only the survivors, so a multi-day
+    re-score can yield 681 across the whole span and 682 for the tail alone.
+    The window still spans everything 681 saw, so loading it would delete the
+    days only 682 witnessed and re-derive them from a camera 300m away."""
+    records = [obs(m, crossing="SE_8TH_DIVISION", camera="odot-681") for m in range(0, 240, 10)]
+    records += [
+        obs(m, crossing="SE_8TH_DIVISION", camera="odot-682") for m in range(180, 240, 10)
+    ]
+
+    with pytest.raises(backfill.BackfillError, match="odot-682 only"):
+        backfill.plan(records, now=NOW, roster=CORRIDOR)
+
+    assert backfill.plan(records, now=NOW, roster=CORRIDOR, allow_empty_window=True).windows
+
+
+def test_a_short_hole_at_a_window_edge_is_tolerated():
+    """The bound is one session gap, because a hole shorter than that cannot
+    hide or split a session - refusing on a single missing tick would make the
+    guard unusable against real corpora."""
+    slack = backfill.COVERAGE_SLACK.total_seconds() / 60
+    records = [obs(m, crossing="SE_8TH_DIVISION", camera="odot-681") for m in range(0, 240, 10)]
+    records += [
+        obs(m, crossing="SE_8TH_DIVISION", camera="odot-682")
+        for m in range(int(slack) - 1, 240, 10)
+    ]
+
+    p = backfill.plan(records, now=NOW, roster=CORRIDOR)
+
+    assert [w.crossing_id for w in p.windows] == ["SE_8TH_DIVISION"]
+
+
 def test_a_scan_of_every_witness_plans_normally():
     """Both of the crossing's scoring cameras are present, and the blind one is
     not required - it has no judgement to contribute either way."""

@@ -25,7 +25,12 @@ export interface TimelineObs {
  *  judge. Rows a blind camera produced before the policy landed still carry a
  *  real detector's version and still count, until the re-score and backfill
  *  layer `unscored/1` over them - which is why that backfill follows the
- *  merge. */
+ *  merge.
+ *
+ *  The other end of this contract is `UNSCORED_VERSION` in
+ *  services/detector/src/detector/runner.py, which mints the rows. Both sides
+ *  are pinned: tests/test_detector_stream.py asserts the minted stamp stays in
+ *  this namespace, and scrub.test.ts feeds the real literal through here. */
 const UNSCORED_PREFIX = "unscored/";
 
 function isPolicyUnknown(o: TimelineObs): boolean {

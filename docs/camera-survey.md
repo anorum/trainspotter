@@ -3,9 +3,12 @@
 **Status: closed 2026-08-12.** Capture started 2026-08-08 21:24 PDT; all six cameras resolved and
 have been returning frames continuously since. The survey's job is done: usability now shows up
 empirically as per-camera detector performance (odot-682 cannot resolve the tracks at night, which
-the blocked-biased consensus absorbs; odot-679's view favors Division over the Clinton crossing),
-and the per-camera model workflow in [docs/architecture.md](architecture.md) replaced the idea of
-a hand-maintained usability field. The night-one findings below stand as the record.
+the blocked-biased consensus absorbs), and the per-camera model workflow in
+[docs/architecture.md](architecture.md) replaced the idea of a hand-maintained usability field.
+The exception is a question no detector metric could answer: odot-677 and odot-679 turned out not
+to show their crossing at all, which Alex established by eye on 2026-08-12 - they are `scores:
+false` now, captured and shown but never judged. The night-one findings below stand as the record,
+with those two verdicts revised in place.
 
 ## Findings that already change the design
 
@@ -150,9 +153,13 @@ The per-crossing usability tally this section was going to hold was never filled
 is not worth reconstructing as one: usability turned out to be per camera and per lighting
 condition rather than a single verdict, and it now shows up empirically in detector performance.
 The verdicts above do settle the question it was meant to answer, and the answer matters.
-SE_12TH_CLINTON effectively runs on one strong camera: `odot-679`'s view favors Division, so it
-contributes little to Clinton, and the single-usable-camera caveat above applies there - which is
-precisely why `odot-678` was the first camera to get a trained classifier.
+SE_12TH_CLINTON runs on `odot-678` alone: `odot-679` cannot see the Clinton crossing at all, so it
+is non-scoring and contributes nothing - which is precisely why `odot-678` was the first camera to
+get a trained classifier.
+SE_11TH_MILWAUKIE is in the same position on `odot-676` alone, since `odot-677` watches the Gideon
+intersection. The single-usable-camera caveat above therefore applies in full to two of the three
+crossings: neither has a second witness to outvote a glare-blind frame, and a detector outage at
+either shows up as UNKNOWN rather than as a wrong answer.
 SE_8TH_DIVISION is the half case, two usable cameras by day and one after dark, since `odot-682`
 cannot resolve the tracks at night.
 

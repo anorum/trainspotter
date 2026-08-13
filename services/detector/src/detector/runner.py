@@ -53,7 +53,14 @@ DEFAULT_OUTPUT = Path("var/observations/observations.jsonl")
 
 UNSCORED_VERSION = "unscored/1"
 """Stamped on the zero-inference UNKNOWNs from cameras that cannot see the
-crossing, so those rows are auditable as policy rather than a model's failure."""
+crossing, so those rows are auditable as policy rather than a model's failure.
+
+The `unscored/` namespace is a wire contract, not just a label: these rows are
+persisted and served to the board, and the scrubbed view tells a policy UNKNOWN
+from a camera that genuinely refused to judge by that prefix alone
+(`UNSCORED_PREFIX` in services/api/web/src/lib/scrub.ts). Re-version inside the
+namespace; leaving it turns the blind cameras' heartbeats back into witnesses
+and lets a dead camera hide behind them on the board."""
 
 UNSCORED_REASON = "camera does not view the crossing; frame kept for context"
 
