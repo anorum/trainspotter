@@ -99,7 +99,8 @@ export default function LiveBoard() {
   const appliedHours = useRef(0);
   const loadGeneration = useRef(0);
   // A failed load rolls the guard back, so without this every further input
-  // event would start another three fetches against an already sick store.
+  // event would start another round of timeline fetches - one per featured
+  // crossing - against an already sick store.
   const retryAfter = useRef(0);
   // The lanes can fail while a timeline load is mid-flight, so the recovery
   // check below the awaits must read live state, not the render's closure.
