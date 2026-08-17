@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useState } from "preact/hooks";
-import { COLORS, FEATURED, SOLO, crossingLabel } from "../lib/crossings";
+import { COLORS, FEATURED, SOLO, crossingLabel, sessionsUrl } from "../lib/crossings";
 
 interface Session {
   session_id: string;
@@ -43,7 +43,7 @@ export default function SessionLog() {
   const [featured, setFeatured] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    fetch(`/api/v1/sessions?limit=200${SOLO ? `&crossing_id=${FEATURED[0]}` : ""}`)
+    fetch(sessionsUrl(200))
       .then((r) => {
         if (!r.ok) throw new Error(`sessions ${r.status}`);
         return r.json();

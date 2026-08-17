@@ -29,6 +29,16 @@ export const FEATURED: string[] = ["SE_12TH_CLINTON"];
  *  overview, and a chooser between one thing is furniture, not a control. */
 export const SOLO = FEATURED.length === 1;
 
+/** The sessions endpoint, scoped to what the site presents. Two surfaces ask
+ *  for sessions - the board's lanes and the train sheet - and the endpoint
+ *  takes one crossing_id, so a solo site scopes the query and a wider one
+ *  filters the reply. Keeping the rule here means both surfaces change
+ *  together when FEATURED does. */
+export function sessionsUrl(limit: number): string {
+  const scope = SOLO ? `&crossing_id=${FEATURED[0]}` : "";
+  return `/api/v1/sessions?limit=${limit}${scope}`;
+}
+
 export const COLORS: Record<State, string> = {
   CLEAR: "var(--signal-green)",
   BLOCKED: "var(--signal-red)",

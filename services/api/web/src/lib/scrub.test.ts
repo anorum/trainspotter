@@ -47,6 +47,15 @@ function timeline(...rows: TimelineObs[]): TimelineObs[] {
   return [...rows].sort((a, b) => a.captured_at.localeCompare(b.captured_at));
 }
 
+it("carries the shipped staleness bound", () => {
+  // The one assertion that cares about the number. Its twin is
+  // DEFAULT_STALE_AFTER in libs/blockade-core/src/blockade/api/state.py, where
+  // the two ceilings the bound answers to are written down; the scrubbed board
+  // and the live board answer "did this instant have a witness" separately, so
+  // moving one without the other makes them disagree.
+  expect(STALE_AFTER_MS).toBe(12 * 60_000);
+});
+
 describe("stateAt", () => {
   it("lets a camera's own later CLEAR supersede its earlier BLOCKED", () => {
     // The train clears at 05:46:00 and 678 says so every 30s afterwards. Six

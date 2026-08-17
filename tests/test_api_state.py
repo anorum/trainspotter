@@ -11,6 +11,8 @@ from datetime import UTC, datetime, timedelta
 
 from blockade.api.state import DEFAULT_STALE_AFTER, LiveState
 from blockade.schemas import BlockageSession, CrossingState, ObservationRecord
+from blockade.sessions import SessionParams
+from sessionizer.runner import OUT_OF_ORDERNESS
 
 T0 = datetime(2026, 8, 11, 6, 0, tzinfo=UTC)
 
@@ -67,7 +69,18 @@ def test_the_default_bound_is_the_shipped_policy() -> None:
     web/src/lib/scrub.ts: the scrubbed board and the live board answer "did this
     instant have a witness" separately, so the two constants have to agree."""
     bound_minutes = DEFAULT_STALE_AFTER.total_seconds() / 60
-    assert bound_minutes == 15
+    assert bound_minutes == 12
+
+
+def test_staleness_never_outlives_a_session_close() -> None:
+    """The ceiling on the bound, which the number above has to keep satisfying.
+
+    A session closes ``gap`` after its last BLOCKED reading plus the sessionizer's
+    out-of-orderness margin. Let staleness run past that and the board keeps claiming a
+    live blockage the train sheet has already ended and timed - open_session gone, the
+    ticker gone, a final duration on the sheet."""
+    session_closes_after = SessionParams().gap + OUT_OF_ORDERNESS
+    assert session_closes_after >= DEFAULT_STALE_AFTER
 
 
 def test_a_fresh_board_is_unknown_and_stale() -> None:

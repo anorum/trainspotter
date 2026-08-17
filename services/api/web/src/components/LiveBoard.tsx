@@ -22,6 +22,7 @@ import {
   type CrossingGeometry,
   FEATURED,
   GEOMETRY,
+  sessionsUrl,
   SOLO,
   type State,
 } from "../lib/crossings";
@@ -124,7 +125,7 @@ export default function LiveBoard() {
   // claim about the corridor, so a store that cannot answer says so instead -
   // and stays retryable, because this is the one surface with no live feed.
   const loadLanes = () =>
-    fetch(`/api/v1/sessions?limit=500${SOLO ? `&crossing_id=${FEATURED[0]}` : ""}`)
+    fetch(sessionsUrl(500))
       .then((r) => {
         if (!r.ok) throw new Error(`sessions ${r.status}`);
         return r.json();
@@ -254,7 +255,11 @@ export default function LiveBoard() {
 
   return (
     <div class="board">
-      <svg viewBox={viewBox} role="img" aria-label="Map of the crossing">
+      <svg
+        viewBox={viewBox}
+        role="img"
+        aria-label={SOLO ? "Map of the crossing" : "Map of the crossings"}
+      >
         {/* the rail line: double stroke reads as track */}
         <line x1="120" y1="20" x2="840" y2="520" stroke="var(--hairline)" stroke-width="10" />
         <line x1="120" y1="20" x2="840" y2="520" stroke="var(--ink)" stroke-width="6" />
@@ -398,10 +403,19 @@ export default function LiveBoard() {
       </div>
 
       {chosen && (
-        <section class="detail" aria-live="polite">
+        <section class="detail">
           <header>
             <h2>{GEOMETRY[chosen.crossing_id]?.label}</h2>
-            <span class="data state-word" style={`color:${COLORS[chosen.state]}`}>
+            {/* The live region is the state word alone, not the panel. The
+                panel holds the blockage ticker, whose text is recomputed every
+                second, and a solo board has the panel open from first paint -
+                announcing the whole thing would read "Blocked for 12m 36s"
+                once a second forever. The word changes when the answer does. */}
+            <span
+              class="data state-word"
+              style={`color:${COLORS[chosen.state]}`}
+              aria-live="polite"
+            >
               {chosen.stale ? "UNKNOWN (stale)" : chosen.state}
             </span>
             {/* Nothing to go back to on a solo board: closing would leave the
