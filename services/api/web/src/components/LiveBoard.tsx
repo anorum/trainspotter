@@ -358,7 +358,7 @@ export default function LiveBoard() {
           ))}
         </div>
         <span class="data when">
-          {scrubbing ? new Date(scrubT!).toLocaleString() : "now"}
+          {scrubbing ? new Date(scrubT!).toLocaleString("en-US") : "now"}
         </span>
       </div>
 
@@ -546,16 +546,18 @@ const css = `
    and they share the slider's flex row: unreserved, the relabel resizes the
    track under the held pointer and corrupts the drag's pointer-x mapping.
    Each reserves at least its widest text: 23ch is the longest en-US
-   toLocaleString datetime ("12/30/2026, 10:38:58 PM"; .when is tabular). */
+   toLocaleString datetime ("10/30/2026, 12:38:58 AM"), and the timestamp
+   pins that locale rather than the browser's so the reserve is exact
+   everywhere (.when is tabular, so ch is the rendered width). */
 .scrub > button { min-width: 7.5rem; }
 .scrub button.live { color: var(--signal-green); }
 .scrub .when { color: var(--muted); min-width: 23ch; text-align: right; font-size: 0.85rem; }
-/* Under ~640px the single row cannot hold Live + track + windows + timestamp;
-   drop the track onto its own row, where sibling relabels cannot resize it.
-   The timestamp's reserve goes (it would be dead width in the wrapped rows)
-   but the button keeps its own, so the top row never re-wraps between the
-   live and scrubbed states. */
-@media (max-width: 640px) {
+/* Under ~768px the single row cannot hold Live + track + windows + timestamp
+   without squeezing the slider down to a stub; drop the track onto its own
+   row, where sibling relabels cannot resize it. The timestamp's reserve goes
+   (it would be dead width in the wrapped rows) but the button keeps its own,
+   so the top row never re-wraps between the live and scrubbed states. */
+@media (max-width: 768px) {
   .scrub .track { flex-basis: 100%; order: 10; }
   .scrub .when { min-width: 0; }
 }
