@@ -97,12 +97,14 @@ Session closes fire on wall clock past the gap deadline plus a two-minute drift 
 One pod serving both the JSON API and the static site, plus the Postgres materializer.
 
 - **Board** (`/api/v1/status`, `/api/v1/events` SSE, frames): `LiveState` in `blockade-core/api/state.py` is a pure reducer rebuilt on every boot by groupless Kafka tailers; readiness gates traffic until the replay passes boot-time end offsets.
-  Consensus is blocked-biased (any fresh BLOCKED wins; a glare-blind camera's CLEAR cannot veto its partner's train) and anything older than six minutes is stale, so a dead detector can never leave BLOCKED frozen on screen.
+  Consensus is blocked-biased (any fresh BLOCKED wins; a glare-blind camera's CLEAR cannot veto its partner's train) and anything older than twelve minutes is stale, so a dead detector can never leave BLOCKED frozen on screen.
+  Twelve is bounded on both sides: above two of the worst measured camera cadence, and no longer than the gap deadline plus drift margin a session close takes, so the board never claims a blockage the train sheet has already ended.
 - **Materializer**: two grouped consumers upsert observations and sessions into Postgres, committing offsets only after the transaction - at-least-once, absorbed by deterministic keys.
 - **History** (`/api/v1/timeline`, `/sessions`, `/analytics`): plain SQL in `db.py`; analytics buckets are corridor-local (America/Los_Angeles) via SQL `AT TIME ZONE`.
 - **Backfill** (`blockade-api backfill obs.jsonl`): loads a re-scored window; see the data contract below.
 - **Frames** (`/api/v1/frames/...`): S3 reads behind a content-addressed disk LRU, with a path-pattern guard.
 - **Web** (`web/`): static Astro build baked into the image; three pages, one Preact island each - the board (schematic corridor map, SSE, time scrubber), the train sheet, and patterns.
+  The UI presents only the crossings in `FEATURED` (web/src/lib/crossings.ts) - currently 12th & Clinton alone, the one being dialed in properly - while every camera keeps capturing and scoring in the background so the record accumulates for the rest.
   The scrubber is the one place the consensus rule above exists twice: `LiveState` only ever holds the present, so answering "what did the board show at 05:45" happens client-side over `/timeline` rows, in `web/src/lib/scrub.ts`.
   That copy is pinned against the reducer's own scenarios in `scrub.test.ts`, so the two cannot drift silently.
   `npm run check` typechecks under Astro strict and `npm test` runs those scenarios; CI runs both for web changes.

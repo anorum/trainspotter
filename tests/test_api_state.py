@@ -9,10 +9,22 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from blockade.api.state import LiveState
+from blockade.api.state import DEFAULT_STALE_AFTER, LiveState
 from blockade.schemas import BlockageSession, CrossingState, ObservationRecord
+from blockade.sessions import SessionParams
+from sessionizer.runner import OUT_OF_ORDERNESS
 
 T0 = datetime(2026, 8, 11, 6, 0, tzinfo=UTC)
+
+STALE_AFTER = timedelta(minutes=6)
+"""The bound these tests reason against, stated rather than inherited.
+
+What is pinned here is the *rule* - what a bound does to consensus - not the policy
+number, which moves with the camera cadence. Passing it in keeps each scenario's
+arithmetic readable on the page and stops a policy change from silently retiming every
+test below. ``test_the_default_bound_is_the_shipped_policy`` pins the number itself.
+"""
+
 ROSTER = {
     "SE_12TH_CLINTON": [("odot-678", "12th at Clinton"), ("odot-679", "12th at Division")],
     "SE_8TH_DIVISION": [("odot-681", "8th at Division"), ("odot-682", "8th at Division Pl")],
@@ -49,7 +61,26 @@ def session(crossing: str, start_min: float, is_open: bool) -> BlockageSession:
 
 
 def fresh() -> LiveState:
-    return LiveState(ROSTER)
+    return LiveState(ROSTER, stale_after=STALE_AFTER)
+
+
+def test_the_default_bound_is_the_shipped_policy() -> None:
+    """The one test that cares about the number. Its twin is STALE_AFTER_MS in
+    web/src/lib/scrub.ts: the scrubbed board and the live board answer "did this
+    instant have a witness" separately, so the two constants have to agree."""
+    bound_minutes = DEFAULT_STALE_AFTER.total_seconds() / 60
+    assert bound_minutes == 12
+
+
+def test_staleness_never_outlives_a_session_close() -> None:
+    """The ceiling on the bound, which the number above has to keep satisfying.
+
+    A session closes ``gap`` after its last BLOCKED reading plus the sessionizer's
+    out-of-orderness margin. Let staleness run past that and the board keeps claiming a
+    live blockage the train sheet has already ended and timed - open_session gone, the
+    ticker gone, a final duration on the sheet."""
+    session_closes_after = SessionParams().gap + OUT_OF_ORDERNESS
+    assert session_closes_after >= DEFAULT_STALE_AFTER
 
 
 def test_a_fresh_board_is_unknown_and_stale() -> None:
@@ -62,8 +93,8 @@ def test_a_fresh_board_is_unknown_and_stale() -> None:
 
 
 def test_a_dead_detector_downgrades_to_unknown() -> None:
-    """BLOCKED must never freeze on screen. Six minutes of silence and the
-    board says UNKNOWN with the stale flag up."""
+    """BLOCKED must never freeze on screen. Once the bound passes with no word
+    from any camera, the board says UNKNOWN with the stale flag up."""
     state = fresh()
     state.apply_observation(obs(0, CrossingState.BLOCKED))
 
@@ -216,6 +247,7 @@ def test_a_non_scoring_cameras_heartbeat_cannot_hide_a_dead_witness():
     hide behind the blind camera's ticking forever."""
     state = LiveState(
         {"SE_12TH_CLINTON": [("odot-678", "Clinton"), ("odot-679", "Division view")]},
+        stale_after=STALE_AFTER,
         scoring={"odot-678"},
     )
     state.apply_observation(obs(0, CrossingState.BLOCKED, "odot-678"))

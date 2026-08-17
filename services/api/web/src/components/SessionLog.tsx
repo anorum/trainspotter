@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useState } from "preact/hooks";
-import { COLORS, GEOMETRY, crossingLabel } from "../lib/crossings";
+import { COLORS, FEATURED, SOLO, crossingLabel, featuredOnly, sessionsUrl } from "../lib/crossings";
 
 interface Session {
   session_id: string;
@@ -27,22 +27,23 @@ interface TimelineObs {
   camera_id: string;
 }
 
-// GEOMETRY already knows the crossings and their corridor order.
-const FILTERS = ["ALL", ...Object.keys(GEOMETRY)];
+// The sheet shows only the featured crossings, so on a solo sheet the chips
+// would be a one-option chooser: the lone id is the standing filter instead.
+const FILTERS = SOLO ? FEATURED : ["ALL", ...FEATURED];
 const STRIP_FRAMES = 10;
 const PAD_MS = 2 * 60_000;
 
 export default function SessionLog() {
   const [sessions, setSessions] = useState<Session[] | null>(null);
   const [failed, setFailed] = useState(false);
-  const [filter, setFilter] = useState("ALL");
+  const [filter, setFilter] = useState(FILTERS[0]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [strips, setStrips] = useState<Record<string, TimelineObs[]>>({});
   const [stripFailed, setStripFailed] = useState<Record<string, boolean>>({});
   const [featured, setFeatured] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    fetch("/api/v1/sessions?limit=200")
+    fetch(sessionsUrl(200))
       .then((r) => {
         if (!r.ok) throw new Error(`sessions ${r.status}`);
         return r.json();
@@ -85,7 +86,7 @@ export default function SessionLog() {
   if (!sessions) return <p class="loading">Pulling the sheet...</p>;
 
   // Plain derivations: at <=200 rows there is nothing worth memoizing.
-  const shown = sessions.filter((s) => filter === "ALL" || s.crossing_id === filter);
+  const shown = featuredOnly(sessions).filter((s) => filter === "ALL" || s.crossing_id === filter);
   const longest = Math.max(1, ...shown.map((s) => s.duration_seconds ?? 0));
   const byDay: [string, Session[]][] = [];
   for (const s of shown) {
@@ -101,17 +102,19 @@ export default function SessionLog() {
 
   return (
     <div class="sheet">
-      <div class="filters" role="group" aria-label="Filter by crossing">
-        {FILTERS.map((f) => (
-          <button
-            class={filter === f ? "chip on" : "chip"}
-            aria-pressed={filter === f}
-            onClick={() => setFilter(f)}
-          >
-            {f === "ALL" ? "All crossings" : crossingLabel(f)}
-          </button>
-        ))}
-      </div>
+      {!SOLO && (
+        <div class="filters" role="group" aria-label="Filter by crossing">
+          {FILTERS.map((f) => (
+            <button
+              class={filter === f ? "chip on" : "chip"}
+              aria-pressed={filter === f}
+              onClick={() => setFilter(f)}
+            >
+              {f === "ALL" ? "All crossings" : crossingLabel(f)}
+            </button>
+          ))}
+        </div>
+      )}
 
       {shown.length === 0 && (
         <p class="empty">No blockages on record for this crossing yet.</p>

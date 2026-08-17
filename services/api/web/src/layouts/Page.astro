@@ -1,8 +1,9 @@
 ---
 /** The one page shell: head, masthead, main, footer. Every page is this
  * frame plus one island. */
-import "../styles/global.css";
 import Masthead from "../components/Masthead.astro";
+import { FEATURED, SOLO, crossingLabel } from "../lib/crossings";
+import "../styles/global.css";
 
 interface Props {
   title: string;
@@ -27,6 +28,17 @@ const { title, description, active } = Astro.props;
       <slot />
     </main>
     <footer>
+      {
+        /* The site shows fewer crossings than it watches, and the reader should
+           hear it from the site rather than work it out from an absence. Reads
+           off FEATURED, so re-adding a crossing retires the line by itself. */
+        SOLO && (
+          <p>
+            Blockade watches {crossingLabel(FEATURED[0])} first. More crossings
+            return as the detector earns them.
+          </p>
+        )
+      }
       <p>
         Detection from public ODOT/PBOT traffic cameras on the Brooklyn
         Subdivision. States are automated estimates, not official information.
@@ -46,6 +58,14 @@ const { title, description, active } = Astro.props;
         border-top: 1px solid var(--hairline);
         color: var(--muted);
         font-size: 0.8rem;
+      }
+      /* The footer can hold two notes; they read as one small block rather
+         than two paragraphs a full line apart. */
+      footer p {
+        margin: 0 0 0.4rem;
+      }
+      footer p:last-child {
+        margin-bottom: 0;
       }
     </style>
   </body>

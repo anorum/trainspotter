@@ -1,11 +1,17 @@
 ---
 import LiveBoard from "../components/LiveBoard";
 import Page from "../layouts/Page.astro";
+import { CROSSING_NOUN, SOLO, featuredLabels } from "../lib/crossings";
+
+const scope = featuredLabels();
+// A tab names the one crossing; a corridor is named as a corridor, because the
+// whole roster in a title is unreadable and gets truncated anyway.
+const title = SOLO ? `Blockade - SE ${scope}` : "Blockade - SE Portland crossings";
 ---
 
 <Page
-  title="Blockade - SE Portland crossings"
-  description="Is a train blocking the crossing right now? Live status for the SE Portland rail crossings at 8th, Clinton, and Milwaukie."
+  title={title}
+  description={`Is a train blocking the crossing right now? Live status for the SE Portland rail ${CROSSING_NOUN} at ${scope}.`}
   active="board"
 >
   <LiveBoard client:load />
