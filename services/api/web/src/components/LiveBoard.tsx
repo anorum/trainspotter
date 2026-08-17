@@ -542,10 +542,19 @@ const css = `
 .scrub .track { flex: 1; min-width: 0; }
 .scrub input { width: 100%; display: block; accent-color: var(--signal-amber); }
 .scrub button { background: var(--panel); color: var(--crossbuck); border: 1px solid var(--hairline); border-radius: 4px; padding: 0.3rem 0.8rem; cursor: pointer; font-family: var(--display); letter-spacing: 0.05em; }
+/* The button and timestamp both relabel the instant a drag leaves "live",
+   and they share the slider's flex row: unreserved, the relabel resizes the
+   track under the held pointer and corrupts the drag's pointer-x mapping.
+   Each reserves at least its widest text: 23ch is the longest en-US
+   toLocaleString datetime ("12/30/2026, 10:38:58 PM"; .when is tabular). */
+.scrub > button { min-width: 7.5rem; }
 .scrub button.live { color: var(--signal-green); }
-.scrub .when { color: var(--muted); min-width: 11ch; text-align: right; font-size: 0.85rem; }
+.scrub .when { color: var(--muted); min-width: 23ch; text-align: right; font-size: 0.85rem; }
 /* Under ~640px the single row cannot hold Live + track + windows + timestamp;
-   drop the track onto its own row so the slider stays draggable. */
+   drop the track onto its own row, where sibling relabels cannot resize it.
+   The timestamp's reserve goes (it would be dead width in the wrapped rows)
+   but the button keeps its own, so the top row never re-wraps between the
+   live and scrubbed states. */
 @media (max-width: 640px) {
   .scrub .track { flex-basis: 100%; order: 10; }
   .scrub .when { min-width: 0; }
