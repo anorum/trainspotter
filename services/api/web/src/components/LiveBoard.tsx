@@ -21,6 +21,7 @@ import {
   COLORS,
   type CrossingGeometry,
   FEATURED,
+  featuredOnly,
   GEOMETRY,
   sessionsUrl,
   SOLO,
@@ -380,26 +381,24 @@ export default function LiveBoard() {
       )}
 
       <div class="crossings-list">
-        {board.crossings
-          .filter((c) => FEATURED.includes(c.crossing_id))
-          .map((c) => {
-            const g = GEOMETRY[c.crossing_id];
-            // On a solo board the row is a summary, not a chooser: a button
-            // whose only action is selecting the already-selected crossing
-            // would take focus and do nothing.
-            const Row = SOLO ? "div" : "button";
-            return (
-              <Row
-                class={`row ${selected === c.crossing_id ? "chosen" : ""}`}
-                style={SOLO ? "cursor: default" : undefined}
-                onClick={SOLO ? undefined : () => setSelected(c.crossing_id)}
-              >
-                <span class="dot" style={`background:${COLORS[c.state]}`} />
-                <span class="display name">{g?.label ?? c.crossing_id}</span>
-                <span class="data">{stateLine(c)}</span>
-              </Row>
-            );
-          })}
+        {featuredOnly(board.crossings).map((c) => {
+          const g = GEOMETRY[c.crossing_id];
+          // On a solo board the row is a summary, not a chooser: a button
+          // whose only action is selecting the already-selected crossing
+          // would take focus and do nothing.
+          const Row = SOLO ? "div" : "button";
+          return (
+            <Row
+              class={`row ${selected === c.crossing_id ? "chosen" : ""}`}
+              style={SOLO ? "cursor: default" : undefined}
+              onClick={SOLO ? undefined : () => setSelected(c.crossing_id)}
+            >
+              <span class="dot" style={`background:${COLORS[c.state]}`} />
+              <span class="display name">{g?.label ?? c.crossing_id}</span>
+              <span class="data">{stateLine(c)}</span>
+            </Row>
+          );
+        })}
       </div>
 
       {chosen && (

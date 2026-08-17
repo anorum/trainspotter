@@ -58,9 +58,9 @@ it("carries the shipped staleness bound", () => {
 
 describe("stateAt", () => {
   it("lets a camera's own later CLEAR supersede its earlier BLOCKED", () => {
-    // The train clears at 05:46:00 and 678 says so every 30s afterwards. Six
-    // minutes of trailing red is exactly what the live board never shows: its
-    // consensus keeps one record per camera, the latest.
+    // The train clears at 05:46:00 and 678 says so every 30s afterwards. A
+    // bound's worth of trailing red is exactly what the live board never shows:
+    // its consensus keeps one record per camera, the latest.
     const rows = timeline(
       row(0, "odot-678", "BLOCKED"),
       row(30, "odot-678", "BLOCKED"),

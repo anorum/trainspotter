@@ -31,12 +31,21 @@ export const SOLO = FEATURED.length === 1;
 
 /** The sessions endpoint, scoped to what the site presents. Two surfaces ask
  *  for sessions - the board's lanes and the train sheet - and the endpoint
- *  takes one crossing_id, so a solo site scopes the query and a wider one
- *  filters the reply. Keeping the rule here means both surfaces change
- *  together when FEATURED does. */
+ *  takes one crossing_id, so a solo site scopes the query and a wider one gets
+ *  the corridor back and owes `featuredOnly` on the reply. Keeping the rule
+ *  here means both surfaces change together when FEATURED does. */
 export function sessionsUrl(limit: number): string {
   const scope = SOLO ? `&crossing_id=${FEATURED[0]}` : "";
   return `/api/v1/sessions?limit=${limit}${scope}`;
+}
+
+/** Drop rows about crossings the site does not present. The other half of the
+ *  scoping rule above, and the half no query string can guarantee: /status is
+ *  always corridor-wide, and /sessions only narrows for a solo site. A surface
+ *  that renders an unfiltered reply would show a crossing the site has
+ *  deliberately withheld, labelled as if it were on offer. */
+export function featuredOnly<T extends { crossing_id: string }>(rows: T[]): T[] {
+  return rows.filter((r) => FEATURED.includes(r.crossing_id));
 }
 
 export const COLORS: Record<State, string> = {

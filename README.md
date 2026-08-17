@@ -74,7 +74,8 @@ The original design (docs/history/design.md) assumed otherwise and proposed dete
 That is a stronger signal: a queue of stopped vehicles might be a train, a red light, or rush hour, whereas a train on the tracks is either visible or it is not.
 
 Four of the six do, anyway.
-The other two turned out to watch a neighbouring intersection with their crossing out of frame, so they carry `scores: false` in the roster: still captured, still shown on the board, never judged, because a view with no crossing in it can only contribute traffic noise.
+The other two turned out to watch a neighbouring intersection with their crossing out of frame, so they carry `scores: false` in the roster: still captured, never judged, because a view with no crossing in it can only contribute traffic noise.
+They still show on the board beside their crossing's scoring camera - for whichever crossings the site presents, which is currently 12th & Clinton alone (`FEATURED` in `services/api/web/src/lib/crossings.ts`), so the pair at 11th & Milwaukie is captured and scored without being displayed.
 [docs/camera-survey.md](docs/camera-survey.md) records which ones and why.
 
 At night a train reads as a long horizontal mass spanning the frame, hiding the road markings and the far side of the intersection.

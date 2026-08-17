@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useState } from "preact/hooks";
-import { COLORS, FEATURED, SOLO, crossingLabel, sessionsUrl } from "../lib/crossings";
+import { COLORS, FEATURED, SOLO, crossingLabel, featuredOnly, sessionsUrl } from "../lib/crossings";
 
 interface Session {
   session_id: string;
@@ -86,7 +86,7 @@ export default function SessionLog() {
   if (!sessions) return <p class="loading">Pulling the sheet...</p>;
 
   // Plain derivations: at <=200 rows there is nothing worth memoizing.
-  const shown = sessions.filter((s) => filter === "ALL" || s.crossing_id === filter);
+  const shown = featuredOnly(sessions).filter((s) => filter === "ALL" || s.crossing_id === filter);
   const longest = Math.max(1, ...shown.map((s) => s.duration_seconds ?? 0));
   const byDay: [string, Session[]][] = [];
   for (const s of shown) {
