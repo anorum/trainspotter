@@ -3,7 +3,8 @@
  * One island owns everything live: the SSE connection, the selected crossing,
  * and the time scrubber. The map is a hand-drawn SVG of the real geometry -
  * the rail line running NW-SE, the cross streets, a signal head per crossing -
- * because three fixed points need a dispatcher's board, not a tile map.
+ * because a handful of fixed points need a dispatcher's board, not a tile map.
+ * It draws the crossings in FEATURED, not every crossing the API reports.
  */
 
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
@@ -16,7 +17,14 @@ import {
   percent,
   worstHours,
 } from "../lib/analytics";
-import { COLORS, GEOMETRY, type State } from "../lib/crossings";
+import {
+  COLORS,
+  type CrossingGeometry,
+  FEATURED,
+  GEOMETRY,
+  SOLO,
+  type State,
+} from "../lib/crossings";
 import { stateAt, type TimelineObs } from "../lib/scrub";
 
 interface CameraInfo {
@@ -58,9 +66,20 @@ const WINDOWS: [number, string][] = [
 /** How long a failed history load silences the scrubber's retries. */
 const RETRY_COOLDOWN_MS = 5_000;
 
+/** The whole NW-SE diagonal, which is what the schematic is drawn in. */
+const FULL_CORRIDOR_VIEWBOX = "0 0 960 520";
+
+/** A window on one crossing's stretch of the corridor, offset so the signal
+ *  head sits above centre and its label has room beneath. A solo board frames
+ *  this instead of the full diagonal, which would leave one dot in open space. */
+function closeUpOn(g: CrossingGeometry): string {
+  return `${g.x - 300} ${g.y - 140} 600 300`;
+}
+
 export default function LiveBoard() {
   const [status, setStatus] = useState<Status | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
+  // A solo board is detail-first: its one crossing starts open.
+  const [selected, setSelected] = useState<string | null>(SOLO ? FEATURED[0] : null);
   const [scrubT, setScrubT] = useState<number | null>(null); // null = live
   const [windowHours, setWindowHours] = useState(24);
   const [timelines, setTimelines] = useState<Record<string, TimelineObs[]>>({});
@@ -76,7 +95,7 @@ export default function LiveBoard() {
   // Refs, not state: the guard must be visible to concurrent calls
   // *synchronously*, before any await - the scrubber fires loadTimelines on
   // every input event, and a state-based guard let every one of them race
-  // through and refetch all three crossings. The generation counter keeps an
+  // through and refetch every featured crossing. The generation counter keeps an
   // overlapping narrower load (drag, then widen immediately) from landing
   // late and clobbering the wider data. appliedHours is the window whose
   // observations are actually in `timelines`, which is what a failed load
@@ -105,7 +124,7 @@ export default function LiveBoard() {
   // claim about the corridor, so a store that cannot answer says so instead -
   // and stays retryable, because this is the one surface with no live feed.
   const loadLanes = () =>
-    fetch("/api/v1/sessions?limit=500")
+    fetch(`/api/v1/sessions?limit=500${SOLO ? `&crossing_id=${FEATURED[0]}` : ""}`)
       .then((r) => {
         if (!r.ok) throw new Error(`sessions ${r.status}`);
         return r.json();
@@ -153,7 +172,7 @@ export default function LiveBoard() {
     const generation = ++loadGeneration.current;
     try {
       const entries = await Promise.all(
-        Object.keys(GEOMETRY).map(async (id) => {
+        FEATURED.map(async (id) => {
           const r = await fetch(`/api/v1/timeline?crossing_id=${id}&hours=${hours}`);
           if (!r.ok) throw new Error(`timeline ${r.status}`);
           return [id, (await r.json()).observations] as const;
@@ -220,8 +239,7 @@ export default function LiveBoard() {
   const chosen = board.crossings.find((c) => c.crossing_id === selected) ?? null;
   const now = Date.now();
   const windowStart = now - windowHours * 3600 * 1000;
-  const corridor = Object.keys(GEOMETRY);
-  const lanes = corridor.map((id) =>
+  const lanes = FEATURED.map((id) =>
     sessions
       .filter((s) => s.crossing_id === id)
       .map((s) => {
@@ -232,9 +250,11 @@ export default function LiveBoard() {
       .filter(([a, b]) => b > windowStart && a < now),
   );
 
+  const viewBox = SOLO ? closeUpOn(GEOMETRY[FEATURED[0]]) : FULL_CORRIDOR_VIEWBOX;
+
   return (
     <div class="board">
-      <svg viewBox="0 0 960 520" role="img" aria-label="Map of the three crossings">
+      <svg viewBox={viewBox} role="img" aria-label="Map of the crossing">
         {/* the rail line: double stroke reads as track */}
         <line x1="120" y1="20" x2="840" y2="520" stroke="var(--hairline)" stroke-width="10" />
         <line x1="120" y1="20" x2="840" y2="520" stroke="var(--ink)" stroke-width="6" />
@@ -242,7 +262,8 @@ export default function LiveBoard() {
           x1="120" y1="20" x2="840" y2="520"
           stroke="var(--muted)" stroke-width="2" stroke-dasharray="1 14"
         />
-        {Object.entries(GEOMETRY).map(([id, g]) => {
+        {FEATURED.map((id) => {
+          const g = GEOMETRY[id];
           const crossing = board.crossings.find((c) => c.crossing_id === id);
           const state: State = crossing?.state ?? "UNKNOWN";
           return (
@@ -253,12 +274,12 @@ export default function LiveBoard() {
               />
               <text x={g.x - 185} y={g.y - 10} class="street">{g.street}</text>
               <g
-                role="button"
-                tabIndex={0}
+                role={SOLO ? "img" : "button"}
+                tabIndex={SOLO ? undefined : 0}
                 aria-label={`${g.label}: ${state}`}
-                onClick={() => setSelected(id)}
-                onKeyDown={(e) => e.key === "Enter" && setSelected(id)}
-                style="cursor: pointer"
+                onClick={SOLO ? undefined : () => setSelected(id)}
+                onKeyDown={SOLO ? undefined : (e) => e.key === "Enter" && setSelected(id)}
+                style={SOLO ? undefined : "cursor: pointer"}
               >
                 <circle
                   cx={g.x} cy={g.y} r="22"
@@ -354,19 +375,26 @@ export default function LiveBoard() {
       )}
 
       <div class="crossings-list">
-        {board.crossings.map((c) => {
-          const g = GEOMETRY[c.crossing_id];
-          return (
-            <button
-              class={`row ${selected === c.crossing_id ? "chosen" : ""}`}
-              onClick={() => setSelected(c.crossing_id)}
-            >
-              <span class="dot" style={`background:${COLORS[c.state]}`} />
-              <span class="display name">{g?.label ?? c.crossing_id}</span>
-              <span class="data">{stateLine(c)}</span>
-            </button>
-          );
-        })}
+        {board.crossings
+          .filter((c) => FEATURED.includes(c.crossing_id))
+          .map((c) => {
+            const g = GEOMETRY[c.crossing_id];
+            // On a solo board the row is a summary, not a chooser: a button
+            // whose only action is selecting the already-selected crossing
+            // would take focus and do nothing.
+            const Row = SOLO ? "div" : "button";
+            return (
+              <Row
+                class={`row ${selected === c.crossing_id ? "chosen" : ""}`}
+                style={SOLO ? "cursor: default" : undefined}
+                onClick={SOLO ? undefined : () => setSelected(c.crossing_id)}
+              >
+                <span class="dot" style={`background:${COLORS[c.state]}`} />
+                <span class="display name">{g?.label ?? c.crossing_id}</span>
+                <span class="data">{stateLine(c)}</span>
+              </Row>
+            );
+          })}
       </div>
 
       {chosen && (
@@ -376,9 +404,13 @@ export default function LiveBoard() {
             <span class="data state-word" style={`color:${COLORS[chosen.state]}`}>
               {chosen.stale ? "UNKNOWN (stale)" : chosen.state}
             </span>
-            <button class="close" onClick={() => setSelected(null)} aria-label="Close">
-              ✕
-            </button>
+            {/* Nothing to go back to on a solo board: closing would leave the
+                page empty and the only way back is reselecting the one row. */}
+            {!SOLO && (
+              <button class="close" onClick={() => setSelected(null)} aria-label="Close">
+                ✕
+              </button>
+            )}
           </header>
           {/* The ticker runs only while the state itself is BLOCKED. An open
               session can outlive the blockage by design (it closes after ten

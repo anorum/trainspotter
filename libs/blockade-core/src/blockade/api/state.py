@@ -29,12 +29,18 @@ from datetime import UTC, datetime, timedelta
 from blockade.api.models import CameraFrameInfo, CrossingStatus, StatusResponse
 from blockade.schemas import BlockageSession, CrossingState, ObservationRecord
 
-DEFAULT_STALE_AFTER = timedelta(minutes=6)
-"""Three times the ~2 minute worst camera cadence observed when this was chosen.
+DEFAULT_STALE_AFTER = timedelta(minutes=15)
+"""Three times the four-to-five minute camera cadence ODOT has been measured at.
 
-ODOT has since been measured refreshing every four to five minutes, so this is now
-closer to one cadence than to three - see deploy/poller/README.md on why the interval
-moves. Widening it is a policy change, not a comment fix.
+The bound was 6 minutes, three times the ~2 minute cadence observed when it was first
+chosen; at the measured refresh rate that had become closer to one cadence than to
+three, so a single skipped refresh could read as a dead detector. See
+deploy/poller/README.md on why the interval moves. Widening it is a policy change, not
+a comment fix.
+
+``STALE_AFTER_MS`` in web/src/lib/scrub.ts is this same bound on the client, and the
+two have to move together or the scrubbed board and the live board disagree about
+whether a given instant had a witness.
 """
 
 

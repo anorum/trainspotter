@@ -17,7 +17,7 @@ import {
   percent,
   worstHours,
 } from "../lib/analytics";
-import { GEOMETRY, crossingLabel } from "../lib/crossings";
+import { FEATURED, crossingLabel } from "../lib/crossings";
 
 // Postgres dow 0 = Sunday; the sheet reads Monday-first like a work week.
 const DOW_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -58,7 +58,7 @@ export default function Patterns() {
 
   return (
     <div class="patterns">
-      {Object.keys(GEOMETRY).map((id) => {
+      {FEATURED.map((id) => {
         const a = data.crossings[id];
         const worst = a && worstHours(a);
         return (

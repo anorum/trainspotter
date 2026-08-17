@@ -18,6 +18,17 @@ export const GEOMETRY: Record<string, CrossingGeometry> = {
   SE_11TH_MILWAUKIE: { x: 680, y: 410, label: "11th & Milwaukie", street: "SE MILWAUKIE AVE" },
 };
 
+/** The crossings the site presents, in corridor order. Every camera still
+ *  captures and scores in the background, so the record keeps accumulating for
+ *  the day the rest come back; the product's promise is just one crossing done
+ *  properly. Featuring a crossing again is adding its id here. */
+export const FEATURED: string[] = ["SE_12TH_CLINTON"];
+
+/** Whether the site is presenting a single crossing, which changes what the
+ *  views owe the reader: the board is detail-first rather than a corridor
+ *  overview, and a chooser between one thing is furniture, not a control. */
+export const SOLO = FEATURED.length === 1;
+
 export const COLORS: Record<State, string> = {
   CLEAR: "var(--signal-green)",
   BLOCKED: "var(--signal-red)",
