@@ -23,6 +23,39 @@ export const GEOMETRY = {
  *  no entry here has nowhere to be drawn. */
 export type CrossingId = keyof typeof GEOMETRY;
 
+/** The whole NW-SE diagonal, which is what the schematic is drawn in. */
+export const FULL_CORRIDOR_VIEWBOX = "0 0 960 520";
+
+/** The corridor's own extent: the diagonal the crossings above sit on. */
+const CORRIDOR = { x1: 120, y1: 20, x2: 840, y2: 520 };
+
+/** How far past each end of the corridor the track keeps going, as a share of
+ *  the corridor's own span. A window on one crossing has to show line entering
+ *  and leaving frame; drawn only to the corridor's extent, a close-up on either
+ *  end crossing catches the line's own endpoint and the track stops dead inside
+ *  the frame with blank space beyond it. Every viewBox crops the run-out. */
+const RUN_OUT = 0.45;
+
+const [OVERRUN_X, OVERRUN_Y] = [
+  (CORRIDOR.x2 - CORRIDOR.x1) * RUN_OUT,
+  (CORRIDOR.y2 - CORRIDOR.y1) * RUN_OUT,
+];
+
+/** The rail line as drawn: the corridor plus its run-out at both ends. */
+export const RAIL = {
+  x1: CORRIDOR.x1 - OVERRUN_X,
+  y1: CORRIDOR.y1 - OVERRUN_Y,
+  x2: CORRIDOR.x2 + OVERRUN_X,
+  y2: CORRIDOR.y2 + OVERRUN_Y,
+};
+
+/** A window on one crossing's stretch of the corridor, offset so the signal
+ *  head sits above centre and its label has room beneath. A solo board frames
+ *  this instead of the full diagonal, which would leave one dot in open space. */
+export function closeUpOn(g: CrossingGeometry): string {
+  return `${g.x - 300} ${g.y - 140} 600 300`;
+}
+
 /** The crossings the site presents, in corridor order. Every camera still
  *  captures and scores in the background, so the record keeps accumulating for
  *  the day the rest come back; the product's promise is just one crossing done
@@ -66,7 +99,7 @@ export const COLORS: Record<State, string> = {
 };
 
 function isPlaced(id: string): id is CrossingId {
-  return id in GEOMETRY;
+  return Object.hasOwn(GEOMETRY, id);
 }
 
 /** How a crossing is named to the reader. Takes any id the API served, because

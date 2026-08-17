@@ -18,12 +18,14 @@ import {
   worstHours,
 } from "../lib/analytics";
 import {
+  closeUpOn,
   COLORS,
-  type CrossingGeometry,
   crossingLabel,
   FEATURED,
   featuredOnly,
+  FULL_CORRIDOR_VIEWBOX,
   GEOMETRY,
+  RAIL,
   sessionsUrl,
   SOLO,
   type State,
@@ -68,16 +70,6 @@ const WINDOWS: [number, string][] = [
 
 /** How long a failed history load silences the scrubber's retries. */
 const RETRY_COOLDOWN_MS = 5_000;
-
-/** The whole NW-SE diagonal, which is what the schematic is drawn in. */
-const FULL_CORRIDOR_VIEWBOX = "0 0 960 520";
-
-/** A window on one crossing's stretch of the corridor, offset so the signal
- *  head sits above centre and its label has room beneath. A solo board frames
- *  this instead of the full diagonal, which would leave one dot in open space. */
-function closeUpOn(g: CrossingGeometry): string {
-  return `${g.x - 300} ${g.y - 140} 600 300`;
-}
 
 export default function LiveBoard() {
   const [status, setStatus] = useState<Status | null>(null);
@@ -263,12 +255,9 @@ export default function LiveBoard() {
         aria-label={SOLO ? "Map of the crossing" : "Map of the crossings"}
       >
         {/* the rail line: double stroke reads as track */}
-        <line x1="120" y1="20" x2="840" y2="520" stroke="var(--hairline)" stroke-width="10" />
-        <line x1="120" y1="20" x2="840" y2="520" stroke="var(--ink)" stroke-width="6" />
-        <line
-          x1="120" y1="20" x2="840" y2="520"
-          stroke="var(--muted)" stroke-width="2" stroke-dasharray="1 14"
-        />
+        <line {...RAIL} stroke="var(--hairline)" stroke-width="10" />
+        <line {...RAIL} stroke="var(--ink)" stroke-width="6" />
+        <line {...RAIL} stroke="var(--muted)" stroke-width="2" stroke-dasharray="1 14" />
         {FEATURED.map((id) => {
           const g = GEOMETRY[id];
           const crossing = board.crossings.find((c) => c.crossing_id === id);
