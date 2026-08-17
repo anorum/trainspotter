@@ -20,6 +20,7 @@ import {
 import {
   COLORS,
   type CrossingGeometry,
+  crossingLabel,
   FEATURED,
   featuredOnly,
   GEOMETRY,
@@ -382,19 +383,19 @@ export default function LiveBoard() {
 
       <div class="crossings-list">
         {featuredOnly(board.crossings).map((c) => {
-          const g = GEOMETRY[c.crossing_id];
           // On a solo board the row is a summary, not a chooser: a button
           // whose only action is selecting the already-selected crossing
-          // would take focus and do nothing.
+          // would take focus and do nothing, and a selected treatment on the
+          // only row is a stuck highlight rather than information.
           const Row = SOLO ? "div" : "button";
           return (
             <Row
-              class={`row ${selected === c.crossing_id ? "chosen" : ""}`}
+              class={`row ${!SOLO && selected === c.crossing_id ? "chosen" : ""}`}
               style={SOLO ? "cursor: default" : undefined}
               onClick={SOLO ? undefined : () => setSelected(c.crossing_id)}
             >
               <span class="dot" style={`background:${COLORS[c.state]}`} />
-              <span class="display name">{g?.label ?? c.crossing_id}</span>
+              <span class="display name">{crossingLabel(c.crossing_id)}</span>
               <span class="data">{stateLine(c)}</span>
             </Row>
           );
@@ -404,7 +405,7 @@ export default function LiveBoard() {
       {chosen && (
         <section class="detail">
           <header>
-            <h2>{GEOMETRY[chosen.crossing_id]?.label}</h2>
+            <h2>{crossingLabel(chosen.crossing_id)}</h2>
             {/* The live region is the state word alone, not the panel. The
                 panel holds the blockage ticker, whose text is recomputed every
                 second, and a solo board has the panel open from first paint -

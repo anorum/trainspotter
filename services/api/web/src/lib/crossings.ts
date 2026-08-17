@@ -12,17 +12,24 @@ export interface CrossingGeometry {
   street: string;
 }
 
-export const GEOMETRY: Record<string, CrossingGeometry> = {
+export const GEOMETRY = {
   SE_8TH_DIVISION: { x: 280, y: 130, label: "8th & Division", street: "SE DIVISION ST" },
   SE_12TH_CLINTON: { x: 480, y: 270, label: "12th & Clinton", street: "SE CLINTON ST" },
   SE_11TH_MILWAUKIE: { x: 680, y: 410, label: "11th & Milwaukie", street: "SE MILWAUKIE AVE" },
-};
+} satisfies Record<string, CrossingGeometry>;
+
+/** A crossing the schematic can place. The board draws signal heads, cross
+ *  streets and a close-up viewBox straight off these coordinates, so an id with
+ *  no entry here has nowhere to be drawn. */
+export type CrossingId = keyof typeof GEOMETRY;
 
 /** The crossings the site presents, in corridor order. Every camera still
  *  captures and scores in the background, so the record keeps accumulating for
  *  the day the rest come back; the product's promise is just one crossing done
- *  properly. Featuring a crossing again is adding its id here. */
-export const FEATURED: string[] = ["SE_12TH_CLINTON"];
+ *  properly. Featuring a crossing again is adding its id here - and the type
+ *  makes featuring one the schematic cannot place a build error rather than a
+ *  board that renders nothing. */
+export const FEATURED: CrossingId[] = ["SE_12TH_CLINTON"];
 
 /** Whether the site is presenting a single crossing, which changes what the
  *  views owe the reader: the board is detail-first rather than a corridor
@@ -39,13 +46,17 @@ export function sessionsUrl(limit: number): string {
   return `/api/v1/sessions?limit=${limit}${scope}`;
 }
 
+/** FEATURED as a membership test over any id the API might serve, which is a
+ *  wider set than the ids the site presents. */
+const PRESENTED: ReadonlySet<string> = new Set(FEATURED);
+
 /** Drop rows about crossings the site does not present. The other half of the
  *  scoping rule above, and the half no query string can guarantee: /status is
  *  always corridor-wide, and /sessions only narrows for a solo site. A surface
  *  that renders an unfiltered reply would show a crossing the site has
  *  deliberately withheld, labelled as if it were on offer. */
 export function featuredOnly<T extends { crossing_id: string }>(rows: T[]): T[] {
-  return rows.filter((r) => FEATURED.includes(r.crossing_id));
+  return rows.filter((r) => PRESENTED.has(r.crossing_id));
 }
 
 export const COLORS: Record<State, string> = {
@@ -54,6 +65,26 @@ export const COLORS: Record<State, string> = {
   UNKNOWN: "var(--signal-amber)",
 };
 
-export function crossingLabel(id: string): string {
-  return GEOMETRY[id]?.label ?? id;
+function isPlaced(id: string): id is CrossingId {
+  return id in GEOMETRY;
 }
+
+/** How a crossing is named to the reader. Takes any id the API served, because
+ *  the history endpoints answer about the whole corridor; an id the schematic
+ *  does not place falls back to itself rather than rendering blank. */
+export function crossingLabel(id: string): string {
+  return isPlaced(id) ? GEOMETRY[id].label : id;
+}
+
+/** The featured crossings named for page copy, in the site's register: one on
+ *  its own, otherwise an and-joined list. The page heads read this rather than
+ *  restating the roster, so a title, a browser tab and a search snippet cannot
+ *  outlive a change to FEATURED. */
+export function featuredLabels(ids: readonly string[] = FEATURED): string {
+  const labels = ids.map(crossingLabel);
+  if (labels.length < 3) return labels.join(" and ");
+  return `${labels.slice(0, -1).join(", ")}, and ${labels[labels.length - 1]}`;
+}
+
+/** Agrees with FEATURED wherever page copy needs the noun. */
+export const CROSSING_NOUN = SOLO ? "crossing" : "crossings";

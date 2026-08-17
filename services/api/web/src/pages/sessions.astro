@@ -1,11 +1,12 @@
 ---
 import SessionLog from "../components/SessionLog";
 import Page from "../layouts/Page.astro";
+import { featuredLabels } from "../lib/crossings";
 ---
 
 <Page
   title="Train sheet - Blockade"
-  description="Every recorded train blockage at SE 12th & Clinton, with the camera frames that saw it."
+  description={`Every recorded train blockage at SE ${featuredLabels()}, with the camera frames that saw it.`}
   active="log"
 >
   <SessionLog client:load />

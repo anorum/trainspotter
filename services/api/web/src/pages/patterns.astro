@@ -1,11 +1,12 @@
 ---
 import Patterns from "../components/Patterns";
 import Page from "../layouts/Page.astro";
+import { featuredLabels } from "../lib/crossings";
 ---
 
 <Page
   title="Patterns - Blockade"
-  description="When trains usually block SE 12th & Clinton: hour-of-week structure, blockage durations, and the daily record."
+  description={`When trains usually block SE ${featuredLabels()}: hour-of-week structure, blockage durations, and the daily record.`}
   active="patterns"
 >
   <Patterns client:load />
