@@ -609,7 +609,7 @@ const css = `
    Each reserves at least its widest text: 20ch is the longest en-US
    minute-precision datetime ("12/30/2026, 10:38 PM"), and the timestamp
    pins that locale rather than the browser's so the reserve is exact
-   everywhere. 23ch holds 23 characters only because .data is a monospace
+   everywhere. 20ch holds 20 characters only because .data is a monospace
    family: every glyph there carries the '0' advance that ch measures, so
    the reserve is void if --data stops being fixed-pitch. The button's
    7.5rem is instead a measurement of its wider label, "Back to live", in

@@ -19,7 +19,7 @@ export interface CrossingGeometry {
 export const GEOMETRY = {
   SE_8TH_DIVISION: {
     x: 280, y: 130, label: "8th & Division", street: "SE DIVISION ST",
-    lat: 45.50494, lon: -122.6536,
+    lat: 45.50573, lon: -122.65745,
   },
   SE_12TH_CLINTON: {
     x: 480, y: 270, label: "12th & Clinton", street: "SE CLINTON ST",
