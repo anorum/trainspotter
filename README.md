@@ -1,4 +1,6 @@
-# Blockade
+# PDX Train
+
+(The product is PDX Train; `blockade` survives as the code namespace - packages, CLIs, and the k8s namespace - because renaming working infrastructure buys nothing.)
 
 Detects freight train blockages at SE Portland grade crossings from public traffic camera imagery, alerts before you leave the house, and builds the longitudinal record needed to predict when they clear.
 
@@ -11,11 +13,12 @@ There is no public feed of freight train positions.
 That is the point of the project.
 
 Architecture: [docs/architecture.md](docs/architecture.md) - what each piece owns and the contracts between them.
+Local dev board: `scripts/dev-web.sh` - hot-reloading UI at localhost:4321 against the live API, read-only.
 Decisions: [docs/adr/](docs/adr/).
 Original proposals, kept as history: [docs/history/](docs/history/).
 
 **Status: live.**
-Capturing six cameras continuously since 2026-08-08; the full pipeline - detection, sessions, the alert stream (published, no notifier yet), the web board, and the Postgres history store - runs on the k3s cluster and serves [blockade.home.alexnorum.com](http://blockade.home.alexnorum.com) on the LAN.
+Capturing six cameras continuously since 2026-08-08; the full pipeline - detection, sessions, the alert stream (published, no notifier yet), the web board, and the Postgres history store - runs on the k3s cluster and serves [pdxtrain.alexnorum.com](https://pdxtrain.alexnorum.com) publicly and blockade.home.alexnorum.com on the LAN.
 The first per-camera trained classifier (12th & Clinton) is in production behind the auto router, and its improved history has been backfilled.
 
 **Built with AI - read accordingly.**

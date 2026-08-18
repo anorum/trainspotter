@@ -143,6 +143,9 @@ spec:
       namespace: traefik
       sectionName: web
   hostnames:
+    # The public name (via the Cloudflare tunnel) and the LAN name (AdGuard
+    # wildcard) land on the same Traefik gateway; one route serves both.
+    - pdxtrain.alexnorum.com
     - blockade.home.alexnorum.com
   rules:
     - matches:
