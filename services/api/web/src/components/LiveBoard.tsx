@@ -183,8 +183,8 @@ export default function LiveBoard() {
     }
   };
 
-  // Scrub data loads lazily the first time the slider moves off "now", and
-  // reloads when the window widens past what has been fetched.
+  // The window's full load: eager on mount so the lanes render before any
+  // scrub, and again whenever the window widens past what has been fetched.
   const loadTimelines = async (hours: number) => {
     if (loadedHours.current >= hours) {
       // Gate on committed data, not the guard: a wider load still in flight
