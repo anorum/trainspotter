@@ -21,17 +21,21 @@ import {
   closeUpOn,
   COLORS,
   crossingLabel,
+  type CrossingId,
   FEATURED,
   featuredOnly,
   FULL_CORRIDOR_VIEWBOX,
   GEOMETRY,
+  mapEmbedUrl,
+  mapPageUrl,
   RAIL,
+  RAIL_NAME,
   sessionsUrl,
   SOLO,
   type State,
 } from "../lib/crossings";
 import { stateAt, withTimes, type TimelineObs } from "../lib/scrub";
-import { corridorHour, formatDateTime, formatTime } from "../lib/time";
+import { corridorHour, formatMinute, formatTime } from "../lib/time";
 
 interface CameraInfo {
   camera_id: string;
@@ -277,6 +281,19 @@ export default function LiveBoard() {
         <line {...RAIL} stroke="var(--hairline)" stroke-width="10" />
         <line {...RAIL} stroke="var(--ink)" stroke-width="6" />
         <line {...RAIL} stroke="var(--muted)" stroke-width="2" stroke-dasharray="1 14" />
+        {SOLO &&
+          (() => {
+            // A point up the line from the crossing, label set just off the
+            // rail and rotated to its true 35-degree grade.
+            const g = GEOMETRY[FEATURED[0]];
+            const lx = g.x - 168;
+            const ly = g.y - 117;
+            return (
+              <text x={lx} y={ly - 14} class="railname" transform={`rotate(34.8 ${lx} ${ly})`}>
+                {RAIL_NAME}
+              </text>
+            );
+          })()}
         {FEATURED.map((id) => {
           const g = GEOMETRY[id];
           const crossing = shown.find((c) => c.crossing_id === id);
@@ -376,7 +393,7 @@ export default function LiveBoard() {
           ))}
         </div>
         <span class="data when">
-          {scrubbing ? formatDateTime(new Date(scrubT!).toISOString()) : "now"}
+          {scrubbing ? formatMinute(new Date(scrubT!).toISOString()) : "now"}
         </span>
       </div>
 
@@ -473,6 +490,31 @@ export default function LiveBoard() {
                 </figcaption>
               </figure>
             ))}
+            {/* The map is one more monitor on the wall: the real place the
+                cameras look at, in the same frame the cameras get. Keyless
+                Google embed, loaded only when scrolled to; pan and zoom work
+                in place, the link opens the full page. */}
+            <figure class="locate">
+              <iframe
+                src={mapEmbedUrl(GEOMETRY[chosen.crossing_id as CrossingId])}
+                title={`Map of the ${crossingLabel(chosen.crossing_id)} crossing`}
+                loading="lazy"
+                referrerpolicy="no-referrer-when-downgrade"
+              />
+              <figcaption>
+                {GEOMETRY[chosen.crossing_id as CrossingId].street} at the rail line
+                <span class="data">
+                  {" · "}
+                  <a
+                    href={mapPageUrl(GEOMETRY[chosen.crossing_id as CrossingId])}
+                    target="_blank"
+                    rel="noopener"
+                  >
+                    Google Maps ↗
+                  </a>
+                </span>
+              </figcaption>
+            </figure>
           </div>
         </section>
       )}
@@ -563,8 +605,8 @@ const css = `
 /* The button and timestamp both relabel the instant a drag leaves "live",
    and they share the slider's flex row: unreserved, the relabel resizes the
    track under the held pointer and corrupts the drag's pointer-x mapping.
-   Each reserves at least its widest text: 23ch is the longest en-US
-   toLocaleString datetime ("10/30/2026, 12:38:58 AM"), and the timestamp
+   Each reserves at least its widest text: 20ch is the longest en-US
+   minute-precision datetime ("12/30/2026, 10:38 PM"), and the timestamp
    pins that locale rather than the browser's so the reserve is exact
    everywhere. 23ch holds 23 characters only because .data is a monospace
    family: every glyph there carries the '0' advance that ch measures, so
@@ -573,7 +615,7 @@ const css = `
    --display: nothing derives it, so re-measure it if either label changes. */
 .scrub > button { min-width: 7.5rem; }
 .scrub button.live { color: var(--signal-green); }
-.scrub .when { color: var(--muted); min-width: 23ch; text-align: right; font-size: 0.85rem; }
+.scrub .when { color: var(--muted); min-width: 20ch; text-align: right; font-size: 0.85rem; }
 /* Under ~768px the single row cannot hold Live + track + windows + timestamp
    without squeezing the slider down to a stub; drop the track onto its own
    row, where sibling relabels cannot resize it. Both flanking labels keep
@@ -618,4 +660,8 @@ const css = `
 .cameras img { width: 100%; border-radius: 4px; border: 1px solid var(--hairline); }
 .cameras .noframe { aspect-ratio: 4/3; display: grid; place-items: center; color: var(--muted); border: 1px dashed var(--hairline); border-radius: 4px; }
 .cameras figcaption { color: var(--muted); font-size: 0.85rem; margin-top: 0.35rem; }
+.locate iframe { width: 100%; aspect-ratio: 4/3; border: 1px solid var(--hairline); border-radius: 4px; display: block; background: var(--panel); }
+.locate a { color: var(--signal-amber); text-decoration: none; }
+.locate a:hover, .locate a:focus-visible { text-decoration: underline; }
+.railname { fill: var(--muted); font-family: var(--display); font-size: 15px; letter-spacing: 0.35em; opacity: 0.75; }
 `;

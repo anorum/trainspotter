@@ -19,8 +19,13 @@ export const DEFAULT_LOCAL_TZ = "America/Los_Angeles";
 export const formatTime = (iso: string): string =>
   new Date(iso).toLocaleTimeString(LOCALE);
 
-export const formatDateTime = (iso: string): string =>
-  new Date(iso).toLocaleString(LOCALE);
+/** "8/17/2026, 4:42 AM" - the scrub label; the slider steps in whole
+ *  minutes, so seconds would be three characters of permanent ":00". */
+export const formatMinute = (iso: string): string =>
+  new Date(iso).toLocaleString(LOCALE, {
+    year: "numeric", month: "numeric", day: "numeric",
+    hour: "numeric", minute: "2-digit",
+  });
 
 /** "8:05 PM" - the sheet's compact start/frame times. */
 export const formatShortTime = (iso: string): string =>
