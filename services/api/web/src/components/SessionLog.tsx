@@ -131,9 +131,7 @@ export default function SessionLog() {
                     style={`background:${COLORS.BLOCKED}`}
                   />
                   <span class="display name">{crossingLabel(s.crossing_id)}</span>
-                  <span class="data start">
-{formatShortTime(s.started_at)}
-                  </span>
+                  <span class="data start">{formatShortTime(s.started_at)}</span>
                   <span class="bar-lane" aria-hidden="true">
                     <span
                       class="bar"
@@ -186,9 +184,7 @@ export default function SessionLog() {
                                 alt=""
                                 loading="lazy"
                               />
-                              <figcaption class="data">
-{formatShortTime(o.captured_at)}
-                              </figcaption>
+                              <figcaption class="data">{formatShortTime(o.captured_at)}</figcaption>
                             </figure>
                           ))}
                         </div>

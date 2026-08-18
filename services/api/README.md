@@ -38,8 +38,10 @@ Observations join the store as a new versioned layer and the timeline resolves l
 Sessions are a projection and get rebuilt: every session starting inside the re-scored window is replaced by what the new derivation found, which is how a phantom session disappears instead of surviving next to its correction.
 A partial scan is refused rather than loaded, because the delete would otherwise be silent and unrecoverable from the board.
 The plan checks the roster: every scoring camera on a crossing must appear in the observations before any window of that crossing is rewritten, so the 681-only scan of a crossing 682 also watches stops before it deletes what 682 saw.
-The load then refuses a second time, inside the transaction, if a window would be left with no sessions at all - the shape the roster check cannot see, such as a crossing whose only witness was removed from the roster after the fact.
-Both give way to `--allow-empty-window`, for a window that predates a camera or whose sessions really were the phantom.
+A crossing the roster does not describe at all - an unknown, retired, or renamed crossing id, or one whose every camera is `scores: false` - is refused outright instead of passing the check with zero required witnesses, and `--allow-empty-window` does not waive that one: it waives coverage for a crossing the roster describes, and here there is no coverage to reason about.
+Fix the roster, or the file the scan was pointed at.
+The load then refuses a second time, inside the transaction, if a window would be left with no sessions at all - the shape the roster check cannot see, such as a complete re-score that now reads every frame as CLEAR where the old detector found a train.
+Both of those give way to `--allow-empty-window`, for a window that predates a camera or whose sessions really were the phantom.
 It applies to every window in the file, so load a legitimately-empty crossing on its own rather than disarming the check for the others.
 The command refuses windows reaching within one session gap of now - that edge belongs to the streaming sessionizer.
 Scan windows should extend a little beyond the period of interest on both sides, so no real session straddles the window boundary.
