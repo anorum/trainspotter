@@ -19,6 +19,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   corridorDayHour,
   corridorHour,
+  corridorHourOf,
+  formatCorridorDayTime,
   formatDayHeading,
   formatMinute,
   formatShortDate,
@@ -68,6 +70,31 @@ describe("corridorHour", () => {
     expect(corridorHour(PORTLAND)).toBe(19);
     vi.setSystemTime(new Date("2026-08-18T05:41:00Z"));
     expect(corridorHour(PORTLAND)).toBe(22);
+  });
+});
+
+describe("corridorHourOf", () => {
+  it("reports a past instant's hour on the corridor's clock, not UTC's", () => {
+    expect(corridorHourOf("2026-08-18T06:30:00Z", PORTLAND)).toBe(23);
+  });
+
+  it("falls back to the corridor when the server ships no zone", () => {
+    expect(corridorHourOf("2026-08-18T06:30:00Z", null)).toBe(23);
+  });
+});
+
+describe("formatCorridorDayTime", () => {
+  // 11:30 PM Monday in Portland is already Tuesday in UTC; the record list
+  // must write the corridor's date and clock, whatever the reader's zone.
+  const LATE_MONDAY = "2026-08-18T06:30:00Z";
+
+  it("writes the record entry on the corridor's clock", () => {
+    expect(formatCorridorDayTime(LATE_MONDAY, PORTLAND)).toBe("Monday, August 17, 11:30 PM");
+  });
+
+  it("falls back to the corridor when the server ships no zone", () => {
+    expect(formatCorridorDayTime(LATE_MONDAY, null)).toBe("Monday, August 17, 11:30 PM");
+    expect(formatCorridorDayTime(LATE_MONDAY, undefined)).toBe("Monday, August 17, 11:30 PM");
   });
 });
 

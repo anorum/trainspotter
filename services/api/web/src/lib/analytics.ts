@@ -101,3 +101,30 @@ export function percent(x: number | null): string {
   if (x === null) return "-";
   return x < 0.01 && x > 0 ? "<1%" : `${Math.round(x * 100)}%`;
 }
+
+/** What a driver staring at a blocked crossing wants to know: how much longer.
+ *
+ * The estimate conditions on how long the blockage has already run - the
+ * record's durations that have been outlasted stop being evidence. The median
+ * of what remains among comparable trains is the honest middle answer, and a
+ * blockage that has outlasted every recorded train gets told exactly that.
+ * Small-n humility: the sample size rides along in the line itself.
+ */
+export function waitOutlook(
+  durationsSeconds: readonly number[],
+  elapsedSeconds: number,
+): string | null {
+  if (durationsSeconds.length === 0) return null;
+  const longer = durationsSeconds.filter((d) => d > elapsedSeconds);
+  if (longer.length === 0) {
+    const record = Math.round(Math.max(...durationsSeconds) / 60);
+    return `already the longest on record (previous record ${record} min)`;
+  }
+  const remaining = longer
+    .map((d) => (d - elapsedSeconds) / 60)
+    .sort((a, b) => a - b);
+  const median = remaining[Math.floor(remaining.length / 2)];
+  // Round up to 5-minute steps: mock precision would overstate the data.
+  const est = Math.max(5, Math.ceil(median / 5) * 5);
+  return `trains like this usually clear within ~${est} min (${longer.length} recorded)`;
+}

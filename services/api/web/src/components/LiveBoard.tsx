@@ -16,6 +16,7 @@ import {
   hourLabel,
   hourOfDay,
   percent,
+  waitOutlook,
   worstHours,
 } from "../lib/analytics";
 import {
@@ -421,9 +422,22 @@ export default function LiveBoard() {
               No scrub guard here: the board memo already nulls open_session
               and latest_observation while scrubbing. */}
           {chosen.state === "BLOCKED" && chosen.open_session && (
-            <p class="data ticker">
-              Blocked for {duration(chosen.open_session.started_at)}
-            </p>
+            <>
+              <p class="data ticker">
+                Blocked for {duration(chosen.open_session.started_at)}
+              </p>
+              {(() => {
+                // The record answers the question the ticker raises.
+                const a = analytics?.crossings[chosen.crossing_id];
+                const line =
+                  a &&
+                  waitOutlook(
+                    a.durations_seconds,
+                    (Date.now() - new Date(chosen.open_session.started_at).getTime()) / 1000,
+                  );
+                return line ? <p class="data outlook">{line}</p> : null;
+              })()}
+            </>
           )}
           {chosen.latest_observation && (
             <p class="reason">
@@ -582,6 +596,7 @@ const css = `
 .detail .state-word { font-size: 1rem; }
 .detail .close { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 1rem; }
 .detail .ticker { color: var(--signal-red); font-size: 1.1rem; margin: 0.5rem 0 0; }
+.detail .outlook { color: var(--muted); margin: 0.15rem 0 0; }
 .detail .reason { color: var(--muted); margin: 0.35rem 0 0; font-size: 0.9rem; }
 .habits { margin-top: 0.75rem; }
 .habit-line { color: var(--muted); font-size: 0.85rem; margin: 0 0 0.4rem; }

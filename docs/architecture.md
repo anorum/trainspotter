@@ -108,10 +108,11 @@ One pod serving both the JSON API and the static site, plus the Postgres materia
 - **Frames** (`/api/v1/frames/...`): S3 reads behind a content-addressed disk LRU, with a path-pattern guard.
 - **Web** (`web/`): static Astro build baked into the image; three pages, one Preact island each - the board (Leaflet map with a flasher per featured crossing, SSE, time scrubber), the train sheet, and patterns.
   The UI presents only the crossings in `FEATURED` (web/src/lib/crossings.ts) - currently 12th & Clinton alone, the one being dialed in properly - while every camera keeps capturing in the background - and every scoring one keeps scoring - so the record accumulates for the rest.
-  `/analytics` also ships `local_tz`, the corridor's clock, which both the board's habit line and the patterns page use to draw the current-hour marker - the timezone is a wire contract, not a client constant.
+  `/analytics` also ships `local_tz`, the corridor's clock, which every corridor-clock rendering reads - the board's habit line and, on the patterns page, the current-hour marker, the day/night split, and the record list's dates - the timezone is a wire contract, not a client constant.
+  The board's blocked ticker carries a wait-outlook line - the median of the recorded durations the blockage has not yet outlasted, from `/analytics` (`waitOutlook` in `web/src/lib/analytics.ts`) - and the patterns page derives its day/night split and longest-on-record list client-side from `/sessions`, not from a new aggregate.
   The scrubber is the one place the consensus rule above exists twice: `LiveState` only ever holds the present, so answering "what did the board show at 05:45" happens client-side over `/timeline` rows, in `web/src/lib/scrub.ts`.
   That copy is pinned against the reducer's own scenarios in `scrub.test.ts`, so the two cannot drift silently.
-  `npm run check` typechecks under Astro strict and `npm test` runs those scenarios plus `crossings.test.ts`, which pins the FEATURED presentation contract itself; CI runs both for web changes.
+  `npm run check` typechecks under Astro strict and `npm test` runs those scenarios plus the other `web/src/lib` suites - among them `crossings.test.ts`, which pins the FEATURED presentation contract, and `analytics.test.ts`, which pins the outlook line; CI runs both for web changes.
 
 ### Postgres (deploy/postgres)
 
