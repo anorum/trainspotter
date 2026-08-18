@@ -19,7 +19,7 @@ Plain functions over an asyncpg pool.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import UTC, datetime
 
 import asyncpg
 
@@ -245,6 +245,90 @@ async def session_list(pool: asyncpg.Pool, crossing_id: str | None, limit: int) 
         }
         for r in rows
     ]
+
+
+async def sightings(pool: asyncpg.Pool, crossing_id: str, days: int) -> list[dict]:
+    """Blocked runs the session minimums filtered out - the one-frame trains.
+
+    Applies the board's own rule (a BLOCKED judgement holds until its camera's
+    next judgement supersedes it or freshness expires), then subtracts every
+    interval a recorded session already covers. What remains is what a camera
+    saw but the record book declined to certify: real at today's frame
+    cadence, so the sheet shows them as sightings rather than hiding them.
+    """
+    from blockade.api.state import DEFAULT_STALE_AFTER
+
+    stale_ms = DEFAULT_STALE_AFTER.total_seconds() * 1000
+    rows = await pool.fetch(
+        """SELECT camera_id, captured_at, state, confidence
+           FROM (
+             SELECT DISTINCT ON (camera_id, captured_at)
+                    camera_id, captured_at, state, confidence, detector_version
+             FROM observations
+             WHERE crossing_id = $1 AND captured_at > now() - make_interval(days => $2)
+             ORDER BY camera_id, captured_at, ingested_at DESC
+           ) resolved
+           WHERE detector_version NOT LIKE 'unscored/%'
+           ORDER BY captured_at""",
+        crossing_id,
+        days,
+    )
+    by_camera: dict[str, list] = {}
+    for r in rows:
+        by_camera.setdefault(r["camera_id"], []).append(r)
+    spans: list[tuple[float, float, int, float]] = []  # start_ms, end_ms, frames, peak
+    for cam_rows in by_camera.values():
+        for i, r in enumerate(cam_rows):
+            if r["state"] != "BLOCKED":
+                continue
+            t = r["captured_at"].timestamp() * 1000
+            nxt = (
+                cam_rows[i + 1]["captured_at"].timestamp() * 1000
+                if i + 1 < len(cam_rows)
+                else float("inf")
+            )
+            spans.append((t, min(nxt, t + stale_ms), 1, r["confidence"]))
+    spans.sort()
+    merged: list[list] = []
+    for a, b, n, c in spans:
+        if merged and a <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], b)
+            merged[-1][2] += n
+            merged[-1][3] = max(merged[-1][3], c)
+        else:
+            merged.append([a, b, n, c])
+
+    sessions = await pool.fetch(
+        """SELECT started_at, ended_at FROM (
+             SELECT DISTINCT ON (session_id) *
+             FROM sessions WHERE crossing_id = $1
+             ORDER BY session_id, ingested_at DESC
+           ) latest
+           WHERE started_at > now() - make_interval(days => $2)""",
+        crossing_id,
+        days,
+    )
+    taken = [
+        (
+            r["started_at"].timestamp() * 1000,
+            (r["ended_at"].timestamp() * 1000 if r["ended_at"] else float("inf")),
+        )
+        for r in sessions
+    ]
+    out = []
+    for a, b, n, c in merged:
+        if any(a < tb and b > ta for ta, tb in taken):
+            continue  # the record book already tells this story
+        out.append(
+            {
+                "started_at": datetime.fromtimestamp(a / 1000, tz=UTC).isoformat(),
+                "ended_at": datetime.fromtimestamp(b / 1000, tz=UTC).isoformat(),
+                "frames": n,
+                "peak_confidence": c,
+            }
+        )
+    out.reverse()  # newest first, like the sheet reads
+    return out
 
 
 LOCAL_TZ = "America/Los_Angeles"

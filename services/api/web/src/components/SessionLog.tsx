@@ -13,6 +13,10 @@ import type { TimelineObs } from "../lib/scrub";
 import { formatDayHeading, formatShortTime } from "../lib/time";
 
 interface Session {
+  /** "session" is the certified record; "sighting" is a blocked run too
+   *  brief for the record book's minimums - real at today's frame cadence,
+   *  shown distinctly rather than hidden. */
+  kind?: "sighting";
   session_id: string;
   crossing_id: string;
   started_at: string;
@@ -30,6 +34,7 @@ const PAD_MS = 2 * 60_000;
 
 export default function SessionLog() {
   const [sessions, setSessions] = useState<Session[] | null>(null);
+  const [sightings, setSightings] = useState<Session[]>([]);
   const [failed, setFailed] = useState(false);
   const [filter, setFilter] = useState(FILTERS[0]);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -47,6 +52,30 @@ export default function SessionLog() {
         (body) => setSessions(body.sessions),
         () => setFailed(true),
       );
+    // Sightings are additive: their failure must not blank the sheet.
+    void Promise.all(
+      FEATURED.map(async (id) => {
+        const r = await fetch(`/api/v1/sightings?crossing_id=${id}&days=14`);
+        if (!r.ok) return [];
+        const body = await r.json();
+        return body.sightings.map(
+          (g: { started_at: string; ended_at: string }): Session => ({
+            kind: "sighting",
+            session_id: `sighting-${id}-${g.started_at}`,
+            crossing_id: id,
+            started_at: g.started_at,
+            ended_at: g.ended_at,
+            duration_seconds:
+              (new Date(g.ended_at).getTime() - new Date(g.started_at).getTime()) / 1000,
+            is_open: false,
+            detector_version: "",
+          }),
+        );
+      }),
+    ).then(
+      (lists) => setSightings(lists.flat()),
+      () => {},
+    );
   }, []);
 
   const toggle = async (s: Session) => {
@@ -81,7 +110,9 @@ export default function SessionLog() {
   if (!sessions) return <p class="loading">Pulling the sheet...</p>;
 
   // Plain derivations: at <=200 rows there is nothing worth memoizing.
-  const shown = featuredOnly(sessions).filter((s) => filter === "ALL" || s.crossing_id === filter);
+  const shown = featuredOnly([...sessions, ...sightings])
+    .filter((s) => filter === "ALL" || s.crossing_id === filter)
+    .sort((a, b) => b.started_at.localeCompare(a.started_at));
   const longest = Math.max(1, ...shown.map((s) => s.duration_seconds ?? 0));
   const byDay: [string, Session[]][] = [];
   for (const s of shown) {
@@ -127,10 +158,13 @@ export default function SessionLog() {
                   onClick={() => toggle(s)}
                 >
                   <span
-                    class={s.is_open ? "aspect pulse" : "aspect"}
-                    style={`background:${COLORS.BLOCKED}`}
+                    class={s.kind === "sighting" ? "aspect sighted" : s.is_open ? "aspect pulse" : "aspect"}
+                    style={s.kind === "sighting" ? undefined : `background:${COLORS.BLOCKED}`}
                   />
-                  <span class="display name">{crossingLabel(s.crossing_id)}</span>
+                  <span class="display name">
+                    {crossingLabel(s.crossing_id)}
+                    {s.kind === "sighting" && <span class="data kind"> · sighting</span>}
+                  </span>
                   <span class="data start">{formatShortTime(s.started_at)}</span>
                   <span class="bar-lane" aria-hidden="true">
                     <span
@@ -254,6 +288,18 @@ const css = `
 .still img { height: 72px; display: block; border-radius: 3px; border: 2px solid transparent; }
 .still.picked img { border-color: var(--signal-amber); }
 .still figcaption { color: var(--muted); font-size: 0.7rem; text-align: center; margin-top: 0.15rem; }
+/* A sighting's aspect is a hollow signal: the camera saw a train, the record
+   book declined to certify it. */
+.aspect.sighted { background: none; border: 2px solid var(--signal-red); }
+.kind { color: var(--muted); font-size: 0.8rem; letter-spacing: 0.05em; }
+/* On phones the stills ARE the viewer: near-full-width frames that snap one
+   per swipe, momentum kept. Desktop keeps the thumbnail row + feature. */
+@media (max-width: 640px) {
+  .feature { display: none; }
+  .stills { scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; gap: 0.6rem; }
+  .still { scroll-snap-align: center; }
+  .still img { height: auto; width: 78vw; }
+}
 .scored { color: var(--muted); font-size: 0.75rem; margin: 0.5rem 0 0; }
 
 @media (max-width: 640px) {
