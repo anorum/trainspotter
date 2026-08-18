@@ -69,7 +69,7 @@ def test_the_default_bound_is_the_shipped_policy() -> None:
     web/src/lib/scrub.ts: the scrubbed board and the live board answer "did this
     instant have a witness" separately, so the two constants have to agree."""
     bound_minutes = DEFAULT_STALE_AFTER.total_seconds() / 60
-    assert bound_minutes == 12
+    assert bound_minutes == 15
 
 
 def test_staleness_never_outlives_a_session_close() -> None:

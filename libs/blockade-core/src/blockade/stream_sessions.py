@@ -1,9 +1,10 @@
 """The streaming counterpart of ``sessions.py``: one observation at a time.
 
 The batch oracle sees the whole history and looks backwards; a stream cannot.
-The gap rule - "a session ends when no BLOCKED arrives for ten minutes" - turns
-into a timer: every BLOCKED observation re-arms an alarm at ``captured_at +
-gap``, and if the alarm fires first, the session closes. That is the entire
+The gap rule - "a session ends when no BLOCKED arrives for one
+``SessionParams.gap``" - turns into a timer: every BLOCKED observation re-arms
+an alarm at ``captured_at + gap``, and if the alarm fires first, the session
+closes. That is the entire
 translation; everything else is bookkeeping.
 
 This class is pure Python with all state in one serializable dataclass, so the

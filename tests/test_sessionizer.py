@@ -95,7 +95,7 @@ def test_sweep_waits_out_the_drift_margin() -> None:
     already captured. One second past the margin, the silence is real."""
     processor = Processor()
     drive(processor, [obs(m, CrossingState.BLOCKED) for m in range(0, 9, 3)])
-    deadline = T0 + timedelta(minutes=6 + 10, milliseconds=1)
+    deadline = T0 + timedelta(minutes=6 + 15, milliseconds=1)
 
     assert processor.sweep(now=deadline + OUT_OF_ORDERNESS - timedelta(seconds=1)) == []
     swept = processor.sweep(now=deadline + OUT_OF_ORDERNESS + timedelta(seconds=1))

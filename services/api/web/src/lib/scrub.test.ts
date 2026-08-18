@@ -53,7 +53,7 @@ it("carries the shipped staleness bound", () => {
   // the two ceilings the bound answers to are written down; the scrubbed board
   // and the live board answer "did this instant have a witness" separately, so
   // moving one without the other makes them disagree.
-  expect(STALE_AFTER_MS).toBe(12 * 60_000);
+  expect(STALE_AFTER_MS).toBe(15 * 60_000);
 });
 
 describe("stateAt", () => {

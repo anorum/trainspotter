@@ -84,7 +84,7 @@ The accuracy loop - label sources by trust, training, the exam gate, shipping, b
 
 Turns observations into blockage sessions and rising-edge alerts.
 The decisions live in pure, heavily tested classes - `StreamingSessionizer` and `RisingEdgeAlerter` in the core library, coordinated by the service's Kafka-free `Processor` - and the rest of the service is their host.
-`StreamingSessionizer` applies the gap rule (a session ends after ten quiet minutes) one observation at a time and is diffed in tests against `sessions.derive_sessions`, the batch oracle that sees whole history - two independent implementations that must agree.
+`StreamingSessionizer` applies the gap rule (a session ends after fifteen quiet minutes - the bound tracks the camera's worst sampling interval, not train behavior) one observation at a time and is diffed in tests against `sessions.derive_sessions`, the batch oracle that sees whole history - two independent implementations that must agree.
 `RisingEdgeAlerter` fires once per blockage at its leading edge (two confirmations to fire, three clears to re-arm) into `crossing.alerts.v1`, which has no consumer yet - the notifier is the next feature.
 
 Recovery is replay: state is a pure function of the observations log, so every boot re-reads the topic and rebuilds open sessions with their original `started_at`.
@@ -97,8 +97,8 @@ Session closes fire on wall clock past the gap deadline plus a two-minute drift 
 One pod serving both the JSON API and the static site, plus the Postgres materializer.
 
 - **Board** (`/api/v1/status`, `/api/v1/events` SSE, frames): `LiveState` in `blockade-core/api/state.py` is a pure reducer rebuilt on every boot by groupless Kafka tailers; readiness gates traffic until the replay passes boot-time end offsets.
-  Consensus is blocked-biased (any fresh BLOCKED wins; a glare-blind camera's CLEAR cannot veto its partner's train) and anything older than twelve minutes is stale, so a dead detector can never leave BLOCKED frozen on screen.
-  Twelve is bounded on both sides: above two of the worst measured camera cadence, and no longer than the gap deadline plus drift margin a session close takes, so the board never claims a blockage the train sheet has already ended.
+  Consensus is blocked-biased (any fresh BLOCKED wins; a glare-blind camera's CLEAR cannot veto its partner's train) and anything older than fifteen minutes is stale, so a dead detector can never leave BLOCKED frozen on screen.
+  Fifteen is bounded on both sides: above the worst measured camera cadence (621s overnight) with margin, and no longer than the gap deadline plus drift margin a session close takes, so the board never claims a blockage the train sheet has already ended.
 - **Materializer**: two grouped consumers upsert observations and sessions into Postgres, committing offsets only after the transaction - at-least-once, absorbed by deterministic keys.
 - **History** (`/api/v1/timeline`, `/sessions`, `/analytics`): plain SQL in `db.py`; analytics buckets are corridor-local (America/Los_Angeles) via SQL `AT TIME ZONE`.
 - **Backfill** (`blockade-api backfill obs.jsonl`): loads a re-scored window; see the data contract below.

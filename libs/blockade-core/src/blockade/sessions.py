@@ -20,7 +20,7 @@ from datetime import timedelta
 
 from blockade.schemas import BlockageSession, CrossingState, ObservationRecord
 
-DEFAULT_GAP = timedelta(minutes=10)
+DEFAULT_GAP = timedelta(minutes=15)
 DEFAULT_MIN_DURATION = timedelta(minutes=5)
 
 
@@ -37,7 +37,12 @@ class SessionParams:
     the camera's own refresh reached 319 seconds, so a pause in *sampling* was
     indistinguishable from a pause in *blocking*.
 
-    Ten minutes clears the observed worst case with room to spare. Use
+    The camera's refresh drifts: ~60s on day one, 4-5 minutes by mid-August
+    daytime, and overnight 2026-08-18 it reached 621 seconds - which ate a
+    ten-minute gap's headroom and split one parked train (04:14-05:43) into
+    dropped single-frame fragments. Fifteen minutes clears the observed worst
+    case by ~45%, and gives the streaming host's wall-clock deadline room for
+    the CDN serving frames minutes after their capture stamp. Use
     `suggest_gap` to check it against real cadence rather than trusting it.
     """
 
