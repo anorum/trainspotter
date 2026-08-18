@@ -66,6 +66,17 @@ export function corridorHour(localTz: string | null | undefined): number {
   return Number(fmt.format(new Date())) % 24;
 }
 
+/** Hour (0-23) of a given instant on the corridor's clock. */
+export function corridorHourOf(iso: string, localTz: string | null | undefined): number {
+  const tz = localTz ?? DEFAULT_LOCAL_TZ;
+  let fmt = hourFormats.get(tz);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat(LOCALE, { timeZone: tz, hour: "numeric", hour12: false });
+    hourFormats.set(tz, fmt);
+  }
+  return Number(fmt.format(new Date(iso))) % 24;
+}
+
 /** Current day-of-week (0=Sunday) and hour on the corridor's clock. */
 export function corridorDayHour(localTz: string | null | undefined): {
   dow: number;
