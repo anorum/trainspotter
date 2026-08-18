@@ -304,7 +304,7 @@ async def sightings(pool: asyncpg.Pool, crossing_id: str, days: int) -> list[dic
              FROM sessions WHERE crossing_id = $1
              ORDER BY session_id, ingested_at DESC
            ) latest
-           WHERE started_at > now() - make_interval(days => $2)""",
+           WHERE ended_at IS NULL OR ended_at > now() - make_interval(days => $2)""",
         crossing_id,
         days,
     )

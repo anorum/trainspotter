@@ -24,6 +24,8 @@ interface Session {
   duration_seconds: number | null;
   is_open: boolean;
   detector_version: string;
+  frames?: number;
+  peak_confidence?: number;
 }
 
 // The sheet shows only the featured crossings, so on a solo sheet the chips
@@ -59,7 +61,12 @@ export default function SessionLog() {
         if (!r.ok) return [];
         const body = await r.json();
         return body.sightings.map(
-          (g: { started_at: string; ended_at: string }): Session => ({
+          (g: {
+            started_at: string;
+            ended_at: string;
+            frames: number;
+            peak_confidence: number;
+          }): Session => ({
             kind: "sighting",
             session_id: `sighting-${id}-${g.started_at}`,
             crossing_id: id,
@@ -69,6 +76,8 @@ export default function SessionLog() {
               (new Date(g.ended_at).getTime() - new Date(g.started_at).getTime()) / 1000,
             is_open: false,
             detector_version: "",
+            frames: g.frames,
+            peak_confidence: g.peak_confidence,
           }),
         );
       }),
@@ -222,7 +231,11 @@ export default function SessionLog() {
                             </figure>
                           ))}
                         </div>
-                        <p class="scored data">scored by {s.detector_version}</p>
+                        <p class="scored data">
+                          {s.kind === "sighting"
+                            ? `${s.frames === 1 ? "single frame" : `${s.frames} frames`} · peak confidence ${Math.round((s.peak_confidence ?? 0) * 100)}%`
+                            : `scored by ${s.detector_version}`}
+                        </p>
                       </>
                     )}
                   </div>
