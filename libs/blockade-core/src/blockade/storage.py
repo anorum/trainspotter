@@ -53,7 +53,25 @@ def frame_key(camera_id: str, captured_at: datetime, digest: str) -> str:
     ts = captured_at.astimezone(UTC)
     epoch_ms = int(ts.timestamp() * 1000)
     short = digest.removeprefix("sha256:")[:8]
-    return f"frames/{camera_id}/{ts:%Y}/{ts:%m}/{ts:%d}/{ts:%H}/{epoch_ms}-{short}.jpg"
+    return f"{frame_key_prefix(camera_id, ts)}/{epoch_ms}-{short}.jpg"
+
+
+def frame_key_prefix(camera_id: str, captured_at: datetime) -> str:
+    """Directory half of a frame's key. The one statement of the layout:
+    every reader that rebuilds a key from a cached file must compose it from
+    here, because the object_key is the join key across the whole accuracy
+    loop (gold labels, manifests, backfill rows) and a layout change that
+    readers restate by hand desynchronizes them silently."""
+    ts = captured_at.astimezone(UTC)
+    return f"frames/{camera_id}/{ts:%Y}/{ts:%m}/{ts:%d}/{ts:%H}"
+
+
+def frame_time(name: str | Path) -> datetime:
+    """Capture time parsed back out of a frame's filename (the inverse of the
+    epoch-ms half of ``frame_key``). Accepts a bare name or any path ending
+    in one."""
+    stem = str(name).rsplit("/", 1)[-1].split(".", 1)[0]
+    return datetime.fromtimestamp(int(stem.split("-")[0]) / 1000, tz=UTC)
 
 
 def manifest_key(camera_id: str, captured_at: datetime) -> str:
@@ -87,9 +105,7 @@ class S3ObjectStore:
         )
 
     def put(self, key: str, data: bytes, content_type: str = "image/jpeg") -> None:
-        self._client.put_object(
-            Bucket=self._bucket, Key=key, Body=data, ContentType=content_type
-        )
+        self._client.put_object(Bucket=self._bucket, Key=key, Body=data, ContentType=content_type)
 
     def get(self, key: str) -> bytes:
         return self._client.get_object(Bucket=self._bucket, Key=key)["Body"].read()

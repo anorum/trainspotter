@@ -18,6 +18,7 @@ import {
   worstHours,
 } from "../lib/analytics";
 import { FEATURED, crossingLabel } from "../lib/crossings";
+import { corridorDayHour, formatShortDate } from "../lib/time";
 
 // Postgres dow 0 = Sunday; the sheet reads Monday-first like a work week.
 const DOW_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -52,9 +53,7 @@ export default function Patterns() {
     );
   }
 
-  const nowLocal = new Date(
-    new Date().toLocaleString("en-US", { timeZone: data.local_tz ?? "America/Los_Angeles" }),
-  );
+  const nowLocal = corridorDayHour(data.local_tz);
 
   return (
     <div class="patterns">
@@ -69,10 +68,7 @@ export default function Patterns() {
                 <p class="data sumline">
                   blocked {percent(a.blocked_share)} of checks · ~
                   {Math.round(a.minutes_per_day)} min/day · {a.sessions_closed} blockages
-                  since {new Date(a.first_observed).toLocaleDateString([], {
-                    month: "short",
-                    day: "numeric",
-                  })}
+                  since {formatShortDate(a.first_observed)}
                   {worst && <> · worst {worst}</>}
                 </p>
               ) : (
@@ -101,7 +97,7 @@ export default function Patterns() {
   );
 }
 
-function Timetable({ a, now }: { a: CrossingAnalytics; now: Date }) {
+function Timetable({ a, now }: { a: CrossingAnalytics; now: { dow: number; hour: number } }) {
   return (
     <div class="timetable" role="img" aria-label="Hour-of-week blockage grid">
       <div class="corner" />
@@ -113,7 +109,7 @@ function Timetable({ a, now }: { a: CrossingAnalytics; now: Date }) {
           <div class="dow-label display">{DOW_LABEL[dow]}</div>
           {Array.from({ length: 24 }, (_, h) => {
             const slot = a.hour_of_week[dow * 24 + h];
-            const current = dow === now.getDay() && h === now.getHours();
+            const current = dow === now.dow && h === now.hour;
             return (
               <div
                 class={`cell ${current ? "current" : ""} ${slot.scoreable === 0 ? "nodata" : ""}`}

@@ -9,6 +9,8 @@
 
 import { useEffect, useState } from "preact/hooks";
 import { COLORS, FEATURED, SOLO, crossingLabel, featuredOnly, sessionsUrl } from "../lib/crossings";
+import type { TimelineObs } from "../lib/scrub";
+import { formatDayHeading, formatShortTime } from "../lib/time";
 
 interface Session {
   session_id: string;
@@ -18,13 +20,6 @@ interface Session {
   duration_seconds: number | null;
   is_open: boolean;
   detector_version: string;
-}
-
-interface TimelineObs {
-  captured_at: string;
-  state: string;
-  object_key: string | null;
-  camera_id: string;
 }
 
 // The sheet shows only the featured crossings, so on a solo sheet the chips
@@ -90,11 +85,7 @@ export default function SessionLog() {
   const longest = Math.max(1, ...shown.map((s) => s.duration_seconds ?? 0));
   const byDay: [string, Session[]][] = [];
   for (const s of shown) {
-    const day = new Date(s.started_at).toLocaleDateString(undefined, {
-      weekday: "long",
-      month: "long",
-      day: "numeric",
-    });
+    const day = formatDayHeading(s.started_at);
     const last = byDay[byDay.length - 1];
     if (last && last[0] === day) last[1].push(s);
     else byDay.push([day, [s]]);
@@ -141,10 +132,7 @@ export default function SessionLog() {
                   />
                   <span class="display name">{crossingLabel(s.crossing_id)}</span>
                   <span class="data start">
-                    {new Date(s.started_at).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
+{formatShortTime(s.started_at)}
                   </span>
                   <span class="bar-lane" aria-hidden="true">
                     <span
@@ -199,10 +187,7 @@ export default function SessionLog() {
                                 loading="lazy"
                               />
                               <figcaption class="data">
-                                {new Date(o.captured_at).toLocaleTimeString([], {
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })}
+{formatShortTime(o.captured_at)}
                               </figcaption>
                             </figure>
                           ))}

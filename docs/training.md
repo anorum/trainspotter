@@ -172,13 +172,18 @@ with open(f"var/training/manifest-{camera}.jsonl", "a") as fh:
     for frame in sorted(Path(f"data/blocks/{camera}").iterdir()):
         if frame.suffix.lower() not in {".jpg", ".jpeg", ".png"} or frame.name in held_out:
             continue
-        fh.write(json.dumps({
-            "object_key": f"blocks/{camera}/{frame.name}",
-            "camera_id": camera,
-            "label": "BLOCKED",
-            "source": "hand-blocks",
-            "split": "train",
-        }) + "\n")
+        fh.write(
+            json.dumps(
+                {
+                    "object_key": f"blocks/{camera}/{frame.name}",
+                    "camera_id": camera,
+                    "label": "BLOCKED",
+                    "source": "hand-blocks",
+                    "split": "train",
+                }
+            )
+            + "\n"
+        )
 ```
 
 Then pass `data/blocks` as a second entry in `frames_roots` below.
@@ -244,6 +249,7 @@ An untrained camera keeps its bare `reference/...` version.
 
 A better detector should improve the past too, not just the future.
 Re-score and load the improved history following the backfill task in [docs/architecture.md](architecture.md): `blockade-detect scan` over the window, then `blockade-api backfill`, dry run first.
+Scan every scoring camera on the crossing in the same pass - a single-camera scan is only right when the camera is its crossing's lone witness (true for `odot-678`; not for `odot-682`, whose crossing has two).
 The observations table is layered by `detector_version`, so this adds a newer layer rather than rewriting anything.
 
 ## 6. Disagreements

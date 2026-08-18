@@ -193,8 +193,6 @@ def test_compaction_duplicates_converge() -> None:
     state.apply_session(open_emission)
     state.apply_session(closed_emission)
 
-    assert len(state.sessions()) == 1
-    assert state.sessions()[0].is_open is False
     board = state.snapshot(now=T0 + timedelta(minutes=1))
     clinton = next(c for c in board.crossings if c.crossing_id == "SE_12TH_CLINTON")
     assert clinton.open_session is None

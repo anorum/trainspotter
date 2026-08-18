@@ -24,6 +24,7 @@ from pathlib import Path
 
 from blockade.config import Camera
 from blockade.schemas import CrossingState
+from blockade.storage import frame_time
 
 log = logging.getLogger(__name__)
 
@@ -45,11 +46,6 @@ class Judged:
     state: CrossingState
     confidence: float
     reason: str
-
-
-def frame_time(path: Path) -> datetime:
-    """Frames are named {epoch_ms}-{hash8}.jpg (older ones lack the hash)."""
-    return datetime.fromtimestamp(int(path.stem.split("-")[0]) / 1000, tz=UTC)
 
 
 def list_frames(camera_dir: Path) -> list[Path]:

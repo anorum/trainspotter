@@ -78,7 +78,7 @@ from blockade.alerts import Alert, RisingEdgeAlerter
 from blockade.bus import GroupProgress, RecordProducer, TopicTailer
 from blockade.config import Settings, get_settings
 from blockade.schemas import BlockageSession, ObservationRecord
-from blockade.stream_sessions import SessionizerState, StreamingSessionizer
+from blockade.stream_sessions import SessionizerState, StreamingSessionizer, to_ms
 from prometheus_client import Counter, Gauge, start_http_server
 
 log = logging.getLogger(__name__)
@@ -91,14 +91,15 @@ much older than the newest one seen may still be in flight. Same bound the
 Flink watermark used; a deadline is not judged passed until wall clock clears
 it by this much."""
 
+OUT_OF_ORDERNESS_MS = int(OUT_OF_ORDERNESS.total_seconds() * 1000)
+"""The same margin in the sweep's own unit - one spelling, both retirement paths."""
+
 ALERT_FRESHNESS = timedelta(minutes=10)
 """During boot replay, rising edges older than this stay silent. An alert for
 last night is noise; one for a train that arrived while the pod was restarting
 is exactly the point."""
 
-EMITTED = Counter(
-    "blockade_sessionizer_emitted_total", "Records produced, by kind", ["kind"]
-)
+EMITTED = Counter("blockade_sessionizer_emitted_total", "Records produced, by kind", ["kind"])
 OPEN_SESSIONS = Gauge("blockade_sessionizer_open_sessions", "Crossings with an open session")
 CAUGHT_UP = Gauge("blockade_sessionizer_caught_up", "1 once the boot replay has passed the head")
 
@@ -149,7 +150,7 @@ class Processor:
         if already_published:
             # State is rebuilt from this record; its consequences were announced
             # by whoever was running when it first arrived.
-            at = int(obs.captured_at.timestamp() * 1000)
+            at = to_ms(obs.captured_at)
             self.replayed_through_ms = max(self.replayed_through_ms or at, at)
             return [], None
         if alert is not None and not caught_up and now - alert.started_at > ALERT_FRESHNESS:
@@ -187,18 +188,15 @@ class Processor:
         Callers invoke this only at the head of the topic; the out-of-orderness
         margin here covers camera drift, and head-of-topic covers backlog lag.
         """
-        now_ms = int(now.timestamp() * 1000)
-        margin_ms = int(OUT_OF_ORDERNESS.total_seconds() * 1000)
+        now_ms = to_ms(now)
         emissions: list[BlockageSession] = []
         for crossing_id, deadline in list(self.deadlines.items()):
-            if now_ms < deadline + margin_ms:
+            if now_ms < deadline + OUT_OF_ORDERNESS_MS:
                 continue
             state, sessions = self.sessionizer.on_timer(self.states.get(crossing_id), deadline)
             self.states[crossing_id] = state
             del self.deadlines[crossing_id]
-            announced = self._already_announced(
-                deadline, crossing_id not in self._unpublished_runs
-            )
+            announced = self._already_announced(deadline, crossing_id not in self._unpublished_runs)
             if state is None:
                 self._unpublished_runs.discard(crossing_id)
             if announced:
@@ -231,7 +229,7 @@ class Processor:
         """
         if deadline_ms is None or not self._inherits_deadlines or not run_was_published:
             return False
-        fires_at_ms = deadline_ms + int(OUT_OF_ORDERNESS.total_seconds() * 1000)
+        fires_at_ms = deadline_ms + OUT_OF_ORDERNESS_MS
         return self.replayed_through_ms is not None and fires_at_ms <= self.replayed_through_ms
 
     @property

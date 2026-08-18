@@ -42,8 +42,9 @@ class StateFeed:
         self._subscribers: set[asyncio.Queue[None]] = set()
 
     async def start(self) -> None:
-        await self._sessions_tail.start()
-        await self._observations_tail.start()
+        # Independent brokers-and-offsets handshakes; startup pays the max,
+        # not the sum, and readiness gates on both regardless.
+        await asyncio.gather(self._sessions_tail.start(), self._observations_tail.start())
         self._tasks = [
             asyncio.create_task(self._run(self._sessions_tail, self._apply_session)),
             asyncio.create_task(self._run(self._observations_tail, self._apply_observation)),
