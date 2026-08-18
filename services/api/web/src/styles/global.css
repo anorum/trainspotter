@@ -24,6 +24,10 @@
 
 * { box-sizing: border-box; }
 
+/* The board's live/scrub transition changes page height, so the scrollbar can
+   arrive mid-drag; a reserved gutter keeps that from resizing the scrub track. */
+html { scrollbar-gutter: stable; }
+
 body {
   margin: 0;
   background: var(--ink);

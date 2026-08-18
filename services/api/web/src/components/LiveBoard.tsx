@@ -449,7 +449,7 @@ export default function LiveBoard() {
                 <figcaption>
                   {cam.name}
                   {cam.captured_at && (
-                    <span class="data"> · {new Date(cam.captured_at).toLocaleTimeString()}</span>
+                    <span class="data"> · {new Date(cam.captured_at).toLocaleTimeString("en-US")}</span>
                   )}
                 </figcaption>
               </figure>
@@ -521,7 +521,7 @@ function stateLine(c: Crossing): string {
     return `blocked ${duration(c.open_session.started_at)}`;
   }
   if (c.since) {
-    return `${c.state.toLowerCase()} since ${new Date(c.since).toLocaleTimeString()}`;
+    return `${c.state.toLowerCase()} since ${new Date(c.since).toLocaleTimeString("en-US")}`;
   }
   return c.state.toLowerCase();
 }
@@ -548,7 +548,9 @@ const css = `
    Each reserves at least its widest text: 23ch is the longest en-US
    toLocaleString datetime ("10/30/2026, 12:38:58 AM"), and the timestamp
    pins that locale rather than the browser's so the reserve is exact
-   everywhere (.when is tabular, so ch is the rendered width). */
+   everywhere. 23ch holds 23 characters only because .data is a monospace
+   family: every glyph there carries the '0' advance that ch measures, so
+   the reserve is void if --data stops being fixed-pitch. */
 .scrub > button { min-width: 7.5rem; }
 .scrub button.live { color: var(--signal-green); }
 .scrub .when { color: var(--muted); min-width: 23ch; text-align: right; font-size: 0.85rem; }
