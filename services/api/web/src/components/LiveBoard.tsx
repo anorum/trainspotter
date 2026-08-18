@@ -435,8 +435,9 @@ export default function LiveBoard() {
             )}
           </header>
           {/* The ticker runs only while the state itself is BLOCKED. An open
-              session can outlive the blockage by design (it closes after ten
-              quiet minutes plus watermark lag), and a red "blocked for 28m"
+              session can outlive the blockage by design (it closes one session
+              gap plus watermark lag after the last BLOCKED reading; the gap
+              lives in blockade/sessions.py), and a red "blocked for 28m"
               beside a green CLEAR is nonsense presentation of sensible data.
               No scrub guard here: the board memo already nulls open_session
               and latest_observation while scrubbing. */}

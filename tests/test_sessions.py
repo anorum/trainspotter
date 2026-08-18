@@ -43,6 +43,22 @@ def test_a_sampling_gap_does_not_split_a_session():
     assert sessions[0].duration_seconds == 55 * 60
 
 
+def test_an_overnight_cadence_drift_does_not_shred_a_parked_train():
+    """Regression for 2026-08-18: ODOT's overnight refresh drifted to 621s,
+    straddling the then-10-minute gap, so a continuously blocked crossing
+    (04:14-05:43) fragmented into single-frame runs the two-observation
+    minimum dropped - the blockage vanished from sessions entirely."""
+    rows = [obs(m * 621 / 60) for m in range(9)]  # one BLOCKED frame every 621s
+
+    sessions = derive_sessions(rows)
+
+    assert len(sessions) == 1, "a drifted sampling cadence is not a cleared crossing"
+    assert sessions[0].duration_seconds == 8 * 621
+
+    old_policy = derive_sessions(rows, SessionParams(gap=timedelta(minutes=10)))
+    assert old_policy == [], "the incident: every fragment of a real blockage dropped"
+
+
 def test_genuinely_separate_blockages_stay_separate():
     early = [obs(m) for m in range(0, 20, 2)]
     late = [obs(m) for m in range(60, 80, 2)]
