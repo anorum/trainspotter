@@ -101,7 +101,7 @@ One pod serving both the JSON API and the static site, plus the Postgres materia
 
 - **Board** (`/api/v1/status`, `/api/v1/events` SSE, frames): `LiveState` in `blockade-core/api/state.py` is a pure reducer rebuilt on every boot by groupless Kafka tailers; readiness gates traffic until the replay passes boot-time end offsets.
   Consensus is blocked-biased (any fresh BLOCKED wins; a glare-blind camera's CLEAR cannot veto its partner's train) and anything older than fifteen minutes is stale, so a dead detector can never leave BLOCKED frozen on screen.
-  Fifteen is bounded on both sides: above the worst measured camera cadence (621s overnight) with margin, and no longer than the gap deadline plus drift margin a session close takes, so the board never claims a blockage the train sheet has already ended.
+  Fifteen is bounded on both sides: above the worst measured camera cadence (692s overnight, ~11.5 minutes, from the Aug 12-18 measurement above) with ~3.5 minutes of margin, and no longer than the gap deadline plus drift margin a session close takes, so the board never claims a blockage the train sheet has already ended.
 - **Materializer**: two grouped consumers upsert observations and sessions into Postgres, committing offsets only after the transaction - at-least-once, absorbed by deterministic keys.
 - **History** (`/api/v1/timeline`, `/sessions`, `/analytics`): plain SQL in `db.py`; analytics buckets are corridor-local (America/Los_Angeles) via SQL `AT TIME ZONE`.
 - **Backfill** (`blockade-api backfill obs.jsonl`): loads a re-scored window; see the data contract below.
