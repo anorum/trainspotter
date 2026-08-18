@@ -24,7 +24,12 @@ from detector.spotcheck import (
 )
 
 T0 = datetime(2026, 8, 11, 5, 0, tzinfo=UTC)
-CAMERA = Camera(camera_id="odot-681", name="t", crossing_id="SE_8TH_DIVISION", image_url="http://example.test/x.jpg")
+CAMERA = Camera(
+    camera_id="odot-681",
+    name="t",
+    crossing_id="SE_8TH_DIVISION",
+    image_url="http://example.test/x.jpg",
+)
 
 
 def timeline(tmp_path: Path, n: int = 30, cadence_minutes: int = 2) -> list[Path]:
@@ -62,9 +67,7 @@ def scripted(blocked: set[int], unknown: set[int] = frozenset()):
 
 
 def states(verdicts: list[Judged]) -> dict[int, str]:
-    return {
-        round((v.captured_at - T0).total_seconds() / 120): v.state.value for v in verdicts
-    }
+    return {round((v.captured_at - T0).total_seconds() / 120): v.state.value for v in verdicts}
 
 
 def test_edge_walk_recovers_the_full_blockage(tmp_path: Path) -> None:
@@ -123,8 +126,7 @@ def test_append_labels_is_idempotent(tmp_path: Path) -> None:
     judge = scripted(blocked=set())
     verdicts = sweep_camera(CAMERA, frames, judge, stride_minutes=1)
     records = [
-        label_record(CAMERA, v, f"frames/odot-681/x/{v.path.name}", "haiku/test")
-        for v in verdicts
+        label_record(CAMERA, v, f"frames/odot-681/x/{v.path.name}", "haiku/test") for v in verdicts
     ]
     labels = tmp_path / "labels.jsonl"
 

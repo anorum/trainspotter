@@ -80,7 +80,9 @@ def test_api_error_becomes_unknown_not_an_exception(settings, camera):
         settings,
         raises=anthropic.APIStatusError(
             "boom",
-            response=httpx.Response(500, request=httpx.Request("POST", "https://api.anthropic.com")),
+            response=httpx.Response(
+                500, request=httpx.Request("POST", "https://api.anthropic.com")
+            ),
             body=None,
         ),
     )

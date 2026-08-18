@@ -32,20 +32,26 @@ def test_frame_lookup_is_scoped_to_manifest_camera(tmp_path):
 
     manifest = tmp_path / "manifest.jsonl"
     manifest.write_text(
-        json.dumps({
-            "object_key": f"frames/odot-A/2026/03/01/12/{name}",
-            "camera_id": "odot-A",
-            "label": "BLOCKED",
-            "source": "session-core",
-            "split": "train",
-        }) + "\n"
-        + json.dumps({
-            "object_key": f"frames/odot-B/2026/03/01/12/{name}",
-            "camera_id": "odot-B",
-            "label": "CLEAR",
-            "source": "quiet-period",
-            "split": "train",
-        }) + "\n"
+        json.dumps(
+            {
+                "object_key": f"frames/odot-A/2026/03/01/12/{name}",
+                "camera_id": "odot-A",
+                "label": "BLOCKED",
+                "source": "session-core",
+                "split": "train",
+            }
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "object_key": f"frames/odot-B/2026/03/01/12/{name}",
+                "camera_id": "odot-B",
+                "label": "CLEAR",
+                "source": "quiet-period",
+                "split": "train",
+            }
+        )
+        + "\n"
     )
 
     items = load_examples(manifest, [root], "train")
@@ -67,20 +73,26 @@ def test_load_examples_filters_by_split(tmp_path):
 
     manifest = tmp_path / "manifest.jsonl"
     manifest.write_text(
-        json.dumps({
-            "object_key": "frames/odot-A/2026/03/01/12/1000-x.jpg",
-            "camera_id": "odot-A",
-            "label": "CLEAR",
-            "source": "quiet-period",
-            "split": "train",
-        }) + "\n"
-        + json.dumps({
-            "object_key": "frames/odot-A/2026/03/01/12/2000-x.jpg",
-            "camera_id": "odot-A",
-            "label": "BLOCKED",
-            "source": "session-core",
-            "split": "val",
-        }) + "\n"
+        json.dumps(
+            {
+                "object_key": "frames/odot-A/2026/03/01/12/1000-x.jpg",
+                "camera_id": "odot-A",
+                "label": "CLEAR",
+                "source": "quiet-period",
+                "split": "train",
+            }
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "object_key": "frames/odot-A/2026/03/01/12/2000-x.jpg",
+                "camera_id": "odot-A",
+                "label": "BLOCKED",
+                "source": "session-core",
+                "split": "val",
+            }
+        )
+        + "\n"
     )
 
     train_items = load_examples(manifest, [root], "train")

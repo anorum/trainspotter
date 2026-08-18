@@ -36,17 +36,13 @@ def test_different_frames_sharing_a_timestamp_get_different_keys():
     two distinct frames can share a timestamp. If they shared a key the second
     would overwrite the first and the manifest would reference bytes it never
     recorded -- silent corruption of a corpus that cannot be recaptured."""
-    assert frame_key("odot-1234", CAPTURED, DIGEST_A) != frame_key(
-        "odot-1234", CAPTURED, DIGEST_B
-    )
+    assert frame_key("odot-1234", CAPTURED, DIGEST_A) != frame_key("odot-1234", CAPTURED, DIGEST_B)
 
 
 def test_frame_key_is_idempotent_for_identical_content():
     """Replaying the same frame must land on the same key rather than duplicating
     the object."""
-    assert frame_key("odot-1234", CAPTURED, DIGEST_A) == frame_key(
-        "odot-1234", CAPTURED, DIGEST_A
-    )
+    assert frame_key("odot-1234", CAPTURED, DIGEST_A) == frame_key("odot-1234", CAPTURED, DIGEST_A)
 
 
 def test_manifest_key_layout():
