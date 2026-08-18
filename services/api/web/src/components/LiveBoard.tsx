@@ -99,6 +99,10 @@ export default function LiveBoard() {
   // event would start another round of timeline fetches - one per featured
   // crossing - against an already sick store.
   const retryAfter = useRef(0);
+  // The mount effect's timer and SSE listener close over the first render,
+  // so they read the live window through a ref the button handler keeps in
+  // step with setWindowHours.
+  const windowHoursRef = useRef(24);
   // The panel's habit line loads the first time any crossing is selected.
   useEffect(() => {
     if (selected && !analytics) fetchAnalytics().then(setAnalytics, () => {});
@@ -125,7 +129,15 @@ export default function LiveBoard() {
       void refreshTimelines();
     });
     const timer = setInterval(() => setTick((t) => t + 1), 1000);
-    const refresh = setInterval(() => void refreshTimelines(), REFRESH_MS);
+    // A tab whose initial load failed has nothing applied to refresh, so
+    // the timer retries the full load instead - through the normal
+    // retryAfter cooldown - and an untouched tab heals. Only the timer:
+    // retrying on every status event would hammer a store that is already
+    // sick.
+    const refresh = setInterval(() => {
+      if (appliedHours.current === 0) void loadTimelines(windowHoursRef.current);
+      else void refreshTimelines();
+    }, REFRESH_MS);
     return () => {
       source.close();
       clearInterval(timer);
@@ -156,7 +168,10 @@ export default function LiveBoard() {
       if (generation === loadGeneration.current) {
         setTimelines(Object.fromEntries(entries));
         retryAfter.current = 0;
-        setTimelineFailed(false);
+        // The note may be up because a wider window's load failed; this
+        // refresh proved nothing about that window, so only a refresh that
+        // covers the one on screen may take the note down.
+        if (hours >= windowHoursRef.current) setTimelineFailed(false);
       }
     } catch {
       // The data on screen still covers the window, so no failure note;
@@ -335,6 +350,7 @@ export default function LiveBoard() {
               class={windowHours === hours ? "win on" : "win"}
               aria-pressed={windowHours === hours}
               onClick={async () => {
+                windowHoursRef.current = hours;
                 setWindowHours(hours);
                 if (scrubbing) {
                   const newStart = Date.now() - hours * 3600 * 1000;
