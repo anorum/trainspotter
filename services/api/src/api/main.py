@@ -10,7 +10,7 @@ import typer
 import uvicorn
 from blockade.config import get_settings
 
-app = typer.Typer(help="The Blockade serving layer.", no_args_is_help=True)
+app = typer.Typer(help="The PDX Train serving layer.", no_args_is_help=True)
 
 
 @app.callback()
