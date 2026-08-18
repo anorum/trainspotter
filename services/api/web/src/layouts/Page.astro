@@ -43,6 +43,16 @@ const { title, description, active } = Astro.props;
         Detection from public ODOT/PBOT traffic cameras on the Brooklyn
         Subdivision. States are automated estimates, not official information.
       </p>
+      <p>
+        The cameras publish on ODOT's schedule - a new frame every ~3 minutes,
+        already ~2 minutes old when served - so the board runs a few minutes
+        behind the street.
+      </p>
+      <p class="credits">
+        <a href="https://alexnorum.com" rel="author">alexnorum.com</a>
+        {" · "}
+        <a href="https://github.com/anorum/trainspotter" rel="external">GitHub</a>
+      </p>
     </footer>
 
     <style>
@@ -66,6 +76,15 @@ const { title, description, active } = Astro.props;
       }
       footer p:last-child {
         margin-bottom: 0;
+      }
+      footer a {
+        color: var(--muted);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+      footer a:hover,
+      footer a:focus-visible {
+        color: var(--crossbuck);
       }
     </style>
   </body>

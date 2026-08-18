@@ -61,6 +61,8 @@ Polls each rostered camera every 30s with conditional GETs, dedupes by content h
 The manifest is the append-only source of truth and doubles as the outbox: a sibling task tails it and publishes to `crossing.frames.v1`, advancing a per-camera position file only after broker acks.
 A Kafka outage therefore costs publish latency, never a frame; deleting a position file replays the corpus from local manifests.
 Runs with `strategy: Recreate` (two pollers would double ODOT's request rate) and no CPU limit (throttling would skew `captured_at`).
+Latency is ODOT's, not ours: polling is every 30 seconds, but the cameras publish on their own schedule - measured over Aug 12-18 2026 at 12th & Clinton, a new frame arrives every 3.2 minutes (median; p90 ~6, worst 11.5), and is already ~2 minutes old (median; p90 ~3) when TripCheck first serves it.
+What a viewer sees therefore runs a few minutes behind the street, and a state change can take five to nine minutes to fully surface; the session gap and staleness bounds (below) are sized off these numbers.
 CLIs: `blockade-capture` (run/once), `blockade-inventory` (fetch/list/resolve - regenerates `config/cameras.yaml` from the ODOT inventory), `blockade-sync` (S3 repair).
 
 ### detector (`services/detector` + `libs/blockade-core/src/blockade/detect/`, deploy/detector)
