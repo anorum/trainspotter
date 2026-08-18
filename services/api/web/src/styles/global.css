@@ -66,3 +66,16 @@ a { color: var(--crossbuck); }
 .pulse { animation: pulse 2.4s ease-in-out infinite; }
 @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.45 } }
 .loading, .empty { color: var(--muted); }
+
+/* Touch: the controls a thumb actually hits grow to hit-target size. The
+   scrub row's Live/window buttons and the sheet's rows are the ones a phone
+   uses constantly; 40px is the floor that stops mis-taps. */
+@media (pointer: coarse) {
+  .scrub button,
+  .win {
+    min-height: 40px;
+  }
+  .chip {
+    min-height: 40px;
+  }
+}

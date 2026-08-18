@@ -161,6 +161,11 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         """Session history, latest ingest wins per session_id."""
         return {"sessions": await db.session_list(history_pool(), crossing_id, limit)}
 
+    @app.get("/api/v1/sightings")
+    async def sightings(crossing_id: str, days: int = 14) -> dict:
+        """Blocked runs too brief for the record book - shown, not certified."""
+        return {"sightings": await db.sightings(history_pool(), crossing_id, days)}
+
     @app.get("/api/v1/analytics")
     async def analytics() -> dict:
         """Temporal patterns per crossing. The `available` flag lets the UI

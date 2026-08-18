@@ -41,6 +41,7 @@ const { active } = Astro.props;
     gap: 1.25rem;
   }
   nav a {
+    white-space: nowrap;
     font-family: var(--display);
     font-weight: 600;
     letter-spacing: 0.06em;
@@ -54,8 +55,19 @@ const { active } = Astro.props;
     border-bottom: 2px solid var(--signal-amber);
   }
   @media (max-width: 640px) {
+    .masthead {
+      flex-wrap: wrap;
+      row-gap: 0.35rem;
+      padding-bottom: 0.65rem;
+    }
     .tagline {
       display: none;
+    }
+    /* The nav takes its own full line under the wordmark instead of
+       squeezing beside it and wrapping a link mid-name. */
+    nav {
+      flex-basis: 100%;
+      gap: 1.5rem;
     }
   }
 </style>

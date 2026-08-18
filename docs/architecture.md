@@ -49,7 +49,7 @@ History is never replayed through the live services - that would corrupt their s
 
 **The live board reads memory; history surfaces read Postgres.**
 "Is a train blocking right now" is answered from an in-memory state the API rebuilds by replaying Kafka on every boot - it works even with the database down.
-"What happened last Tuesday" is answered only from Postgres; without it `/timeline` and `/sessions` return 503 rather than a half-true answer from a memory buffer.
+"What happened last Tuesday" is answered only from Postgres; without it `/timeline`, `/sessions`, and `/sightings` return 503 rather than a half-true answer from a memory buffer.
 `/analytics` is the one deliberate exception: it answers 200 with `{"available": false, "crossings": {}}`, because the UI needs to hide the stats surface entirely rather than render an error in place of it.
 
 ## Components
@@ -103,7 +103,8 @@ One pod serving both the JSON API and the static site, plus the Postgres materia
   Consensus is blocked-biased (any fresh BLOCKED wins; a glare-blind camera's CLEAR cannot veto its partner's train) and anything older than fifteen minutes is stale, so a dead detector can never leave BLOCKED frozen on screen.
   Fifteen is bounded on both sides: above the worst measured camera cadence (692s overnight, ~11.5 minutes, from the Aug 12-18 measurement above) with ~3.5 minutes of margin, and no longer than the gap deadline plus drift margin a session close takes, so the board never claims a blockage the train sheet has already ended.
 - **Materializer**: two grouped consumers upsert observations and sessions into Postgres, committing offsets only after the transaction - at-least-once, absorbed by deterministic keys.
-- **History** (`/api/v1/timeline`, `/sessions`, `/analytics`): plain SQL in `db.py`; analytics buckets are corridor-local (America/Los_Angeles) via SQL `AT TIME ZONE`.
+- **History** (`/api/v1/timeline`, `/sessions`, `/sightings`, `/analytics`): plain SQL in `db.py`; analytics buckets are corridor-local (America/Los_Angeles) via SQL `AT TIME ZONE`.
+  `/sightings` derives the blocked runs too brief for the record book - the board's supersession rule replayed server-side over resolved judgements, minus every interval a certified session covers.
 - **Backfill** (`blockade-api backfill obs.jsonl`): loads a re-scored window; see the data contract below.
 - **Frames** (`/api/v1/frames/...`): S3 reads behind a content-addressed disk LRU, with a path-pattern guard.
 - **Web** (`web/`): static Astro build baked into the image; three pages, one Preact island each - the board (Leaflet map with a flasher per featured crossing, SSE, time scrubber), the train sheet, and patterns.
@@ -113,6 +114,7 @@ One pod serving both the JSON API and the static site, plus the Postgres materia
   The scrubber is the one place the consensus rule above exists twice: `LiveState` only ever holds the present, so answering "what did the board show at 05:45" happens client-side over `/timeline` rows, in `web/src/lib/scrub.ts`.
   The blockage lanes under the slider are that same rule swept over the whole window (`blockedSpans` in the same file), not the session projection - at ODOT's cadence a one-frame train is routinely real but too brief to become a session, and the lanes must never disagree with what scrubbing to the same instant shows.
   That copy is pinned against the reducer's own scenarios in `scrub.test.ts`, so the two cannot drift silently.
+  The train sheet gives those same too-brief runs a tier of their own: it interleaves `/sightings` rows among the certified sessions as hollow signals with the usual filmstrip, so a train the lanes show is no longer missing from the sheet.
   `npm run check` typechecks under Astro strict and `npm test` runs those scenarios plus the other `web/src/lib` suites - among them `crossings.test.ts`, which pins the FEATURED presentation contract, and `analytics.test.ts`, which pins the outlook line; CI runs both for web changes.
 
 ### Postgres (deploy/postgres)
