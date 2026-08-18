@@ -44,7 +44,7 @@ export const FEATURED: CrossingId[] = ["SE_12TH_CLINTON"];
 export const SOLO = FEATURED.length === 1;
 
 /** The sessions endpoint, scoped to what the site presents. Two surfaces ask
- *  for sessions - the board's lanes and the train sheet - and the endpoint
+ *  for sessions - the train sheet and the patterns page - and the endpoint
  *  takes one crossing_id, so a solo site scopes the query and a wider one gets
  *  the corridor back and owes `featuredOnly` on the reply. Keeping the rule
  *  here means both surfaces change together when FEATURED does. */

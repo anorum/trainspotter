@@ -68,6 +68,11 @@ const WINDOWS: [number, string][] = [
 /** How long a failed history load silences the scrubber's retries. */
 const RETRY_COOLDOWN_MS = 5_000;
 
+/** How often the lanes re-pull their window unprompted. Half of ODOT's
+ *  slowest camera cadence (3-10 minutes), so a span's end is never more
+ *  than one cadence late. */
+const REFRESH_MS = 5 * 60_000;
+
 export default function LiveBoard() {
   const [status, setStatus] = useState<Status | null>(null);
   // A solo board is detail-first: its one crossing starts open.
@@ -109,13 +114,59 @@ export default function LiveBoard() {
     // findable by eye are what make the history worth a drag at all.
     void loadTimelines(24);
     const source = new EventSource("/api/v1/events");
-    source.addEventListener("status", (e) => setStatus(JSON.parse((e as MessageEvent).data)));
+    // Two triggers keep the loaded window live rather than a mount-time
+    // snapshot: a status event means consensus moved, so new observations
+    // exist to fetch; the timer catches span-ending CLEAR frames that
+    // change no crossing's state and so push no event - without it an
+    // ongoing span would freeze at blockedSpans' freshness cap while the
+    // SSE-fed board stayed red.
+    source.addEventListener("status", (e) => {
+      setStatus(JSON.parse((e as MessageEvent).data));
+      void refreshTimelines();
+    });
     const timer = setInterval(() => setTick((t) => t + 1), 1000);
+    const refresh = setInterval(() => void refreshTimelines(), REFRESH_MS);
     return () => {
       source.close();
       clearInterval(timer);
+      clearInterval(refresh);
     };
   }, []);
+
+  const fetchWindow = (hours: number) =>
+    Promise.all(
+      FEATURED.map(async (id) => {
+        const r = await fetch(`/api/v1/timeline?crossing_id=${id}&hours=${hours}`);
+        if (!r.ok) throw new Error(`timeline ${r.status}`);
+        return [id, withTimes((await r.json()).observations)] as const;
+      }),
+    );
+
+  // Re-pull the window already applied, which loadTimelines' guard would
+  // call a no-op. Skips while a wider load is in flight - that load will
+  // land fresher data itself, and superseding it here would strand
+  // loadedHours above what the store ever delivered.
+  const refreshTimelines = async () => {
+    const hours = appliedHours.current;
+    if (hours === 0 || hours !== loadedHours.current) return;
+    if (Date.now() < retryAfter.current) return;
+    const generation = ++loadGeneration.current;
+    try {
+      const entries = await fetchWindow(hours);
+      if (generation === loadGeneration.current) {
+        setTimelines(Object.fromEntries(entries));
+        retryAfter.current = 0;
+        setTimelineFailed(false);
+      }
+    } catch {
+      // The data on screen still covers the window, so no failure note;
+      // the cooldown keeps a sick store from being re-polled by every
+      // status event.
+      if (generation === loadGeneration.current) {
+        retryAfter.current = Date.now() + RETRY_COOLDOWN_MS;
+      }
+    }
+  };
 
   // Scrub data loads lazily the first time the slider moves off "now", and
   // reloads when the window widens past what has been fetched.
@@ -135,13 +186,7 @@ export default function LiveBoard() {
     loadedHours.current = hours;
     const generation = ++loadGeneration.current;
     try {
-      const entries = await Promise.all(
-        FEATURED.map(async (id) => {
-          const r = await fetch(`/api/v1/timeline?crossing_id=${id}&hours=${hours}`);
-          if (!r.ok) throw new Error(`timeline ${r.status}`);
-          return [id, withTimes((await r.json()).observations)] as const;
-        }),
-      );
+      const entries = await fetchWindow(hours);
       if (generation === loadGeneration.current) {
         setTimelines(Object.fromEntries(entries));
         appliedHours.current = hours;
