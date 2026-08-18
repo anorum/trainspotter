@@ -9,17 +9,13 @@
 
 import { describe, expect, it } from "vitest";
 import {
-  closeUpOn,
   type CrossingId,
   crossingLabel,
   FEATURED,
   featuredLabels,
   featuredOnly,
-  FULL_CORRIDOR_VIEWBOX,
   GEOMETRY,
-  mapEmbedUrl,
   mapPageUrl,
-  RAIL,
   sessionsUrl,
   SOLO,
 } from "./crossings";
@@ -65,13 +61,13 @@ describe("sessionsUrl", () => {
 });
 
 describe("crossingLabel", () => {
-  it("names a crossing the schematic places", () => {
+  it("names a crossing the map places", () => {
     expect(crossingLabel("SE_12TH_CLINTON")).toBe("12th & Clinton");
   });
 
   it("falls back to the id for a crossing it cannot place", () => {
     // The history endpoints answer about the whole corridor, so an id with no
-    // schematic entry still has to render as something.
+    // map entry still has to render as something.
     expect(crossingLabel(WITHHELD)).toBe(WITHHELD);
   });
 
@@ -106,19 +102,8 @@ describe("featuredLabels", () => {
   });
 });
 
-describe("the locate card's map", () => {
-  it("embeds a pannable map centred on the crossing itself", () => {
-    const g = GEOMETRY.SE_12TH_CLINTON;
-    const url = new URL(mapEmbedUrl(g));
-
-    expect(url.hostname).toBe("maps.google.com");
-    expect(url.searchParams.get("q")).toBe(`${g.lat},${g.lon}`);
-    // output=embed is what makes the keyless URL render as a map instead of
-    // Google refusing to be framed.
-    expect(url.searchParams.get("output")).toBe("embed");
-  });
-
-  it("links the expand target to the same point the embed shows", () => {
+describe("the detail header's map link", () => {
+  it("links the expand target to the crossing's own point", () => {
     for (const g of Object.values(GEOMETRY)) {
       const url = new URL(mapPageUrl(g));
       expect(url.hostname).toBe("www.google.com");
@@ -135,51 +120,6 @@ describe("the locate card's map", () => {
       expect(g.lat).toBeLessThan(45.52);
       expect(g.lon).toBeGreaterThan(-122.67);
       expect(g.lon).toBeLessThan(-122.64);
-    }
-  });
-});
-
-/** How the drawn track meets a viewBox. The rail is one monotonic NW-SE
- *  diagonal, so it runs clean through a frame when the line's path crosses the
- *  frame's whole height *and* neither drawn end stops inside it - an end inside
- *  the frame is a stroke that halts in open space. */
-function railThrough(viewBox: string) {
-  const [minX, minY, width, height] = viewBox.split(" ").map(Number);
-  const [maxX, maxY] = [minX + width, minY + height];
-  const slope = (RAIL.y2 - RAIL.y1) / (RAIL.x2 - RAIL.x1);
-  const yAt = (x: number) => RAIL.y1 + (x - RAIL.x1) * slope;
-  const inFrame = (x: number, y: number) => x >= minX && x <= maxX && y >= minY && y <= maxY;
-  return {
-    crossesFrame: yAt(minX) < minY && yAt(maxX) > maxY,
-    endsOutside: !inFrame(RAIL.x1, RAIL.y1) && !inFrame(RAIL.x2, RAIL.y2),
-  };
-}
-
-describe("the drawn rail line", () => {
-  it("runs through every frame the board can show", () => {
-    // A close-up centred on an end crossing used to catch the line's own
-    // endpoint, so the track stopped dead inside the frame with blank space
-    // beyond it. Featuring a crossing is meant to be one id, and that includes
-    // the one at either end of the corridor.
-    const frames = [
-      FULL_CORRIDOR_VIEWBOX,
-      ...Object.values(GEOMETRY).map((g) => closeUpOn(g)),
-    ];
-
-    for (const frame of frames) {
-      expect(railThrough(frame)).toEqual({ crossesFrame: true, endsOutside: true });
-    }
-  });
-
-  it("still passes under every signal head it is drawn behind", () => {
-    // The run-out only lengthens the line. If it ever rotated or shifted it,
-    // the signal heads would float off the track. The widest stroke the rail is
-    // drawn with is 10 units, so staying inside half of that keeps each head's
-    // centre on the rail.
-    const slope = (RAIL.y2 - RAIL.y1) / (RAIL.x2 - RAIL.x1);
-    for (const g of Object.values(GEOMETRY)) {
-      const drift = Math.abs(RAIL.y1 + (g.x - RAIL.x1) * slope - g.y);
-      expect(drift).toBeLessThan(5);
     }
   });
 });

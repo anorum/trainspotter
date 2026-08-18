@@ -1,40 +1,21 @@
-/** The corridor's fixed facts, shared by every island.
- *
- * Schematic positions: the rail line runs NW to SE, true to the corridor.
- */
+/** The corridor's fixed facts, shared by every island. */
 
 export type State = "CLEAR" | "BLOCKED" | "UNKNOWN";
 
 export interface CrossingGeometry {
-  x: number;
-  y: number;
   label: string;
-  street: string;
-  /** Real-world position, from the roster's camera coordinates - the map
-   *  card and the "open in Google Maps" link both derive from it. */
+  /** Real-world position, from the roster's camera coordinates - the board's
+   *  map places each flasher with these, and the Google Maps link derives
+   *  from them too. */
   lat: number;
   lon: number;
 }
 
 export const GEOMETRY = {
-  SE_8TH_DIVISION: {
-    x: 280, y: 130, label: "8th & Division", street: "SE DIVISION ST",
-    lat: 45.50573, lon: -122.65745,
-  },
-  SE_12TH_CLINTON: {
-    x: 480, y: 270, label: "12th & Clinton", street: "SE CLINTON ST",
-    lat: 45.5036, lon: -122.65381,
-  },
-  SE_11TH_MILWAUKIE: {
-    x: 680, y: 410, label: "11th & Milwaukie", street: "SE MILWAUKIE AVE",
-    lat: 45.50329, lon: -122.65457,
-  },
+  SE_8TH_DIVISION: { label: "8th & Division", lat: 45.50573, lon: -122.65745 },
+  SE_12TH_CLINTON: { label: "12th & Clinton", lat: 45.5036, lon: -122.65381 },
+  SE_11TH_MILWAUKIE: { label: "11th & Milwaukie", lat: 45.50329, lon: -122.65457 },
 } satisfies Record<string, CrossingGeometry>;
-
-/** The pannable in-place map for a crossing's card - keyless Google embed. */
-export function mapEmbedUrl(g: CrossingGeometry): string {
-  return `https://maps.google.com/maps?q=${g.lat},${g.lon}&z=16&output=embed`;
-}
 
 /** The full Google Maps page for the crossing, for the expand link. */
 export function mapPageUrl(g: CrossingGeometry): string {
@@ -44,49 +25,16 @@ export function mapPageUrl(g: CrossingGeometry): string {
 /** The rail line's own name, the way a dispatcher's chart would carry it. */
 export const RAIL_NAME = "UPRR BROOKLYN SUB";
 
-/** A crossing the schematic can place. The board draws signal heads, cross
- *  streets and a close-up viewBox straight off these coordinates, so an id with
- *  no entry here has nowhere to be drawn. */
+/** A crossing the board's map can place. Flashers, labels, and the Google
+ *  Maps link all come straight off these coordinates, so an id with no entry
+ *  here has nowhere to be drawn. */
 export type CrossingId = keyof typeof GEOMETRY;
-
-/** The whole NW-SE diagonal, which is what the schematic is drawn in. */
-export const FULL_CORRIDOR_VIEWBOX = "0 0 960 520";
-
-/** The corridor's own extent: the diagonal the crossings above sit on. */
-const CORRIDOR = { x1: 120, y1: 20, x2: 840, y2: 520 };
-
-/** How far past each end of the corridor the track keeps going, as a share of
- *  the corridor's own span. A window on one crossing has to show line entering
- *  and leaving frame; drawn only to the corridor's extent, a close-up on either
- *  end crossing catches the line's own endpoint and the track stops dead inside
- *  the frame with blank space beyond it. Every viewBox crops the run-out. */
-const RUN_OUT = 0.45;
-
-const [OVERRUN_X, OVERRUN_Y] = [
-  (CORRIDOR.x2 - CORRIDOR.x1) * RUN_OUT,
-  (CORRIDOR.y2 - CORRIDOR.y1) * RUN_OUT,
-];
-
-/** The rail line as drawn: the corridor plus its run-out at both ends. */
-export const RAIL = {
-  x1: CORRIDOR.x1 - OVERRUN_X,
-  y1: CORRIDOR.y1 - OVERRUN_Y,
-  x2: CORRIDOR.x2 + OVERRUN_X,
-  y2: CORRIDOR.y2 + OVERRUN_Y,
-};
-
-/** A window on one crossing's stretch of the corridor, offset so the signal
- *  head sits above centre and its label has room beneath. A solo board frames
- *  this instead of the full diagonal, which would leave one dot in open space. */
-export function closeUpOn(g: CrossingGeometry): string {
-  return `${g.x - 300} ${g.y - 140} 600 300`;
-}
 
 /** The crossings the site presents, in corridor order. Every camera still
  *  captures and scores in the background, so the record keeps accumulating for
  *  the day the rest come back; the product's promise is just one crossing done
  *  properly. Featuring a crossing again is adding its id here - and the type
- *  makes featuring one the schematic cannot place a build error rather than a
+ *  makes featuring one the map cannot place a build error rather than a
  *  board that renders nothing. */
 export const FEATURED: CrossingId[] = ["SE_12TH_CLINTON"];
 
@@ -129,7 +77,7 @@ function isPlaced(id: string): id is CrossingId {
 }
 
 /** How a crossing is named to the reader. Takes any id the API served, because
- *  the history endpoints answer about the whole corridor; an id the schematic
+ *  the history endpoints answer about the whole corridor; an id the map
  *  does not place falls back to itself rather than rendering blank. */
 export function crossingLabel(id: string): string {
   return isPlaced(id) ? GEOMETRY[id].label : id;

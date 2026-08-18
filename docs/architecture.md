@@ -104,7 +104,7 @@ One pod serving both the JSON API and the static site, plus the Postgres materia
 - **History** (`/api/v1/timeline`, `/sessions`, `/analytics`): plain SQL in `db.py`; analytics buckets are corridor-local (America/Los_Angeles) via SQL `AT TIME ZONE`.
 - **Backfill** (`blockade-api backfill obs.jsonl`): loads a re-scored window; see the data contract below.
 - **Frames** (`/api/v1/frames/...`): S3 reads behind a content-addressed disk LRU, with a path-pattern guard.
-- **Web** (`web/`): static Astro build baked into the image; three pages, one Preact island each - the board (schematic corridor map, SSE, time scrubber), the train sheet, and patterns.
+- **Web** (`web/`): static Astro build baked into the image; three pages, one Preact island each - the board (Leaflet map with a flasher per featured crossing, SSE, time scrubber), the train sheet, and patterns.
   The UI presents only the crossings in `FEATURED` (web/src/lib/crossings.ts) - currently 12th & Clinton alone, the one being dialed in properly - while every camera keeps capturing in the background - and every scoring one keeps scoring - so the record accumulates for the rest.
   `/analytics` also ships `local_tz`, the corridor's clock, which both the board's habit line and the patterns page use to draw the current-hour marker - the timezone is a wire contract, not a client constant.
   The scrubber is the one place the consensus rule above exists twice: `LiveState` only ever holds the present, so answering "what did the board show at 05:45" happens client-side over `/timeline` rows, in `web/src/lib/scrub.ts`.

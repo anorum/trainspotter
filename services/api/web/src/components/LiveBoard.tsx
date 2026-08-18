@@ -1,10 +1,11 @@
-/** The board: a schematic of the Brooklyn Sub through inner SE Portland.
+/** The board: the Brooklyn Sub through inner SE Portland, on the real map.
  *
  * One island owns everything live: the SSE connection, the selected crossing,
- * and the time scrubber. The map is a hand-drawn SVG of the real geometry -
- * the rail line running NW-SE, the cross streets, a signal head per crossing -
- * because a handful of fixed points need a dispatcher's board, not a tile map.
- * It draws the crossings in FEATURED, not every crossing the API reports.
+ * and the time scrubber. The core view is a Leaflet map on dark tiles with a
+ * grade-crossing flasher at each featured crossing's true coordinates - the
+ * geometry comes from the roster, not hand-drawn art, so re-featuring a
+ * crossing puts its flasher where the crossing actually is. It shows the
+ * crossings in FEATURED, not every crossing the API reports.
  */
 
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
@@ -18,22 +19,19 @@ import {
   worstHours,
 } from "../lib/analytics";
 import {
-  closeUpOn,
   COLORS,
   crossingLabel,
   type CrossingId,
   FEATURED,
   featuredOnly,
-  FULL_CORRIDOR_VIEWBOX,
   GEOMETRY,
-  mapEmbedUrl,
   mapPageUrl,
-  RAIL,
   RAIL_NAME,
   sessionsUrl,
   SOLO,
   type State,
 } from "../lib/crossings";
+import CrossingMap from "./CrossingMap";
 import { stateAt, withTimes, type TimelineObs } from "../lib/scrub";
 import { corridorHour, formatMinute, formatTime } from "../lib/time";
 
@@ -268,68 +266,24 @@ export default function LiveBoard() {
       .filter(([a, b]) => b > windowStart && a < now),
   );
 
-  const viewBox = SOLO ? closeUpOn(GEOMETRY[FEATURED[0]]) : FULL_CORRIDOR_VIEWBOX;
-
   return (
     <div class="board">
-      <svg
-        viewBox={viewBox}
-        role="img"
+      {/* The core view is the real corridor: flashers at true coordinates,
+          so each re-featured crossing appears where it actually is. While
+          scrubbing, the flashers show the aspect at the scrubbed instant. */}
+      <div
+        class="board-map"
+        role="region"
         aria-label={SOLO ? "Map of the crossing" : "Map of the crossings"}
       >
-        {/* the rail line: double stroke reads as track */}
-        <line {...RAIL} stroke="var(--hairline)" stroke-width="10" />
-        <line {...RAIL} stroke="var(--ink)" stroke-width="6" />
-        <line {...RAIL} stroke="var(--muted)" stroke-width="2" stroke-dasharray="1 14" />
-        {SOLO &&
-          (() => {
-            // A point up the line from the crossing, label set just off the
-            // rail and rotated to its true 35-degree grade.
-            const g = GEOMETRY[FEATURED[0]];
-            const lx = g.x - 168;
-            const ly = g.y - 117;
-            return (
-              <text x={lx} y={ly - 14} class="railname" transform={`rotate(34.8 ${lx} ${ly})`}>
-                {RAIL_NAME}
-              </text>
-            );
-          })()}
-        {FEATURED.map((id) => {
-          const g = GEOMETRY[id];
-          const crossing = shown.find((c) => c.crossing_id === id);
-          const state: State = crossing?.state ?? "UNKNOWN";
-          return (
-            <g key={id}>
-              <line
-                x1={g.x - 190} y1={g.y} x2={g.x + 190} y2={g.y}
-                stroke="var(--hairline)" stroke-width="3"
-              />
-              <text x={g.x - 185} y={g.y - 10} class="street">{g.street}</text>
-              <g
-                role={SOLO ? "img" : "button"}
-                tabIndex={SOLO ? undefined : 0}
-                aria-label={`${g.label}: ${state}`}
-                onClick={SOLO ? undefined : () => setSelected(id)}
-                onKeyDown={SOLO ? undefined : (e) => e.key === "Enter" && setSelected(id)}
-                style={SOLO ? undefined : "cursor: pointer"}
-              >
-                <circle
-                  cx={g.x} cy={g.y} r="22"
-                  fill="var(--panel)"
-                  stroke={selected === id ? "var(--crossbuck)" : "var(--hairline)"}
-                  stroke-width="2"
-                />
-                <circle
-                  cx={g.x} cy={g.y} r="12"
-                  fill={COLORS[state]}
-                  class={state === "BLOCKED" ? "pulse" : ""}
-                />
-                <text x={g.x + 32} y={g.y + 36} class="label">{g.label}</text>
-              </g>
-            </g>
-          );
-        })}
-      </svg>
+        <CrossingMap
+          states={Object.fromEntries(
+            shown.map((c) => [c.crossing_id, c.stale ? "UNKNOWN" : c.state]),
+          )}
+          onSelect={SOLO ? undefined : setSelected}
+        />
+        <span class="railchip data">{RAIL_NAME}</span>
+      </div>
 
       <div class="scrub">
         <button
@@ -443,6 +397,14 @@ export default function LiveBoard() {
             >
               {chosen.stale ? "UNKNOWN (stale)" : chosen.state}
             </span>
+            <a
+              class="data maplink"
+              href={mapPageUrl(GEOMETRY[chosen.crossing_id as CrossingId])}
+              target="_blank"
+              rel="noopener"
+            >
+              Google Maps ↗
+            </a>
             {/* Nothing to go back to on a solo board: closing would leave the
                 page empty and the only way back is reselecting the one row. */}
             {!SOLO && (
@@ -490,32 +452,6 @@ export default function LiveBoard() {
                 </figcaption>
               </figure>
             ))}
-            {/* The map is one more monitor on the wall: the real place the
-                cameras look at, in the same frame the cameras get. Keyless
-                Google embed, loaded only when scrolled to; pan and zoom work
-                in place, the link opens the full page. */}
-            {(() => {
-              const g = GEOMETRY[chosen.crossing_id as CrossingId];
-              return (
-                <figure class="locate">
-                  <iframe
-                    src={mapEmbedUrl(g)}
-                    title={`Map of the ${crossingLabel(chosen.crossing_id)} crossing`}
-                    loading="lazy"
-                    referrerpolicy="no-referrer-when-downgrade"
-                  />
-                  <figcaption>
-                    {g.street} at the rail line
-                    <span class="data">
-                      {" · "}
-                      <a href={mapPageUrl(g)} target="_blank" rel="noopener">
-                        Google Maps ↗
-                      </a>
-                    </span>
-                  </figcaption>
-                </figure>
-              );
-            })()}
           </div>
         </section>
       )}
@@ -595,9 +531,7 @@ function duration(startIso: string): string {
 }
 
 const css = `
-.board svg { width: 100%; height: auto; display: block; }
-.board .street { fill: var(--muted); font-family: var(--data); font-size: 11px; letter-spacing: 0.1em; }
-.board .label { fill: var(--crossbuck); font-family: var(--display); font-size: 20px; letter-spacing: 0.04em; text-transform: uppercase; }
+
 
 .scrub { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; padding: 0.5rem 0 1rem; }
 .scrub .track { flex: 1; min-width: 0; }
@@ -661,8 +595,25 @@ const css = `
 .cameras img { width: 100%; border-radius: 4px; border: 1px solid var(--hairline); }
 .cameras .noframe { aspect-ratio: 4/3; display: grid; place-items: center; color: var(--muted); border: 1px dashed var(--hairline); border-radius: 4px; }
 .cameras figcaption { color: var(--muted); font-size: 0.85rem; margin-top: 0.35rem; }
-.locate iframe { width: 100%; aspect-ratio: 4/3; border: 1px solid var(--hairline); border-radius: 4px; display: block; background: var(--panel); }
-.locate a { color: var(--signal-amber); text-decoration: none; }
-.locate a:hover, .locate a:focus-visible { text-decoration: underline; }
-.railname { fill: var(--muted); font-family: var(--display); font-size: 15px; letter-spacing: 0.35em; opacity: 0.75; }
+.board-map { position: relative; margin: 0.5rem 0 0.75rem; }
+.board-map .crossing-map { width: 100%; height: clamp(300px, 45vh, 460px); border: 1px solid var(--hairline); border-radius: 6px; background: var(--panel); position: relative; z-index: 0; }
+.railchip { position: absolute; top: 10px; right: 10px; z-index: 500; background: rgba(0,0,0,0.55); color: var(--muted); font-size: 0.7rem; letter-spacing: 0.3em; padding: 0.25rem 0.6rem 0.25rem 0.8rem; border: 1px solid var(--hairline); border-radius: 4px; pointer-events: none; }
+.maplabel { position: absolute; left: 42px; top: 0; white-space: nowrap; color: var(--crossbuck); font-family: var(--display); font-size: 17px; letter-spacing: 0.05em; text-transform: uppercase; text-shadow: 0 1px 4px rgba(0,0,0,0.9); }
+.maplink { color: var(--signal-amber); text-decoration: none; margin-left: auto; }
+.maplink:hover, .maplink:focus-visible { text-decoration: underline; }
+/* The flasher: a two-lamp signal housing, the form of the hardware at the
+   real crossing. BLOCKED alternates the lamps at flasher cadence; CLEAR and
+   UNKNOWN hold both steady in their aspect. */
+.flasher { display: flex; gap: 4px; padding: 3px 4px; background: var(--ink); border: 1px solid var(--hairline); border-radius: 9px; box-shadow: 0 1px 4px rgba(0,0,0,0.6); }
+.flasher i { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+.flasher.CLEAR i { background: var(--signal-green); }
+.flasher.UNKNOWN i { background: var(--signal-amber); }
+.flasher.BLOCKED i { background: var(--signal-red); box-shadow: 0 0 6px var(--signal-red); animation: flash 1s steps(1) infinite; }
+.flasher.BLOCKED i + i { animation-delay: 0.5s; }
+@keyframes flash { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0.15; box-shadow: none; } }
+@media (prefers-reduced-motion: reduce) { .flasher.BLOCKED i { animation: none; } }
+/* Leaflet chrome, re-dressed in the board's tokens. */
+.board-map .leaflet-control-zoom a { background: var(--panel); color: var(--crossbuck); border-color: var(--hairline); }
+.board-map .leaflet-control-attribution { background: rgba(0,0,0,0.55); color: var(--muted); font-size: 0.6rem; }
+.board-map .leaflet-control-attribution a { color: var(--muted); }
 `;
