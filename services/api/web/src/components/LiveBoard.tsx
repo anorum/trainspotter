@@ -1,10 +1,11 @@
-/** The board: a schematic of the Brooklyn Sub through inner SE Portland.
+/** The board: the Brooklyn Sub through inner SE Portland, on the real map.
  *
  * One island owns everything live: the SSE connection, the selected crossing,
- * and the time scrubber. The map is a hand-drawn SVG of the real geometry -
- * the rail line running NW-SE, the cross streets, a signal head per crossing -
- * because a handful of fixed points need a dispatcher's board, not a tile map.
- * It draws the crossings in FEATURED, not every crossing the API reports.
+ * and the time scrubber. The core view is a Leaflet map on dark tiles with a
+ * grade-crossing flasher at each featured crossing's true coordinates - the
+ * geometry comes from the roster, not hand-drawn art, so re-featuring a
+ * crossing puts its flasher where the crossing actually is. It shows the
+ * crossings in FEATURED, not every crossing the API reports.
  */
 
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
@@ -270,7 +271,11 @@ export default function LiveBoard() {
       {/* The core view is the real corridor: flashers at true coordinates,
           so each re-featured crossing appears where it actually is. While
           scrubbing, the flashers show the aspect at the scrubbed instant. */}
-      <div class="board-map" aria-label={SOLO ? "Map of the crossing" : "Map of the crossings"}>
+      <div
+        class="board-map"
+        role="region"
+        aria-label={SOLO ? "Map of the crossing" : "Map of the crossings"}
+      >
         <CrossingMap
           states={Object.fromEntries(
             shown.map((c) => [c.crossing_id, c.stale ? "UNKNOWN" : c.state]),

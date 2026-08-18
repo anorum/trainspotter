@@ -50,7 +50,7 @@ ODOT/PBOT camera stills
 
 One detection, one event, three consumers.
 The alert branch will answer "should I leave now" once its notifier lands (today it publishes rising edges nobody consumes); the analytics branch answers "how often and for how long", and can be rebuilt from the observations whenever its parameters change.
-The serving layer answers "is a train blocking right now" with a live schematic board.
+The serving layer answers "is a train blocking right now" with a live map board: flashers at each crossing's real coordinates.
 
 Image bytes never enter the message bus - object storage plus a reference, always.
 

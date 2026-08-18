@@ -53,9 +53,13 @@ export default function CrossingMap({
       const L = await import("leaflet");
       if (disposed || !holder.current || map.current) return;
       leaflet.current = L;
+      // The page scroll must survive crossing the card: no wheel zoom on
+      // desktop, and no one-finger pan on touch - a swipe over the map keeps
+      // scrolling the page. Pinch zoom (touchZoom) stays for touch users.
       const m = L.map(holder.current, {
         zoomControl: true,
-        scrollWheelZoom: false, // the page scroll must survive crossing the card
+        scrollWheelZoom: false,
+        dragging: !L.Browser.mobile,
         attributionControl: true,
       });
       // Text-only prefix: the default embeds a flag SVG that the site's
