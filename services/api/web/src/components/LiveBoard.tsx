@@ -253,7 +253,8 @@ export default function LiveBoard() {
   // the sheet needs), and the board additionally renders in FEATURED order so
   // the rows line up with the lanes under the scrubber, which are drawn from
   // FEATURED directly.
-  const shown = FEATURED.flatMap((id) => featuredOnly(board.crossings).filter((c) => c.crossing_id === id));
+  const featured = featuredOnly(board.crossings);
+  const shown = FEATURED.flatMap((id) => featured.filter((c) => c.crossing_id === id));
   const chosen = shown.find((c) => c.crossing_id === selected) ?? null;
   const now = Date.now();
   const windowStart = now - windowHours * 3600 * 1000;
@@ -488,15 +489,16 @@ function Habits({
   crossingId: string;
   analytics: AnalyticsResponse | null;
 }) {
-  if (!analytics?.available) return null;
-  const a = analytics.crossings[crossingId];
+  const a = analytics?.available ? analytics.crossings[crossingId] : undefined;
   // Derivations change once per analytics fetch; the panel re-renders every
   // tick for the live durations, so they are memoized rather than re-walked.
+  // Above every early return: the hook must run on every render, whatever the
+  // props say.
   const habits = useMemo(
     () => (a && a.blocked_share !== null ? { worst: worstHours(a), day: hourOfDay(a) } : null),
     [a],
   );
-  if (!a || !habits) return null;
+  if (!analytics?.available || !a || !habits) return null;
   const { worst, day } = habits;
   const localHour = corridorHour(analytics.local_tz);
   return (

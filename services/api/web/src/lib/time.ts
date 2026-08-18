@@ -22,9 +22,6 @@ export const formatTime = (iso: string): string =>
 export const formatDateTime = (iso: string): string =>
   new Date(iso).toLocaleString(LOCALE);
 
-export const formatDate = (iso: string): string =>
-  new Date(iso).toLocaleDateString(LOCALE);
-
 /** "8:05 PM" - the sheet's compact start/frame times. */
 export const formatShortTime = (iso: string): string =>
   new Date(iso).toLocaleTimeString(LOCALE, { hour: "2-digit", minute: "2-digit" });

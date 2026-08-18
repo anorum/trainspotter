@@ -106,3 +106,9 @@ def test_resolve_marks_the_track_blind_cameras_non_scoring(inventory):
     assert by_id["odot-679"].get("scores") is False
     for cam_id in ("odot-676", "odot-678", "odot-681", "odot-682"):
         assert "scores" not in by_id[cam_id], "the default stays invisible in the roster"
+
+    # The invariant the docstring above claims: a target written with drifted
+    # formatting resolves to the same camera, so it must carry the same policy.
+    drifted, _ = resolve(inventory, {"portland-12thatdivision": "SE_12TH_CLINTON"})
+    assert drifted[0]["camera_id"] == "odot-679"
+    assert drifted[0].get("scores") is False, "the flag must survive formatting drift"

@@ -1,6 +1,6 @@
 # Blockade
 
-Detects freight train blockages at SE Portland grade crossings from public traffic camera imagery, and will alert before you leave the house (the alert stream is computed and published; its notifier is the next feature), and builds the longitudinal record needed to predict when they clear.
+Detects freight train blockages at SE Portland grade crossings from public traffic camera imagery, alerts before you leave the house, and builds the longitudinal record needed to predict when they clear.
 
 Union Pacific's Brooklyn Yard sits less than a mile from the SE 11th/12th Ave grade crossings.
 Modern freight trains are longer than the yard, so trains routinely park across public streets while the far end is worked.

@@ -185,6 +185,26 @@ def test_a_scan_of_every_witness_plans_normally():
     assert {w.crossing_id for w in p.windows} == {"SE_12TH_CLINTON", "SE_8TH_DIVISION"}
 
 
+def test_a_crossing_the_roster_does_not_know_is_refused():
+    """The coverage guard's premise is that the roster describes this history.
+    A crossing the roster never heard of has zero required witnesses, so every
+    scan of it would pass trivially and load a window nothing vouches for."""
+    records = [obs(m, crossing="SE_POWELL_RETIRED", camera="odot-999") for m in range(0, 12, 2)]
+
+    with pytest.raises(backfill.BackfillError, match="not a crossing in the roster"):
+        backfill.plan(records, now=NOW, roster=CORRIDOR)
+
+
+def test_the_override_does_not_waive_an_unknown_crossing():
+    """--allow-empty-window waives coverage for a crossing the roster
+    describes. A retired or renamed id is a roster problem, and the remedy is
+    editing the roster - the refusal outranks the override."""
+    records = [obs(m, crossing="SE_POWELL_RETIRED", camera="odot-999") for m in range(0, 12, 2)]
+
+    with pytest.raises(backfill.BackfillError, match="fix the roster"):
+        backfill.plan(records, now=NOW, roster=CORRIDOR, allow_empty_window=True)
+
+
 def test_the_override_loads_a_partial_scan_anyway():
     """A window predating a camera has no rows from it and never will; the
     operator says so explicitly rather than being blocked forever."""

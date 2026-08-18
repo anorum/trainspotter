@@ -27,6 +27,11 @@ reaches the filesystem or S3 - the path traversal guard. Must accept every key
 CACHE_LIMIT_BYTES = 200 * 1024 * 1024
 """Fits comfortably in the /tmp emptyDir; ~8000 frames at ~25KB each."""
 
+CACHE_TARGET_BYTES = int(CACHE_LIMIT_BYTES * 0.9)
+"""Evicting only back to the limit leaves the cache full, so the very next
+miss walks and sorts every file again. Going to a low-water mark amortizes
+that walk over the thousands of writes it takes to climb the last 10%."""
+
 
 class FrameImages:
     def __init__(self, settings: Settings) -> None:
@@ -66,10 +71,13 @@ class FrameImages:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".tmp")
         tmp.write_bytes(data)
+        existed = path.exists()
         tmp.replace(path)
         if self._total_bytes is None:
             self._total_bytes = sum(size for _, _, size in self._walk())
-        else:
+        elif not existed:
+            # Two concurrent misses on the same key both fetch and both write;
+            # only the first one grew the disk.
             self._total_bytes += len(data)
         if self._total_bytes > CACHE_LIMIT_BYTES:
             self._evict()
@@ -90,11 +98,11 @@ class FrameImages:
         return out
 
     def _evict(self) -> None:
-        """Oldest-accessed files out first until back under budget."""
+        """Oldest-accessed files out first until back under the low-water mark."""
         files = sorted(self._walk(), key=lambda t: t[1])
         total = sum(size for _, _, size in files)
         for victim, _, size in files:
-            if total <= CACHE_LIMIT_BYTES:
+            if total <= CACHE_TARGET_BYTES:
                 break
             victim.unlink(missing_ok=True)
             total -= size

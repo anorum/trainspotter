@@ -185,7 +185,10 @@ def plan(
             raise BackfillError(
                 f"{crossing_id}: not a crossing in the roster (or it has no "
                 "scoring cameras) - is the scan or the roster pointed at the "
-                "wrong file?"
+                "wrong file? --allow-empty-window does not waive this: it "
+                "waives coverage for a crossing the roster describes, and "
+                "there is no coverage to reason about here. A retired or "
+                "renamed crossing id is a roster problem; fix the roster."
             )
         if not allow_empty_window:
             failure = _coverage_failure(group, window, witnesses[crossing_id])

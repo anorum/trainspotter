@@ -95,6 +95,12 @@ def _normalise(text: str) -> str:
     return "".join(ch for ch in text.casefold() if ch.isalnum())
 
 
+# Derived through _normalise itself, so the policy lookup below and the target
+# lookup can never drift apart: `resolve` matches targets by normalised name,
+# so a caller passing "portland-12thatdivision" must still get scores: false.
+_NON_SCORING_NORMALISED = {_normalise(name) for name in NON_SCORING_CAMERAS}
+
+
 def _find_camera_list(payload: Any) -> list[dict[str, Any]]:
     """Locate the camera list under the documented envelope key.
 
@@ -220,7 +226,7 @@ def resolve(payload: Any, targets: dict[str, str] | None = None) -> tuple[list[d
                 # Emitted only when False, so regenerating leaves every scoring
                 # camera byte-identical; written here rather than appended
                 # because the YAML dump keeps insertion order.
-                **({"scores": False} if target_name in NON_SCORING_CAMERAS else {}),
+                **({"scores": False} if _normalise(target_name) in _NON_SCORING_NORMALISED else {}),
                 "poll_interval_seconds": 30.0,
                 "enabled": True,
             }
