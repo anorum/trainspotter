@@ -61,13 +61,13 @@ describe("sessionsUrl", () => {
 });
 
 describe("crossingLabel", () => {
-  it("names a crossing the schematic places", () => {
+  it("names a crossing the map places", () => {
     expect(crossingLabel("SE_12TH_CLINTON")).toBe("12th & Clinton");
   });
 
   it("falls back to the id for a crossing it cannot place", () => {
     // The history endpoints answer about the whole corridor, so an id with no
-    // schematic entry still has to render as something.
+    // map entry still has to render as something.
     expect(crossingLabel(WITHHELD)).toBe(WITHHELD);
   });
 
@@ -102,7 +102,7 @@ describe("featuredLabels", () => {
   });
 });
 
-describe("the locate card's map", () => {
+describe("the detail header's map link", () => {
   it("links the expand target to the crossing's own point", () => {
     for (const g of Object.values(GEOMETRY)) {
       const url = new URL(mapPageUrl(g));

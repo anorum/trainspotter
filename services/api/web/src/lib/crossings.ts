@@ -77,7 +77,7 @@ function isPlaced(id: string): id is CrossingId {
 }
 
 /** How a crossing is named to the reader. Takes any id the API served, because
- *  the history endpoints answer about the whole corridor; an id the schematic
+ *  the history endpoints answer about the whole corridor; an id the map
  *  does not place falls back to itself rather than rendering blank. */
 export function crossingLabel(id: string): string {
   return isPlaced(id) ? GEOMETRY[id].label : id;
