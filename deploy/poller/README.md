@@ -70,7 +70,7 @@ kubectl exec -n blockade deploy/poller -- \
 ```
 
 Expect all six cameras, and `not_modified` counts climbing alongside `ok`.
-The poll interval is 30s, but the cameras refresh on ODOT's own schedule: about one minute per new frame when capture first went live, and four to five minutes when last measured.
+The poll interval is 30s, but the cameras refresh on ODOT's own schedule, a few minutes per new frame and drifting over time; the measured cadence lives in the poller section of docs/architecture.md.
 So expect most polls to return 304, and read a shifting 304 ratio as ODOT changing its cadence rather than as a fault.
 
 ## Migration note

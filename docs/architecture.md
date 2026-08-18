@@ -61,6 +61,8 @@ Polls each rostered camera every 30s with conditional GETs, dedupes by content h
 The manifest is the append-only source of truth and doubles as the outbox: a sibling task tails it and publishes to `crossing.frames.v1`, advancing a per-camera position file only after broker acks.
 A Kafka outage therefore costs publish latency, never a frame; deleting a position file replays the corpus from local manifests.
 Runs with `strategy: Recreate` (two pollers would double ODOT's request rate) and no CPU limit (throttling would skew `captured_at`).
+Latency is ODOT's, not ours: polling is every 30 seconds, but the cameras publish on their own schedule - measured over Aug 12-18 2026 at 12th & Clinton, a new frame arrives every 3.2 minutes (median; p90 ~6, worst 11.5), and is already ~2 minutes old (median; p90 ~3) when TripCheck first serves it.
+What a viewer sees therefore runs a few minutes behind the street, and a state change can take five to nine minutes to fully surface; the session gap and staleness bounds (below) are sized off these numbers.
 CLIs: `blockade-capture` (run/once), `blockade-inventory` (fetch/list/resolve - regenerates `config/cameras.yaml` from the ODOT inventory), `blockade-sync` (S3 repair).
 
 ### detector (`services/detector` + `libs/blockade-core/src/blockade/detect/`, deploy/detector)
@@ -99,7 +101,7 @@ One pod serving both the JSON API and the static site, plus the Postgres materia
 
 - **Board** (`/api/v1/status`, `/api/v1/events` SSE, frames): `LiveState` in `blockade-core/api/state.py` is a pure reducer rebuilt on every boot by groupless Kafka tailers; readiness gates traffic until the replay passes boot-time end offsets.
   Consensus is blocked-biased (any fresh BLOCKED wins; a glare-blind camera's CLEAR cannot veto its partner's train) and anything older than fifteen minutes is stale, so a dead detector can never leave BLOCKED frozen on screen.
-  Fifteen is bounded on both sides: above the worst measured camera cadence (621s overnight) with margin, and no longer than the gap deadline plus drift margin a session close takes, so the board never claims a blockage the train sheet has already ended.
+  Fifteen is bounded on both sides: above the worst measured camera cadence (692s overnight, ~11.5 minutes, from the Aug 12-18 measurement above) with ~3.5 minutes of margin, and no longer than the gap deadline plus drift margin a session close takes, so the board never claims a blockage the train sheet has already ended.
 - **Materializer**: two grouped consumers upsert observations and sessions into Postgres, committing offsets only after the transaction - at-least-once, absorbed by deterministic keys.
 - **History** (`/api/v1/timeline`, `/sessions`, `/analytics`): plain SQL in `db.py`; analytics buckets are corridor-local (America/Los_Angeles) via SQL `AT TIME ZONE`.
 - **Backfill** (`blockade-api backfill obs.jsonl`): loads a re-scored window; see the data contract below.
