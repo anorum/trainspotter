@@ -149,6 +149,7 @@ Getting the key revoked ends the project.
 ```bash
 uv run pytest
 uv run ruff check .
+uv run ruff format .
 ```
 
 Tests run against recorded HTTP fixtures rather than hand-written fakes, and the label set in [data/labels/](data/labels/) records whether each judgement came from visual inspection or from a human observer, because those are not equally authoritative.
