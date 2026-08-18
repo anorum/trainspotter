@@ -550,7 +550,9 @@ const css = `
    pins that locale rather than the browser's so the reserve is exact
    everywhere. 23ch holds 23 characters only because .data is a monospace
    family: every glyph there carries the '0' advance that ch measures, so
-   the reserve is void if --data stops being fixed-pitch. */
+   the reserve is void if --data stops being fixed-pitch. The button's
+   7.5rem is instead a measurement of its wider label, "Back to live", in
+   --display: nothing derives it, so re-measure it if either label changes. */
 .scrub > button { min-width: 7.5rem; }
 .scrub button.live { color: var(--signal-green); }
 .scrub .when { color: var(--muted); min-width: 23ch; text-align: right; font-size: 0.85rem; }
