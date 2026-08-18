@@ -74,8 +74,18 @@ class LiveState:
         """
         self._cameras_by_crossing = cameras_by_crossing
         self._stale_after = stale_after
-        self._scoring = scoring
-        self._sessions: dict[str, BlockageSession] = {}
+        # The scores policy resolved once, at boot: who votes is a fixed
+        # property of the roster, not something to re-derive per consensus
+        # call on the SSE hot path.
+        self._voters = {
+            crossing_id: [cid for cid, _ in cams if scoring is None or cid in scoring]
+            for crossing_id, cams in cameras_by_crossing.items()
+        }
+        # One open session per crossing, plus the last emission per crossing
+        # for change detection - both bounded by the roster. Closed sessions
+        # are history and belong to Postgres, not this reducer.
+        self._open_by_crossing: dict[str, BlockageSession] = {}
+        self._last_session: dict[str, BlockageSession] = {}
         self._by_camera: dict[str, ObservationRecord] = {}
         self._state_since: dict[str, tuple[CrossingState, datetime]] = {}
         self._latest_frame: dict[str, tuple[str, datetime]] = {}
@@ -109,8 +119,14 @@ class LiveState:
             self.changed = True
 
     def apply_session(self, session: BlockageSession) -> None:
-        previous = self._sessions.get(session.session_id)
-        self._sessions[session.session_id] = session
+        previous = self._last_session.get(session.crossing_id)
+        self._last_session[session.crossing_id] = session
+        if session.is_open:
+            self._open_by_crossing[session.crossing_id] = session
+        else:
+            open_now = self._open_by_crossing.get(session.crossing_id)
+            if open_now is not None and open_now.session_id == session.session_id:
+                del self._open_by_crossing[session.crossing_id]
         if previous != session:
             self.changed = True
 
@@ -123,9 +139,6 @@ class LiveState:
             for crossing_id in sorted(self._cameras_by_crossing)
         ]
         return StatusResponse(generated_at=now, crossings=crossings)
-
-    def sessions(self) -> list[BlockageSession]:
-        return sorted(self._sessions.values(), key=lambda s: s.started_at, reverse=True)
 
     # ------------------------------------------------------------ internals
 
@@ -143,9 +156,8 @@ class LiveState:
         """
         fresh = [
             o
-            for camera_id, _ in self._cameras_by_crossing.get(crossing_id, [])
-            if (self._scoring is None or camera_id in self._scoring)
-            and (o := self._by_camera.get(camera_id)) is not None
+            for camera_id in self._voters.get(crossing_id, ())
+            if (o := self._by_camera.get(camera_id)) is not None
             and now - o.captured_at <= self._stale_after
         ]
         blocked = [o for o in fresh if o.state is CrossingState.BLOCKED]
@@ -161,10 +173,7 @@ class LiveState:
     def _crossing_status(self, crossing_id: str, now: datetime) -> CrossingStatus:
         state, winner = self._consensus(crossing_id, now)
         stale = winner is None
-        open_session = next(
-            (s for s in self._sessions.values() if s.crossing_id == crossing_id and s.is_open),
-            None,
-        )
+        open_session = self._open_by_crossing.get(crossing_id)
         since_entry = self._state_since.get(crossing_id)
         cameras = [
             CameraFrameInfo(

@@ -17,6 +17,16 @@ export interface TimelineObs {
   object_key: string | null;
   camera_id: string;
   detector_version: string;
+  /** Optional pre-parsed captured_at. A slider drag calls stateAt dozens of
+   *  times a second over a window that can hold tens of thousands of rows;
+   *  parsing each ISO string once at fetch time (see withTimes) instead of
+   *  on every call is the difference the drag can feel. */
+  tMs?: number;
+}
+
+/** Rows with captured_at parsed once, for callers that hold a window. */
+export function withTimes(rows: readonly TimelineObs[]): TimelineObs[] {
+  return rows.map((o) => ({ ...o, tMs: Date.parse(o.captured_at) }));
 }
 
 /** Marks the zero-inference UNKNOWNs a camera that cannot see its crossing
@@ -74,31 +84,32 @@ export interface ScrubbedState {
 export function stateAt(rows: readonly TimelineObs[], atMs: number): ScrubbedState {
   const freshFrom = atMs - STALE_AFTER_MS;
   const frames = new Map<string, TimelineObs>();
-  const votes = new Map<string, { t: number; obs: TimelineObs }>();
+  const votes = new Map<string, { t: number; state: State }>();
   for (const o of rows) {
-    const t = new Date(o.captured_at).getTime();
+    const t = o.tMs ?? Date.parse(o.captured_at);
     if (t > atMs) break;
     if (o.object_key) frames.set(o.camera_id, o);
-    if (!isPolicyUnknown(o)) votes.set(o.camera_id, { t, obs: o });
+    if (!isPolicyUnknown(o)) votes.set(o.camera_id, { t, state: o.state });
   }
 
-  let blocked: { t: number; obs: TimelineObs } | undefined;
-  let clear: { t: number; obs: TimelineObs } | undefined;
-  let witness: { t: number; obs: TimelineObs } | undefined;
+  // Which fresh states exist is the whole question: blocked-bias means any
+  // fresh BLOCKED answers BLOCKED, else any fresh CLEAR answers CLEAR, else a
+  // fresh witness answers UNKNOWN. Recency among the fresh votes never
+  // matters here - the scrubbed board nulls latest_observation - so nothing
+  // tracks it.
+  let sawBlocked = false;
+  let sawClear = false;
+  let sawFresh = false;
   for (const vote of votes.values()) {
     if (vote.t < freshFrom) continue;
-    if (!witness || vote.t > witness.t) witness = vote;
-    if (vote.obs.state === "BLOCKED") {
-      if (!blocked || vote.t > blocked.t) blocked = vote;
-    } else if (vote.obs.state === "CLEAR") {
-      if (!clear || vote.t > clear.t) clear = vote;
-    }
+    sawFresh = true;
+    if (vote.state === "BLOCKED") sawBlocked = true;
+    else if (vote.state === "CLEAR") sawClear = true;
   }
 
-  const winner = blocked ?? clear ?? witness;
   return {
-    state: winner ? winner.obs.state : "UNKNOWN",
-    stale: !winner,
+    state: sawBlocked ? "BLOCKED" : sawClear ? "CLEAR" : "UNKNOWN",
+    stale: !sawFresh,
     frames,
   };
 }

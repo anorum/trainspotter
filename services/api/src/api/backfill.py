@@ -86,19 +86,6 @@ that camera partway through the span it is about to rewrite.
 """
 
 
-def _witnesses(roster: CameraRoster | None) -> dict[str, set[str]]:
-    """Which cameras a crossing's sessions are derived from, per crossing.
-
-    The non-scoring ones are not witnesses: they publish UNKNOWN by policy and
-    a re-score that omits them loses nothing.
-    """
-    out: dict[str, set[str]] = {}
-    for camera in roster.enabled() if roster else []:
-        if camera.scores:
-            out.setdefault(camera.crossing_id, set()).add(camera.camera_id)
-    return out
-
-
 def _coverage_failure(
     group: list[ObservationRecord], window: Window, expected: set[str]
 ) -> str | None:
@@ -157,7 +144,7 @@ def plan(
     observations: list[ObservationRecord],
     now: datetime | None = None,
     *,
-    roster: CameraRoster | None = None,
+    roster: CameraRoster,
     allow_empty_window: bool = False,
 ) -> BackfillPlan:
     """Derive sessions and per-crossing rebuild windows from a scan's output.
@@ -173,7 +160,9 @@ def plan(
     if not observations:
         raise BackfillError("no observations to load")
     now = now or datetime.now(UTC)
-    witnesses = _witnesses(roster)
+    # Non-scoring cameras are not witnesses: they publish UNKNOWN by policy
+    # and a re-score that omits them loses nothing.
+    witnesses = roster.witnesses_by_crossing()
 
     windows: list[Window] = []
     by_crossing: dict[str, list[ObservationRecord]] = {}
@@ -189,8 +178,20 @@ def plan(
                 "Streaming owns now; backfill only history. Scan with --until, or "
                 "re-run once the window is old enough."
             )
+        if crossing_id not in witnesses:
+            # An unknown crossing must not pass the guard trivially with zero
+            # required witnesses - the guard's premise is that the roster
+            # describes this history.
+            raise BackfillError(
+                f"{crossing_id}: not a crossing in the roster (or it has no "
+                "scoring cameras) - is the scan or the roster pointed at the "
+                "wrong file? --allow-empty-window does not waive this: it "
+                "waives coverage for a crossing the roster describes, and "
+                "there is no coverage to reason about here. A retired or "
+                "renamed crossing id is a roster problem; fix the roster."
+            )
         if not allow_empty_window:
-            failure = _coverage_failure(group, window, witnesses.get(crossing_id, set()))
+            failure = _coverage_failure(group, window, witnesses[crossing_id])
             if failure:
                 raise BackfillError(f"{crossing_id}: {failure}")
         windows.append(window)

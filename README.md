@@ -15,7 +15,7 @@ Decisions: [docs/adr/](docs/adr/).
 Original proposals, kept as history: [docs/history/](docs/history/).
 
 **Status: live.**
-Capturing six cameras continuously since 2026-08-08; the full pipeline - detection, sessions, alerts, the web board, and the Postgres history store - runs on the k3s cluster and serves [blockade.home.alexnorum.com](http://blockade.home.alexnorum.com) on the LAN.
+Capturing six cameras continuously since 2026-08-08; the full pipeline - detection, sessions, the alert stream (published, no notifier yet), the web board, and the Postgres history store - runs on the k3s cluster and serves [blockade.home.alexnorum.com](http://blockade.home.alexnorum.com) on the LAN.
 The first per-camera trained classifier (12th & Clinton) is in production behind the auto router, and its improved history has been backfilled.
 
 ---
@@ -43,7 +43,7 @@ ODOT/PBOT camera stills
 ```
 
 One detection, one event, three consumers.
-The alert branch answers "should I leave now"; the analytics branch answers "how often and for how long", and can be rebuilt from the observations whenever its parameters change.
+The alert branch will answer "should I leave now" once its notifier lands (today it publishes rising edges nobody consumes); the analytics branch answers "how often and for how long", and can be rebuilt from the observations whenever its parameters change.
 The serving layer answers "is a train blocking right now" with a live schematic board.
 
 Image bytes never enter the message bus - object storage plus a reference, always.

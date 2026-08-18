@@ -19,8 +19,10 @@ from __future__ import annotations
 import json
 import random
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
+
+from blockade.storage import frame_key_prefix, frame_time
 
 CORE_MARGIN = timedelta(minutes=2)
 """Cut from each end of a session before its frames count as positives."""
@@ -41,10 +43,6 @@ class Example:
     label: str  # BLOCKED | CLEAR
     source: str
     split: str  # train | val
-
-
-def _frame_time(path: Path) -> datetime:
-    return datetime.fromtimestamp(int(path.stem.split("-")[0]) / 1000, tz=UTC)
 
 
 def session_windows(
@@ -89,8 +87,8 @@ def build_manifest(
     gold_labels: Path,
     seed: int = 11,
 ) -> list[Example]:
-    frames = sorted(frames_dir.rglob("*.jpg"), key=_frame_time)
-    frames_end = _frame_time(frames[-1]) if frames else None
+    frames = sorted(frames_dir.rglob("*.jpg"), key=lambda p: frame_time(p.name))
+    frames_end = frame_time(frames[-1].name) if frames else None
     windows = session_windows(session_files, crossing_id, open_end=frames_end)
     closed_windows = [(s, e) for s, e, closed in windows if closed]
     near_windows = [(s, e) for s, e, _ in windows]
@@ -118,10 +116,10 @@ def build_manifest(
 
     examples: list[Example] = []
     for path in frames:
-        key = f"frames/{camera_id}/{_frame_time(path):%Y/%m/%d/%H}/{path.name}"
+        key = f"{frame_key_prefix(camera_id, frame_time(path.name))}/{path.name}"
         if key in gold_keys:
             continue  # gold is the exam, never the textbook
-        t = _frame_time(path)
+        t = frame_time(path.name)
         if in_core(t):
             examples.append(Example(key, camera_id, "BLOCKED", "session-core", "train"))
         elif path.name in sweep_clear_keys:
@@ -139,8 +137,7 @@ def build_manifest(
         rng.shuffle(indices)
         val_indices.update(indices[: max(1, int(len(indices) * VAL_FRACTION))])
     return [
-        replace(ex, split="val" if i in val_indices else "train")
-        for i, ex in enumerate(examples)
+        replace(ex, split="val" if i in val_indices else "train") for i, ex in enumerate(examples)
     ]
 
 

@@ -22,6 +22,7 @@ from pathlib import Path
 import asyncpg
 from blockade.api.state import LiveState
 from blockade.config import Settings, get_settings, load_roster
+from blockade.schemas import parse_utc
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -37,10 +38,9 @@ HEARTBEAT_SECONDS = 20
 def parse_stamp(stamp: str) -> datetime:
     """ISO timestamp to aware UTC datetime; a malformed one is caller error."""
     try:
-        parsed = datetime.fromisoformat(stamp)
+        return parse_utc(stamp)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=f"bad timestamp: {stamp}") from exc
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 def resolve_range(from_: str | None, to: str | None, hours: int) -> tuple[datetime, datetime]:
@@ -54,10 +54,10 @@ def resolve_range(from_: str | None, to: str | None, hours: int) -> tuple[dateti
 
 def build_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
-    roster = load_roster(settings.camera_config_path).enabled()
+    roster = load_roster(settings.camera_config_path)
     cameras_by_crossing: dict[str, list[tuple[str, str]]] = {}
     coords: dict[str, tuple[float, float]] = {}
-    for camera in roster:
+    for camera in roster.enabled():
         cameras_by_crossing.setdefault(camera.crossing_id, []).append(
             (camera.camera_id, camera.name)
         )
@@ -66,7 +66,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
     state = LiveState(
         cameras_by_crossing,
-        scoring={camera.camera_id for camera in roster if camera.scores},
+        scoring={camera.camera_id for camera in roster.scoring()},
     )
     feed = StateFeed(settings, state)
     images = FrameImages(settings)
@@ -76,12 +76,15 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         nonlocal pool
-        await feed.start()
         materializer = None
         if settings.database_url:
-            pool = await db.connect(settings.database_url)
+            # The feed's Kafka replay and the pool's connect+DDL are
+            # independent; only the materializer needs the pool.
+            _, pool = await asyncio.gather(feed.start(), db.connect(settings.database_url))
             materializer = Materializer(settings, pool)
             await materializer.start()
+        else:
+            await feed.start()
         yield
         if materializer is not None:
             await materializer.stop()
@@ -123,22 +126,6 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 for crossing_id, cams in sorted(cameras_by_crossing.items())
             ]
         }
-
-    @app.get("/api/v1/frames/latest/{camera_id}")
-    async def latest_frame(camera_id: str) -> Response:
-        snapshot = state.snapshot()
-        for crossing in snapshot.crossings:
-            for cam in crossing.cameras:
-                if cam.camera_id == camera_id and cam.object_key:
-                    data = await images.get(cam.object_key)
-                    if data is None:
-                        raise HTTPException(status_code=404)
-                    return Response(
-                        data,
-                        media_type="image/jpeg",
-                        headers={"ETag": f'"{cam.object_key}"', "Cache-Control": "no-cache"},
-                    )
-        raise HTTPException(status_code=404)
 
     @app.get("/api/v1/frames/{object_key:path}")
     async def frame(object_key: str) -> Response:

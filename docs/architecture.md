@@ -83,12 +83,12 @@ The accuracy loop - label sources by trust, training, the exam gate, shipping, b
 ### sessionizer (`services/sessionizer` + `libs/blockade-core/src/blockade/{stream_sessions,alerts}.py`, deploy/sessionizer)
 
 Turns observations into blockage sessions and rising-edge alerts.
-The decisions live in two pure, heavily tested core classes; the service is their host.
+The decisions live in pure, heavily tested classes - `StreamingSessionizer` and `RisingEdgeAlerter` in the core library, coordinated by the service's Kafka-free `Processor` - and the rest of the service is their host.
 `StreamingSessionizer` applies the gap rule (a session ends after ten quiet minutes) one observation at a time and is diffed in tests against `sessions.derive_sessions`, the batch oracle that sees whole history - two independent implementations that must agree.
 `RisingEdgeAlerter` fires once per blockage at its leading edge (two confirmations to fire, three clears to re-arm) into `crossing.alerts.v1`, which has no consumer yet - the notifier is the next feature.
 
 Recovery is replay: state is a pure function of the observations log, so every boot re-reads the topic and rebuilds open sessions with their original `started_at`.
-A committed consumer-group offset serves as an emission boundary only - records below it rebuild state silently (they were published in a previous life; re-publishing would resurrect rows a backfill deleted), records past it emit normally, which is exactly what arrived while the pod was down.
+A committed consumer-group offset serves as an emission boundary only - records below it rebuild state silently (they were published in a previous life; re-publishing would resurrect rows a backfill deleted), records past it emit normally, which is exactly what arrived while the pod was down. A run that any at-or-past-boundary record contributed to is this boot's to close however old its deadline looks - the train that blocked and cleared entirely during the outage.
 Offsets commit only at the head after a sweep, making "committed" mean "everything due then was announced".
 Session closes fire on wall clock past the gap deadline plus a two-minute drift allowance, and only at the head of the topic, so a backlog drain can never close a session early.
 
@@ -104,10 +104,11 @@ One pod serving both the JSON API and the static site, plus the Postgres materia
 - **Backfill** (`blockade-api backfill obs.jsonl`): loads a re-scored window; see the data contract below.
 - **Frames** (`/api/v1/frames/...`): S3 reads behind a content-addressed disk LRU, with a path-pattern guard.
 - **Web** (`web/`): static Astro build baked into the image; three pages, one Preact island each - the board (schematic corridor map, SSE, time scrubber), the train sheet, and patterns.
-  The UI presents only the crossings in `FEATURED` (web/src/lib/crossings.ts) - currently 12th & Clinton alone, the one being dialed in properly - while every camera keeps capturing and scoring in the background so the record accumulates for the rest.
+  The UI presents only the crossings in `FEATURED` (web/src/lib/crossings.ts) - currently 12th & Clinton alone, the one being dialed in properly - while every camera keeps capturing in the background - and every scoring one keeps scoring - so the record accumulates for the rest.
+  `/analytics` also ships `local_tz`, the corridor's clock, which both the board's habit line and the patterns page use to draw the current-hour marker - the timezone is a wire contract, not a client constant.
   The scrubber is the one place the consensus rule above exists twice: `LiveState` only ever holds the present, so answering "what did the board show at 05:45" happens client-side over `/timeline` rows, in `web/src/lib/scrub.ts`.
   That copy is pinned against the reducer's own scenarios in `scrub.test.ts`, so the two cannot drift silently.
-  `npm run check` typechecks under Astro strict and `npm test` runs those scenarios; CI runs both for web changes.
+  `npm run check` typechecks under Astro strict and `npm test` runs those scenarios plus `crossings.test.ts`, which pins the FEATURED presentation contract itself; CI runs both for web changes.
 
 ### Postgres (deploy/postgres)
 
@@ -168,5 +169,5 @@ A deploy-manifest test asserts every ServiceMonitor actually selects a Service, 
   Scanning one camera of a two-camera crossing is the trap: the sessions are derived from all its witnesses at once, so a partial scan rebuilds the window from half the evidence, and a scan of a `scores: false` camera rebuilds it from none.
   The plan reads the roster and refuses any window whose crossing has a scoring camera missing from the scan, and the load refuses a second time if a window would end up with no sessions at all; `--allow-empty-window` is the deliberate override for windows that predate a camera or whose sessions really were phantoms.
   The step-by-step runbook, including reaching Postgres, is in [services/api/README.md](../services/api/README.md).
-- **Add a camera**: add it to `TARGET_CAMERAS` in `inventory.py`, run `blockade-inventory resolve`, recreate the ConfigMap; it scores UNKNOWN until it has a reference model (and earns its track band from its first hand-labeled blockages via `blockade-detect band`).
+- **Add a camera**: add it to `TARGET_CAMERAS` in `inventory.py` (and to `NON_SCORING_CAMERAS` there if its view does not include the crossing - otherwise the next `resolve` enfranchises it), run `blockade-inventory resolve`, recreate the ConfigMap; it scores UNKNOWN until it has a reference model (and earns its track band from its first hand-labeled blockages via `blockade-detect band`).
 - **Debug one frame**: `uv run blockade-detect explain path/to/frame.jpg`.

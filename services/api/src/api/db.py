@@ -18,6 +18,7 @@ Plain functions over an asyncpg pool.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 
 import asyncpg
@@ -36,6 +37,11 @@ CREATE TABLE IF NOT EXISTS observations (
     PRIMARY KEY (camera_id, captured_at, detector_version)
 );
 CREATE INDEX IF NOT EXISTS obs_crossing_time ON observations (crossing_id, captured_at);
+-- Serves the DISTINCT ON (camera_id, captured_at) latest-ingest-wins
+-- resolution in timeline and analytics as an index scan instead of a
+-- full sort of the table.
+CREATE INDEX IF NOT EXISTS obs_resolution
+    ON observations (camera_id, captured_at, ingested_at DESC);
 
 CREATE TABLE IF NOT EXISTS sessions (
     session_id       text NOT NULL,
@@ -188,28 +194,28 @@ async def timeline(
 ) -> list[dict]:
     """Latest detector's word for each (camera, instant) in the range."""
     rows = await pool.fetch(
-        """SELECT DISTINCT ON (camera_id, captured_at)
-                  camera_id, captured_at, state, object_key, detector_version
-           FROM observations
-           WHERE crossing_id = $1 AND captured_at BETWEEN $2 AND $3
-           ORDER BY camera_id, captured_at, ingested_at DESC""",
+        """SELECT * FROM (
+             SELECT DISTINCT ON (camera_id, captured_at)
+                    camera_id, captured_at, state, object_key, detector_version
+             FROM observations
+             WHERE crossing_id = $1 AND captured_at BETWEEN $2 AND $3
+             ORDER BY camera_id, captured_at, ingested_at DESC
+           ) resolved
+           ORDER BY captured_at""",
         crossing_id,
         start,
         end,
     )
-    return sorted(
-        (
-            {
-                "camera_id": r["camera_id"],
-                "captured_at": r["captured_at"].isoformat(),
-                "state": r["state"],
-                "object_key": r["object_key"],
-                "detector_version": r["detector_version"],
-            }
-            for r in rows
-        ),
-        key=lambda r: r["captured_at"],
-    )
+    return [
+        {
+            "camera_id": r["camera_id"],
+            "captured_at": r["captured_at"].isoformat(),
+            "state": r["state"],
+            "object_key": r["object_key"],
+            "detector_version": r["detector_version"],
+        }
+        for r in rows
+    ]
 
 
 async def session_list(pool: asyncpg.Pool, crossing_id: str | None, limit: int) -> list[dict]:
@@ -258,26 +264,31 @@ async def analytics(pool: asyncpg.Pool) -> dict:
     that saw a train - at a 2-5 minute sampling cadence that tracks the share
     of time blocked closely, and it is honest about being sampled.
     """
-    grid = await pool.fetch(
+    # Coverage derives from the same resolved, scoreable rows the grid counts:
+    # a non-scoring camera's unscored/1 heartbeat must not extend the coverage
+    # window (and so deflate minutes/day) while its crossing's real witness is
+    # dark. One scan serves both aggregates, and the independent queries run
+    # concurrently - latency is the max, not the sum.
+    grid_q = pool.fetch(
         f"""WITH resolved AS (
               SELECT DISTINCT ON (camera_id, captured_at)
                      crossing_id, captured_at, state
               FROM observations
               ORDER BY camera_id, captured_at, ingested_at DESC
+            ), scoreable AS (
+              SELECT * FROM resolved WHERE state IN ('BLOCKED', 'CLEAR')
             )
             SELECT crossing_id,
                    extract(dow  FROM captured_at AT TIME ZONE '{LOCAL_TZ}')::int AS dow,
                    extract(hour FROM captured_at AT TIME ZONE '{LOCAL_TZ}')::int AS hour,
-                   count(*) FILTER (WHERE state = 'BLOCKED')                    AS blocked,
-                   count(*) FILTER (WHERE state IN ('BLOCKED', 'CLEAR'))        AS scoreable
-            FROM resolved
+                   count(*) FILTER (WHERE state = 'BLOCKED') AS blocked,
+                   count(*)                                  AS scoreable,
+                   min(min(captured_at)) OVER (PARTITION BY crossing_id) AS first,
+                   max(max(captured_at)) OVER (PARTITION BY crossing_id) AS last
+            FROM scoreable
             GROUP BY 1, 2, 3"""
     )
-    coverage = await pool.fetch(
-        """SELECT crossing_id, min(captured_at) AS first, max(captured_at) AS last
-           FROM observations GROUP BY 1"""
-    )
-    closed = await pool.fetch(
+    closed_q = pool.fetch(
         f"""SELECT crossing_id, duration_seconds,
                    (started_at AT TIME ZONE '{LOCAL_TZ}')::date AS local_day
             FROM (
@@ -287,24 +298,24 @@ async def analytics(pool: asyncpg.Pool) -> dict:
             WHERE NOT is_open AND duration_seconds IS NOT NULL
             ORDER BY started_at"""
     )
+    grid, closed = await asyncio.gather(grid_q, closed_q)
 
     out: dict[str, dict] = {}
-    for r in coverage:
-        days = max(1.0, (r["last"] - r["first"]).total_seconds() / 86_400)
-        out[r["crossing_id"]] = {
-            "first_observed": r["first"].isoformat(),
-            "last_observed": r["last"].isoformat(),
-            "coverage_days": round(days, 2),
-            "hour_of_week": [{"blocked": 0, "scoreable": 0} for _ in range(168)],
-            "durations_seconds": [],
-            "daily_blocked_minutes": {},
-        }
     for r in grid:
         entry = out.get(r["crossing_id"])
-        if entry is not None:
-            slot = entry["hour_of_week"][r["dow"] * 24 + r["hour"]]
-            slot["blocked"] += r["blocked"]
-            slot["scoreable"] += r["scoreable"]
+        if entry is None:
+            days = max(1.0, (r["last"] - r["first"]).total_seconds() / 86_400)
+            entry = out[r["crossing_id"]] = {
+                "first_observed": r["first"].isoformat(),
+                "last_observed": r["last"].isoformat(),
+                "coverage_days": round(days, 2),
+                "hour_of_week": [{"blocked": 0, "scoreable": 0} for _ in range(168)],
+                "durations_seconds": [],
+                "daily_blocked_minutes": {},
+            }
+        slot = entry["hour_of_week"][r["dow"] * 24 + r["hour"]]
+        slot["blocked"] += r["blocked"]
+        slot["scoreable"] += r["scoreable"]
     for r in closed:
         entry = out.get(r["crossing_id"])
         if entry is not None:

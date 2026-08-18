@@ -78,7 +78,9 @@ def test_window_spans_all_states_per_crossing():
         obs(12, crossing="SE_8TH_DIVISION", camera="odot-681"),
     ]
 
-    p = backfill.plan(records, now=NOW)
+    # allow_empty_window: this fixture deliberately scans half of Division's
+    # witnesses; the coverage guard has its own tests below.
+    p = backfill.plan(records, now=NOW, roster=CORRIDOR, allow_empty_window=True)
 
     windows = {w.crossing_id: w for w in p.windows}
     assert windows["SE_12TH_CLINTON"].start == START
@@ -92,7 +94,7 @@ def test_sessions_derive_with_streaming_parameters():
     out identical here - same gap, same minimums."""
     records = [obs(m) for m in range(0, 12, 2)] + [obs(40, state=CrossingState.CLEAR)]
 
-    p = backfill.plan(records, now=NOW)
+    p = backfill.plan(records, now=NOW, roster=CORRIDOR)
 
     assert len(p.sessions) == 1
     assert p.sessions[0].started_at == START
@@ -106,12 +108,12 @@ def test_live_edge_is_refused():
     records = [obs(0), obs(6)]
 
     with pytest.raises(backfill.BackfillError, match="live edge"):
-        backfill.plan(records, now=START + timedelta(minutes=8))
+        backfill.plan(records, now=START + timedelta(minutes=8), roster=CORRIDOR)
 
 
 def test_empty_input_is_an_error():
     with pytest.raises(backfill.BackfillError, match="no observations"):
-        backfill.plan([], now=NOW)
+        backfill.plan([], now=NOW, roster=CORRIDOR)
 
 
 def test_a_scan_missing_one_of_the_crossings_cameras_is_refused():
@@ -119,9 +121,7 @@ def test_a_scan_missing_one_of_the_crossings_cameras_is_refused():
     builds a window spanning 681's rows, and the load would delete every
     session inside it - including the ones only 682 witnessed - replacing them
     with a derivation that never saw 682's frames."""
-    records = [
-        obs(m, crossing="SE_8TH_DIVISION", camera="odot-681") for m in range(0, 12, 2)
-    ]
+    records = [obs(m, crossing="SE_8TH_DIVISION", camera="odot-681") for m in range(0, 12, 2)]
 
     with pytest.raises(backfill.BackfillError, match="odot-682"):
         backfill.plan(records, now=NOW, roster=CORRIDOR)
@@ -147,9 +147,7 @@ def test_a_camera_that_drops_out_partway_through_the_window_is_refused():
     The window still spans everything 681 saw, so loading it would delete the
     days only 682 witnessed and re-derive them from a camera 300m away."""
     records = [obs(m, crossing="SE_8TH_DIVISION", camera="odot-681") for m in range(0, 240, 10)]
-    records += [
-        obs(m, crossing="SE_8TH_DIVISION", camera="odot-682") for m in range(180, 240, 10)
-    ]
+    records += [obs(m, crossing="SE_8TH_DIVISION", camera="odot-682") for m in range(180, 240, 10)]
 
     with pytest.raises(backfill.BackfillError, match="odot-682 only"):
         backfill.plan(records, now=NOW, roster=CORRIDOR)
@@ -187,6 +185,26 @@ def test_a_scan_of_every_witness_plans_normally():
     assert {w.crossing_id for w in p.windows} == {"SE_12TH_CLINTON", "SE_8TH_DIVISION"}
 
 
+def test_a_crossing_the_roster_does_not_know_is_refused():
+    """The coverage guard's premise is that the roster describes this history.
+    A crossing the roster never heard of has zero required witnesses, so every
+    scan of it would pass trivially and load a window nothing vouches for."""
+    records = [obs(m, crossing="SE_POWELL_RETIRED", camera="odot-999") for m in range(0, 12, 2)]
+
+    with pytest.raises(backfill.BackfillError, match="not a crossing in the roster"):
+        backfill.plan(records, now=NOW, roster=CORRIDOR)
+
+
+def test_the_override_does_not_waive_an_unknown_crossing():
+    """--allow-empty-window waives coverage for a crossing the roster
+    describes. A retired or renamed id is a roster problem, and the remedy is
+    editing the roster - the refusal outranks the override."""
+    records = [obs(m, crossing="SE_POWELL_RETIRED", camera="odot-999") for m in range(0, 12, 2)]
+
+    with pytest.raises(backfill.BackfillError, match="fix the roster"):
+        backfill.plan(records, now=NOW, roster=CORRIDOR, allow_empty_window=True)
+
+
 def test_the_override_loads_a_partial_scan_anyway():
     """A window predating a camera has no rows from it and never will; the
     operator says so explicitly rather than being blocked forever."""
@@ -203,7 +221,8 @@ def test_plan_rows_speak_the_kafka_dict_shape():
     DELETE binds directly."""
     records = [obs(m) for m in range(0, 12, 2)]
 
-    rows_obs, rows_sess, rows_win = backfill.plan_rows(backfill.plan(records, now=NOW))
+    p = backfill.plan(records, now=NOW, roster=CORRIDOR)
+    rows_obs, rows_sess, rows_win = backfill.plan_rows(p)
 
     assert isinstance(rows_obs[0]["captured_at"], str)
     assert datetime.fromisoformat(rows_obs[0]["captured_at"]) == START

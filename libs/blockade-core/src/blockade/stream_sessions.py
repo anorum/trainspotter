@@ -31,11 +31,13 @@ from blockade.schemas import BlockageSession, CrossingState, ObservationRecord
 from blockade.sessions import SessionParams
 
 
-def _ms(moment: datetime) -> int:
+def to_ms(moment: datetime) -> int:
+    """Epoch-ms, the shared currency between this core and its host: deadlines
+    the core mints and the host's sweep clock must be the same arithmetic."""
     return int(moment.timestamp() * 1000)
 
 
-def _from_ms(epoch_ms: int) -> datetime:
+def from_ms(epoch_ms: int) -> datetime:
     return datetime.fromtimestamp(epoch_ms / 1000, tz=UTC)
 
 
@@ -87,7 +89,7 @@ class StreamingSessionizer:
             return state, [], None
 
         emissions: list[BlockageSession] = []
-        at = _ms(obs.captured_at)
+        at = to_ms(obs.captured_at)
         if state is not None and at - state.last_blocked_ms > self._gap_ms:
             # This observation arrived past the gap, so the previous session is
             # over - and it must be closed *here*, not left to the timer. Any
@@ -143,12 +145,12 @@ class StreamingSessionizer:
         return state.observation_count >= self.params.min_observations and long_enough
 
     def _session(self, state: SessionizerState, is_open: bool) -> BlockageSession:
-        started = _from_ms(state.started_at_ms)
+        started = from_ms(state.started_at_ms)
         return BlockageSession(
             session_id=BlockageSession.make_session_id(state.crossing_id, started),
             crossing_id=state.crossing_id,
             started_at=started,
-            ended_at=_from_ms(state.last_blocked_ms),
+            ended_at=from_ms(state.last_blocked_ms),
             duration_seconds=int((state.last_blocked_ms - state.started_at_ms) / 1000),
             peak_queue_occupancy=state.peak_confidence,
             is_open=is_open,

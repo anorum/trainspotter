@@ -33,7 +33,7 @@ import typer
 from blockade.config import Camera, Settings, get_settings, load_roster
 from blockade.detect.base import observation
 from blockade.detect.registry import build_detector
-from blockade.schemas import CrossingState, FrameRecord, ObservationRecord
+from blockade.schemas import CrossingState, FrameRecord, ObservationRecord, parse_utc
 from prometheus_client import Counter, start_http_server
 
 log = logging.getLogger(__name__)
@@ -84,14 +84,6 @@ def unscored(camera: Camera, captured_at: datetime, object_key: str) -> Observat
         reason=UNSCORED_REASON,
         version=UNSCORED_VERSION,
     )
-
-
-def _utc(stamp: str) -> datetime:
-    """Frame timestamps are always UTC-aware. A naive bound would raise on
-    comparison, and silently assuming local time would quietly select the
-    wrong window."""
-    cutoff = datetime.fromisoformat(stamp)
-    return cutoff if cutoff.tzinfo else cutoff.replace(tzinfo=UTC)
 
 
 class Scorer:
@@ -177,9 +169,9 @@ def scan(
     settings = get_settings()
     records = read_manifests(settings.manifest_dir, camera or None)
     if since:
-        records = [r for r in records if r.captured_at >= _utc(since)]
+        records = [r for r in records if r.captured_at >= parse_utc(since)]
     if until:
-        records = [r for r in records if r.captured_at < _utc(until)]
+        records = [r for r in records if r.captured_at < parse_utc(until)]
 
     observations = score_frames(records, settings)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -415,22 +407,22 @@ def spotcheck(
     """
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     from blockade.detect.vlm import VlmDetector
+    from blockade.storage import frame_key_prefix, frame_time
 
     from detector.spotcheck import (
         Judged,
         append_labels,
-        frame_time,
         label_record,
         list_frames,
         sweep_camera,
     )
 
     settings = get_settings()
+    # scoring() only: never spend API calls labeling a view with no crossing in it.
     roster = [
         c
-        for c in load_roster(settings.camera_config_path).enabled()
-        # Never spend API calls labeling a view with no crossing in it.
-        if c.scores and (not camera or c.camera_id == camera)
+        for c in load_roster(settings.camera_config_path).scoring()
+        if not camera or c.camera_id == camera
     ]
     if camera and not roster:
         typer.secho(
@@ -457,7 +449,7 @@ def spotcheck(
         return Judged(path, obs.captured_at, obs.state, obs.confidence, obs.reason)
 
     def object_key_for(path: Path, cam: Camera) -> str:
-        return f"frames/{cam.camera_id}/{frame_time(path):%Y/%m/%d/%H}/{path.name}"
+        return f"{frame_key_prefix(cam.camera_id, frame_time(path))}/{path.name}"
 
     for cam in roster:
         camera_dir = frames_dir / cam.camera_id

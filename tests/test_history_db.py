@@ -348,6 +348,32 @@ async def test_analytics_summarizes_closed_sessions_per_local_day(pool) -> None:
     assert entry["minutes_per_day"] == 40.0, "coverage clamps to one day minimum"
 
 
+async def test_coverage_ignores_unscored_heartbeats(pool) -> None:
+    """Coverage is what the crossing was actually judged over, not what any
+    camera happened to emit. A non-scoring camera's unscored/1 UNKNOWN three
+    days after the last real witness must not stretch the coverage window and
+    deflate minutes/day by a factor of three."""
+    await db.upsert_batch(
+        pool,
+        [
+            _obs(0, state="BLOCKED", detector_version="motion/1"),
+            _obs(
+                3 * 24 * 60,
+                state="UNKNOWN",
+                detector_version="unscored/1",
+                camera="odot-679",
+            ),
+        ],
+        [_sess("a", detector_version="motion/1", is_open=False)],  # 20 min
+    )
+
+    entry = (await db.analytics(pool))["SE_12TH_CLINTON"]
+
+    assert entry["last_observed"] == T0.isoformat(), "the heartbeat is not a witness"
+    assert entry["coverage_days"] == 1.0, "one scoreable instant, clamped to one day"
+    assert entry["minutes_per_day"] == 20.0, "not deflated across the dark days"
+
+
 async def test_session_list_limit_caps_the_result(pool) -> None:
     for i in range(5):
         await db.upsert_batch(

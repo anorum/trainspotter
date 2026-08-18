@@ -94,10 +94,23 @@ class CameraRoster(BaseModel):
         return [c for c in self.cameras if c.enabled]
 
     def by_crossing(self) -> dict[str, list[Camera]]:
-        """Grouped for cross-camera consensus, which is the main reason to run all six."""
+        """Every enabled camera grouped by crossing - the board's roster, scoring or not."""
         out: dict[str, list[Camera]] = {}
         for camera in self.enabled():
             out.setdefault(camera.crossing_id, []).append(camera)
+        return out
+
+    def scoring(self) -> list[Camera]:
+        """The cameras whose judgements count. The single home of the ``scores``
+        policy: consumers ask the roster instead of re-filtering the flag."""
+        return [c for c in self.enabled() if c.scores]
+
+    def witnesses_by_crossing(self) -> dict[str, set[str]]:
+        """Scoring camera ids per crossing - who must be heard from before a
+        window of history can claim to describe that crossing."""
+        out: dict[str, set[str]] = {}
+        for camera in self.scoring():
+            out.setdefault(camera.crossing_id, set()).add(camera.camera_id)
         return out
 
 

@@ -20,7 +20,7 @@ import json
 import logging
 from pathlib import Path
 
-from blockade.detect.classifier import IMAGE_SIZE, LABELS
+from blockade.detect.classifier import IMAGE_SIZE, LABELS, MEAN, STD
 
 log = logging.getLogger(__name__)
 
@@ -65,7 +65,10 @@ def train(
 
     torch.manual_seed(seed)
 
-    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    # The other half of the preprocessing contract shared with inference,
+    # like LABELS: skew here degrades production silently while validation
+    # (computed with the same transform) keeps looking healthy.
+    normalize = transforms.Normalize(mean=MEAN.tolist(), std=STD.tolist())
     train_tf = transforms.Compose(
         [
             transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),

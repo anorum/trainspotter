@@ -30,7 +30,8 @@ import {
   SOLO,
   type State,
 } from "../lib/crossings";
-import { stateAt, type TimelineObs } from "../lib/scrub";
+import { stateAt, withTimes, type TimelineObs } from "../lib/scrub";
+import { corridorHour, formatDateTime, formatTime } from "../lib/time";
 
 interface CameraInfo {
   camera_id: string;
@@ -171,7 +172,7 @@ export default function LiveBoard() {
         FEATURED.map(async (id) => {
           const r = await fetch(`/api/v1/timeline?crossing_id=${id}&hours=${hours}`);
           if (!r.ok) throw new Error(`timeline ${r.status}`);
-          return [id, (await r.json()).observations] as const;
+          return [id, withTimes((await r.json()).observations)] as const;
         }),
       );
       if (generation === loadGeneration.current) {
@@ -194,6 +195,21 @@ export default function LiveBoard() {
   };
 
   const scrubbing = scrubT !== null;
+  // Sessions parsed once per fetch, not per 1-second tick: the lanes only
+  // need each row's epoch bounds, and 500 ISO parses per render is real work
+  // on a phone. null end = still open, substituted with `now` at render.
+  const laneSpans = useMemo(() => {
+    const by: Record<string, [number, number | null][]> = Object.fromEntries(
+      FEATURED.map((id) => [id, []]),
+    );
+    for (const s of sessions) {
+      by[s.crossing_id]?.push([
+        new Date(s.started_at).getTime(),
+        s.ended_at ? new Date(s.ended_at).getTime() : null,
+      ]);
+    }
+    return by;
+  }, [sessions]);
   const board = useMemo(() => {
     if (!status) return null;
     if (!scrubbing) return status;
@@ -210,7 +226,7 @@ export default function LiveBoard() {
     const atMs = at.getTime();
     return {
       generated_at: at.toISOString(),
-      crossings: status.crossings.map((c) => {
+      crossings: featuredOnly(status.crossings).map((c) => {
         const { state, stale, frames } = stateAt(timelines[c.crossing_id] ?? [], atMs);
         return {
           ...c,
@@ -232,17 +248,19 @@ export default function LiveBoard() {
 
   if (!board) return <p class="loading">Contacting the board...</p>;
 
-  const chosen = board.crossings.find((c) => c.crossing_id === selected) ?? null;
+  // The one place the reply is scoped and ordered for presentation:
+  // featuredOnly drops the withheld crossings (keeping the reply's order, as
+  // the sheet needs), and the board additionally renders in FEATURED order so
+  // the rows line up with the lanes under the scrubber, which are drawn from
+  // FEATURED directly.
+  const featured = featuredOnly(board.crossings);
+  const shown = FEATURED.flatMap((id) => featured.filter((c) => c.crossing_id === id));
+  const chosen = shown.find((c) => c.crossing_id === selected) ?? null;
   const now = Date.now();
   const windowStart = now - windowHours * 3600 * 1000;
   const lanes = FEATURED.map((id) =>
-    sessions
-      .filter((s) => s.crossing_id === id)
-      .map((s) => {
-        const a = new Date(s.started_at).getTime();
-        const b = s.ended_at ? new Date(s.ended_at).getTime() : now;
-        return [a, b] as [number, number];
-      })
+    laneSpans[id]
+      .map(([a, b]) => [a, b ?? now] as [number, number])
       .filter(([a, b]) => b > windowStart && a < now),
   );
 
@@ -261,7 +279,7 @@ export default function LiveBoard() {
         <line {...RAIL} stroke="var(--muted)" stroke-width="2" stroke-dasharray="1 14" />
         {FEATURED.map((id) => {
           const g = GEOMETRY[id];
-          const crossing = board.crossings.find((c) => c.crossing_id === id);
+          const crossing = shown.find((c) => c.crossing_id === id);
           const state: State = crossing?.state ?? "UNKNOWN";
           return (
             <g key={id}>
@@ -358,7 +376,7 @@ export default function LiveBoard() {
           ))}
         </div>
         <span class="data when">
-          {scrubbing ? new Date(scrubT!).toLocaleString("en-US") : "now"}
+          {scrubbing ? formatDateTime(new Date(scrubT!).toISOString()) : "now"}
         </span>
       </div>
 
@@ -372,7 +390,7 @@ export default function LiveBoard() {
       )}
 
       <div class="crossings-list">
-        {featuredOnly(board.crossings).map((c) => {
+        {shown.map((c) => {
           // On a solo board the row is a summary, not a chooser: a button
           // whose only action is selecting the already-selected crossing
           // would take focus and do nothing, and a selected treatment on the
@@ -449,7 +467,7 @@ export default function LiveBoard() {
                 <figcaption>
                   {cam.name}
                   {cam.captured_at && (
-                    <span class="data"> · {new Date(cam.captured_at).toLocaleTimeString("en-US")}</span>
+                    <span class="data"> · {formatTime(cam.captured_at)}</span>
                   )}
                 </figcaption>
               </figure>
@@ -471,19 +489,18 @@ function Habits({
   crossingId: string;
   analytics: AnalyticsResponse | null;
 }) {
-  if (!analytics?.available) return null;
-  const a = analytics.crossings[crossingId];
-  if (!a || a.blocked_share === null) return null;
-  const worst = worstHours(a);
-  const day = hourOfDay(a);
-  const localHour =
-    Number(
-      new Date().toLocaleString("en-US", {
-        timeZone: analytics.local_tz ?? "America/Los_Angeles",
-        hour: "numeric",
-        hour12: false,
-      }),
-    ) % 24;
+  const a = analytics?.available ? analytics.crossings[crossingId] : undefined;
+  // Derivations change once per analytics fetch; the panel re-renders every
+  // tick for the live durations, so they are memoized rather than re-walked.
+  // Above every early return: the hook must run on every render, whatever the
+  // props say.
+  const habits = useMemo(
+    () => (a && a.blocked_share !== null ? { worst: worstHours(a), day: hourOfDay(a) } : null),
+    [a],
+  );
+  if (!analytics?.available || !a || !habits) return null;
+  const { worst, day } = habits;
+  const localHour = corridorHour(analytics.local_tz);
   return (
     <div class="habits">
       <p class="data habit-line">
@@ -521,7 +538,7 @@ function stateLine(c: Crossing): string {
     return `blocked ${duration(c.open_session.started_at)}`;
   }
   if (c.since) {
-    return `${c.state.toLowerCase()} since ${new Date(c.since).toLocaleTimeString("en-US")}`;
+    return `${c.state.toLowerCase()} since ${formatTime(c.since)}`;
   }
   return c.state.toLowerCase();
 }

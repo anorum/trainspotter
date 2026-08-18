@@ -20,6 +20,19 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field
 
 
+def parse_utc(stamp: str) -> datetime:
+    """ISO timestamp to aware-UTC datetime; naive input means UTC.
+
+    The policy for operator-supplied window bounds, shared by the two ends of
+    one workflow: ``blockade-detect scan --since/--until`` writes a window and
+    ``/api/v1/timeline?from=&to=`` reads it back, so what a naive stamp means
+    must not depend on which end parses it. Raises ``ValueError`` on garbage;
+    HTTP callers map that to 422.
+    """
+    parsed = datetime.fromisoformat(stamp)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
 class FetchStatus(StrEnum):
     """Outcome of a single camera poll."""
 
@@ -123,10 +136,12 @@ class ObservationRecord(BaseRecord):
 
     @property
     def is_confident(self) -> bool:
-        """Whether this observation counts toward coverage.
+        """A judgement rather than an abstention.
 
         UNKNOWN is an honest answer, not a measurement -- a night of UNKNOWN is
-        'no data', never 'no blockages'.
+        'no data', never 'no blockages'. Consumers that cannot call Python
+        restate this rule where they consume the record: the analytics SQL in
+        services/api db.py and the web scrubber's scrub.ts.
         """
         return self.state is not CrossingState.UNKNOWN
 

@@ -48,9 +48,10 @@ CAMERA_CONFIG_PATH = REPO_ROOT / "config" / "cameras.yaml"
 
 INVENTORY_ENVELOPE_KEY = "CCTVInventoryRequest"
 
-# Two cameras per crossing is deliberate (docs/history/design.md section 2.1): simultaneous
-# stopped queues on multiple approaches is a far stronger signal than any single
-# camera, and is the main reason to run all six.
+# Two cameras per crossing was the original design (docs/history/design.md
+# section 2.1). In practice two of the six views turned out not to include
+# their crossing at all (NON_SCORING_CAMERAS below), so today the second
+# camera is a picture on the board, not a second witness.
 #
 # Crossing IDs are provisional. Phase 3 loads the FRA National Highway-Rail
 # Crossing Inventory and these become aliases for official FRA crossing IDs.
@@ -95,7 +96,8 @@ def _normalise(text: str) -> str:
 
 
 # Derived through _normalise itself, so the policy lookup below and the target
-# lookup can never drift apart if the matching rule ever grows a step.
+# lookup can never drift apart: `resolve` matches targets by normalised name,
+# so a caller passing "portland-12thatdivision" must still get scores: false.
 _NON_SCORING_NORMALISED = {_normalise(name) for name in NON_SCORING_CAMERAS}
 
 
@@ -143,8 +145,10 @@ def fetch_inventory(settings: Settings, bounded: bool = True) -> Any:
     if response.status_code == 401:
         raise RuntimeError("401 Access Denied -- the subscription key is invalid or missing.")
     if response.status_code == 429:
-        raise RuntimeError("429 Too Many Requests -- rate limited. The inventory only "
-                           "changes every 24h; cache it rather than re-fetching.")
+        raise RuntimeError(
+            "429 Too Many Requests -- rate limited. The inventory only "
+            "changes every 24h; cache it rather than re-fetching."
+        )
     response.raise_for_status()
     return response.json()
 

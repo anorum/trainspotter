@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { STALE_AFTER_MS, stateAt, type TimelineObs } from "./scrub";
+import { STALE_AFTER_MS, stateAt, withTimes, type TimelineObs } from "./scrub";
 
 const T0 = Date.UTC(2026, 7, 12, 5, 45, 0);
 const SCORED = "classifier/abc123";
@@ -185,5 +185,59 @@ describe("stateAt", () => {
 
   it("reports UNKNOWN and stale for a crossing with no rows at all", () => {
     expect(stateAt([], at(0))).toEqual({ state: "UNKNOWN", stale: true, frames: new Map() });
+  });
+});
+
+describe("withTimes", () => {
+  /** The scenarios above, replayed through the pre-parsed rows the board
+   *  actually holds: LiveBoard parses captured_at once per fetch so a drag
+   *  does not re-parse tens of thousands of ISO strings per frame. The
+   *  shortcut must be invisible - same state, same staleness, same frames. */
+  const scenarios: [string, TimelineObs[], number][] = [
+    ["a fresh blockage", timeline(row(0, "odot-678", "BLOCKED")), at(30)],
+    [
+      "a blockage a scoring camera has since cleared",
+      timeline(row(0, "odot-678", "BLOCKED"), row(60, "odot-678", "CLEAR")),
+      at(90),
+    ],
+    [
+      "a heartbeat that must not vote",
+      timeline(
+        row(0, "odot-678", "BLOCKED"),
+        row(40, "odot-679", "UNKNOWN", { version: UNSCORED }),
+      ),
+      at(60),
+    ],
+    [
+      "a detector that went quiet",
+      timeline(row(0, "odot-678", "CLEAR")),
+      at(13 * 60),
+    ],
+  ];
+
+  /** The frames map holds the rows themselves, and the pre-parsed ones carry
+   *  the extra field by construction; what the panel reads off them is the
+   *  frame each camera is showing. */
+  const shownFrames = (rows: TimelineObs[], instant: number) =>
+    [...stateAt(rows, instant).frames].map(([camera, o]) => [camera, o.object_key, o.captured_at]);
+
+  for (const [name, rows, instant] of scenarios) {
+    it(`answers identically for ${name}`, () => {
+      const parsed = stateAt(withTimes(rows), instant);
+      const raw = stateAt(rows, instant);
+
+      expect(parsed.state).toBe(raw.state);
+      expect(parsed.stale).toBe(raw.stale);
+      expect(shownFrames(withTimes(rows), instant)).toEqual(shownFrames(rows, instant));
+    });
+  }
+
+  it("leaves the row's own fields alone", () => {
+    const rows = timeline(row(0, "odot-678", "BLOCKED"));
+    const [parsed] = withTimes(rows);
+
+    expect(parsed.tMs).toBe(at(0));
+    expect({ ...parsed, tMs: undefined }).toEqual({ ...rows[0], tMs: undefined });
+    expect(rows[0].tMs).toBeUndefined();
   });
 });
