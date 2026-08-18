@@ -14,10 +14,18 @@ FORWARD_PID=$!
 trap 'kill "$FORWARD_PID" 2>/dev/null' EXIT
 
 # The proxy 404s if the dev server starts before the forward is ready.
+ready=false
 for _ in $(seq 1 20); do
-  curl -sf -o /dev/null http://localhost:8000/healthz && break
+  if curl -sf -o /dev/null http://localhost:8000/healthz; then
+    ready=true
+    break
+  fi
   sleep 0.5
 done
+if [ "$ready" != true ]; then
+  echo "error: port-forward to svc/api never became ready; check your kube context and that port 8000 is free" >&2
+  exit 1
+fi
 
 cd services/api/web
 npm run dev

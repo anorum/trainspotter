@@ -135,7 +135,7 @@ metadata:
     gethomepage.dev/enabled: "true"
     gethomepage.dev/description: Is a train blocking the crossing
     gethomepage.dev/group: Apps
-    gethomepage.dev/name: Blockade
+    gethomepage.dev/name: PDX Train
     gethomepage.dev/pod-selector: "app=api"
 spec:
   parentRefs:
