@@ -34,9 +34,10 @@ DEFAULT_STALE_AFTER = timedelta(minutes=15)
 
 **Floor, from the cameras.** The bound has to clear more than one refresh, or a single
 skipped one reads as a dead detector. The refresh keeps drifting: ~2 minutes when this
-was first chosen, 4-5 minutes by mid-August daytime, and 621 seconds measured overnight
-2026-08-18. 12 minutes left under two minutes of headroom over that worst case; 15
-clears it with margin. See deploy/poller/README.md on why the interval moves.
+was first chosen, 4-5 minutes by mid-August daytime, and 692 seconds worst over the
+Aug 12-18 2026 week-long measurement (docs/architecture.md, poller section). 12 minutes
+would leave under half a minute of headroom over that worst case; 15 clears it with
+~3.5 minutes of margin.
 
 **Ceiling, from the sessionizer.** Staleness must not outlive a session close, or the
 board claims a live blockage the train sheet has already ended and timed. A session
