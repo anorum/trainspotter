@@ -18,6 +18,11 @@ Original proposals, kept as history: [docs/history/](docs/history/).
 Capturing six cameras continuously since 2026-08-08; the full pipeline - detection, sessions, the alert stream (published, no notifier yet), the web board, and the Postgres history store - runs on the k3s cluster and serves [blockade.home.alexnorum.com](http://blockade.home.alexnorum.com) on the LAN.
 The first per-camera trained classifier (12th & Clinton) is in production behind the auto router, and its improved history has been backfilled.
 
+**Built with AI - read accordingly.**
+Nearly all of this code was written by an AI coding agent (Claude Code) working under human direction.
+What keeps that honest: every change passes an AI-run review/document/test gate plus full CI before it can merge, detector changes ship only after beating the current model on held-out human-labeled exams, and the human owns the product decisions, the training labels, and every deploy.
+It is reviewed, tested, and live - but it is machine-written, and you should weigh both the code and its records with that in mind.
+
 ---
 
 ## What it actually does
