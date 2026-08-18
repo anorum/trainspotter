@@ -236,9 +236,7 @@ async def test_cache_is_never_swept_without_a_durable_copy(
 
 
 @respx.mock
-async def test_manifest_lines_roundtrip_as_frame_records(
-    settings, camera, client, cache, manifest
-):
+async def test_manifest_lines_roundtrip_as_frame_records(settings, camera, client, cache, manifest):
     """The manifest is the Phase 2 backfill source and its lines are replayed
     straight onto the crossing.frames.v1 topic, so every line must parse back
     into the schema with no translation."""

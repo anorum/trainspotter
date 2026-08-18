@@ -30,4 +30,7 @@ jobs:
           enable-cache: true
       - run: uv sync --all-packages
       - run: uv run ruff check .
+      # Separate from `ruff check`: the linter says nothing about formatting,
+      # so without this the repo silently drifts until someone runs a catch-up.
+      - run: uv run ruff format --check .
       - run: uv run pytest -q

@@ -49,9 +49,7 @@ class Driver:
     cannot be allowed to care which race it loses.
     """
 
-    def __init__(
-        self, params: SessionParams | None = None, watermark_lag_ms: int = 0
-    ) -> None:
+    def __init__(self, params: SessionParams | None = None, watermark_lag_ms: int = 0) -> None:
         self.sessionizer = StreamingSessionizer(params)
         self.watermark_lag_ms = watermark_lag_ms
         self.states: dict[str, SessionizerState | None] = {}
@@ -110,7 +108,7 @@ def test_a_gap_splits_two_sessions_identically() -> None:
 
 
 def test_short_and_sparse_runs_are_filtered_like_the_oracle() -> None:
-    lone = [obs(0, CrossingState.BLOCKED)]                     # min_observations
+    lone = [obs(0, CrossingState.BLOCKED)]  # min_observations
     brief = [obs(m, CrossingState.BLOCKED) for m in (20, 22)]  # min_duration
     assert_matches_oracle(lone + brief)
 

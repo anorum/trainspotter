@@ -62,6 +62,7 @@ def _settings_factory(tmp_path):
             camera_config_path=td / "cameras.yaml",
             references_dir=td / "references",
         )
+
     return make(tmp_path)
 
 
@@ -100,9 +101,7 @@ def test_undecodable_image_is_unknown(classifier_settings, classifier_camera):
     classifier_settings.references_dir.mkdir(parents=True, exist_ok=True)
     detector = ClassifierDetector(classifier_settings)
     # Seed a session so we bypass the missing-model branch and exercise decode.
-    detector._sessions[classifier_camera.camera_id] = (
-        _FakeSession([0.0, 5.0]), "seeded"
-    )
+    detector._sessions[classifier_camera.camera_id] = (_FakeSession([0.0, 5.0]), "seeded")
 
     obs = detector.classify(b"not a jpeg", classifier_camera, CAPTURED, KEY)
 
@@ -162,9 +161,7 @@ def test_undecided_softmax_abstains(classifier_settings, classifier_camera):
     detector = ClassifierDetector(classifier_settings)
     # Even logits: softmax = 0.5, squarely in the abstain band for any
     # MIN_CONFIDENCE strictly greater than 0.5.
-    detector._sessions[classifier_camera.camera_id] = (
-        _FakeSession([0.0, 0.0]), "seeded"
-    )
+    detector._sessions[classifier_camera.camera_id] = (_FakeSession([0.0, 0.0]), "seeded")
 
     obs = detector.classify(_jpeg(), classifier_camera, CAPTURED, KEY)
 
@@ -173,9 +170,7 @@ def test_undecided_softmax_abstains(classifier_settings, classifier_camera):
     assert "undecided" in obs.reason
 
 
-def test_model_version_hashes_the_bytes(
-    classifier_settings, classifier_camera, monkeypatch
-):
+def test_model_version_hashes_the_bytes(classifier_settings, classifier_camera, monkeypatch):
     """Two different model files for the same camera must produce two different
     detector_version strings so rows from different weights never mix in the
     dataset."""
@@ -203,9 +198,7 @@ def test_model_version_hashes_the_bytes(
     assert "-h" in obs_b.detector_version
 
 
-def test_corrupt_model_file_falls_back_to_unknown(
-    classifier_settings, classifier_camera
-):
+def test_corrupt_model_file_falls_back_to_unknown(classifier_settings, classifier_camera):
     """A file that exists but is not a valid ONNX must abstain rather than
     crashing the runner mid-stream. The Protocol forbids raising."""
     classifier_settings.references_dir.mkdir(parents=True, exist_ok=True)

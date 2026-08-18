@@ -131,9 +131,7 @@ def test_restless_pixels_need_a_bigger_change(camera):
 
     swung = empty_scene().astype(np.int16)
     swung[60:78, :] += 44  # within the strip's normal range
-    obs = detector.classify(
-        frame(np.clip(swung, 0, 255).astype(np.uint8)), camera, CAPTURED, KEY
-    )
+    obs = detector.classify(frame(np.clip(swung, 0, 255).astype(np.uint8)), camera, CAPTURED, KEY)
 
     assert obs.state is not CrossingState.BLOCKED
 
@@ -267,9 +265,7 @@ def test_model_thresholds_round_trip_and_win_over_defaults(tmp_path):
     assert loaded.thresholds == calibrated
     assert loaded.band == TrackBand(6, 95)
 
-    camera = Camera(
-        camera_id=model.camera_id, name="t", crossing_id="X", image_url="http://x"
-    )
+    camera = Camera(camera_id=model.camera_id, name="t", crossing_id="X", image_url="http://x")
     detector = ReferenceDetector({model.camera_id: loaded})
     obs = detector.classify(frame(empty_scene()), camera, CAPTURED, KEY)
     assert "d20-" in obs.detector_version, "the record names the calibration used"

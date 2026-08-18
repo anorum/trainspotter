@@ -41,12 +41,16 @@ class Materializer:
         # ignores them - zero observation rows ever landed. Separate groups
         # give each consumer full ownership of its own topic.
         self._obs = RecordConsumer(
-            settings.kafka_bootstrap, settings.kafka_observations_topic,
-            group_id="blockade-api-db-obs", client_id="blockade-api-db-obs",
+            settings.kafka_bootstrap,
+            settings.kafka_observations_topic,
+            group_id="blockade-api-db-obs",
+            client_id="blockade-api-db-obs",
         )
         self._sess = RecordConsumer(
-            settings.kafka_bootstrap, settings.kafka_sessions_topic,
-            group_id="blockade-api-db-sess", client_id="blockade-api-db-sess",
+            settings.kafka_bootstrap,
+            settings.kafka_sessions_topic,
+            group_id="blockade-api-db-sess",
+            client_id="blockade-api-db-sess",
         )
         self._tasks: list[asyncio.Task] = []
 
@@ -68,8 +72,9 @@ class Materializer:
     async def _run(self, consumer: RecordConsumer, kind: str) -> None:
         try:
             while True:
-                batch = await consumer.get_batch(timeout_ms=int(FLUSH_SECONDS * 1000),
-                                                 max_records=FLUSH_RECORDS)
+                batch = await consumer.get_batch(
+                    timeout_ms=int(FLUSH_SECONDS * 1000), max_records=FLUSH_RECORDS
+                )
                 if not batch:
                     continue
                 rows = []
@@ -79,8 +84,9 @@ class Materializer:
                     try:
                         rows.append(json.loads(record.value))
                     except ValueError:
-                        log.error("unparseable %s record at %s:%s",
-                                  kind, record.partition, record.offset)
+                        log.error(
+                            "unparseable %s record at %s:%s", kind, record.partition, record.offset
+                        )
                 if kind == "observations":
                     await db.upsert_batch(self._pool, rows, [])
                 else:

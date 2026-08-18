@@ -130,8 +130,9 @@ def test_replayed_history_does_not_realert_but_a_fresh_edge_does() -> None:
     assert alerts == []
 
     fresh_minute = (now - T0).total_seconds() / 60 - ALERT_FRESHNESS.total_seconds() / 60 / 2
-    fresh = [obs(fresh_minute + m, CrossingState.BLOCKED, crossing="SE_8TH_DIVISION")
-             for m in (0, 3)]
+    fresh = [
+        obs(fresh_minute + m, CrossingState.BLOCKED, crossing="SE_8TH_DIVISION") for m in (0, 3)
+    ]
     _, alerts = drive(processor, fresh, caught_up=False, now=now)
     assert [a.crossing_id for a in alerts] == ["SE_8TH_DIVISION"]
 

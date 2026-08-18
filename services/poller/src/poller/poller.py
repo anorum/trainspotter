@@ -41,9 +41,7 @@ LAST_NEW_FRAME = Gauge(
     "Unix time of the last new (non-duplicate) frame",
     ["camera_id"],
 )
-CONSECUTIVE_ERRORS = Gauge(
-    "blockade_consecutive_errors", "Consecutive failed polls", ["camera_id"]
-)
+CONSECUTIVE_ERRORS = Gauge("blockade_consecutive_errors", "Consecutive failed polls", ["camera_id"])
 
 
 @dataclass
@@ -182,9 +180,7 @@ class FramePoller:
             )
 
         if response.status_code != 200:
-            return self._record_error(
-                camera, cursor, fetched_at, f"HTTP {response.status_code}"
-            )
+            return self._record_error(camera, cursor, fetched_at, f"HTTP {response.status_code}")
 
         data = response.content
         if not data:

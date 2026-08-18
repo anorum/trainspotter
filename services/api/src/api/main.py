@@ -106,9 +106,7 @@ def backfill(
     async def load() -> None:
         pool = await db.connect(settings.database_url)
         try:
-            await db.load_backfill(
-                pool, *bf.plan_rows(p), allow_empty_window=allow_empty_window
-            )
+            await db.load_backfill(pool, *bf.plan_rows(p), allow_empty_window=allow_empty_window)
         finally:
             await pool.close()
 
