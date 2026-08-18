@@ -10,13 +10,39 @@ export interface CrossingGeometry {
   y: number;
   label: string;
   street: string;
+  /** Real-world position, from the roster's camera coordinates - the map
+   *  card and the "open in Google Maps" link both derive from it. */
+  lat: number;
+  lon: number;
 }
 
 export const GEOMETRY = {
-  SE_8TH_DIVISION: { x: 280, y: 130, label: "8th & Division", street: "SE DIVISION ST" },
-  SE_12TH_CLINTON: { x: 480, y: 270, label: "12th & Clinton", street: "SE CLINTON ST" },
-  SE_11TH_MILWAUKIE: { x: 680, y: 410, label: "11th & Milwaukie", street: "SE MILWAUKIE AVE" },
+  SE_8TH_DIVISION: {
+    x: 280, y: 130, label: "8th & Division", street: "SE DIVISION ST",
+    lat: 45.50573, lon: -122.65745,
+  },
+  SE_12TH_CLINTON: {
+    x: 480, y: 270, label: "12th & Clinton", street: "SE CLINTON ST",
+    lat: 45.5036, lon: -122.65381,
+  },
+  SE_11TH_MILWAUKIE: {
+    x: 680, y: 410, label: "11th & Milwaukie", street: "SE MILWAUKIE AVE",
+    lat: 45.50329, lon: -122.65457,
+  },
 } satisfies Record<string, CrossingGeometry>;
+
+/** The pannable in-place map for a crossing's card - keyless Google embed. */
+export function mapEmbedUrl(g: CrossingGeometry): string {
+  return `https://maps.google.com/maps?q=${g.lat},${g.lon}&z=16&output=embed`;
+}
+
+/** The full Google Maps page for the crossing, for the expand link. */
+export function mapPageUrl(g: CrossingGeometry): string {
+  return `https://www.google.com/maps/search/?api=1&query=${g.lat},${g.lon}`;
+}
+
+/** The rail line's own name, the way a dispatcher's chart would carry it. */
+export const RAIL_NAME = "UPRR BROOKLYN SUB";
 
 /** A crossing the schematic can place. The board draws signal heads, cross
  *  streets and a close-up viewBox straight off these coordinates, so an id with

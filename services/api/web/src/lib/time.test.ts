@@ -20,6 +20,7 @@ import {
   corridorDayHour,
   corridorHour,
   formatDayHeading,
+  formatMinute,
   formatShortDate,
   formatShortTime,
 } from "./time";
@@ -109,5 +110,27 @@ describe("the pinned locale", () => {
 
   it("writes the since-date month-first and abbreviated", () => {
     expect(formatShortDate(T)).toMatch(/^[A-Z][a-z]{2} \d{1,2}$/);
+  });
+});
+
+describe("formatMinute", () => {
+  it("writes the scrub label to the minute, with no seconds", () => {
+    // The slider steps in whole minutes, so a seconds field would be
+    // meaningless precision. Asserted as convention, not an exact string,
+    // so the suite does not depend on the runner's timezone.
+    expect(formatMinute("2026-08-17T19:15:42Z")).toMatch(
+      /^\d{1,2}\/\d{1,2}\/\d{4}, \d{1,2}:\d{2} (AM|PM)$/,
+    );
+  });
+
+  it("never outgrows the scrub row's 20ch reserve", () => {
+    // LiveBoard's scrub CSS reserves min-width: 20ch for this label; an
+    // instant that rendered wider would resize the track mid-drag. A late
+    // December day walked hour by hour reaches the widest shape in any
+    // runner timezone: 2-digit month, 2-digit day, 2-digit hour.
+    for (let h = 0; h < 24; h++) {
+      const iso = `2026-12-30T${String(h).padStart(2, "0")}:38:59Z`;
+      expect(formatMinute(iso).length).toBeLessThanOrEqual(20);
+    }
   });
 });

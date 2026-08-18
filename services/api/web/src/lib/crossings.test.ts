@@ -17,6 +17,8 @@ import {
   featuredOnly,
   FULL_CORRIDOR_VIEWBOX,
   GEOMETRY,
+  mapEmbedUrl,
+  mapPageUrl,
   RAIL,
   sessionsUrl,
   SOLO,
@@ -101,6 +103,39 @@ describe("featuredLabels", () => {
     expect(
       featuredLabels(["SE_8TH_DIVISION", "SE_12TH_CLINTON", "SE_11TH_MILWAUKIE"]),
     ).toBe("8th & Division, 12th & Clinton, and 11th & Milwaukie");
+  });
+});
+
+describe("the locate card's map", () => {
+  it("embeds a pannable map centred on the crossing itself", () => {
+    const g = GEOMETRY.SE_12TH_CLINTON;
+    const url = new URL(mapEmbedUrl(g));
+
+    expect(url.hostname).toBe("maps.google.com");
+    expect(url.searchParams.get("q")).toBe(`${g.lat},${g.lon}`);
+    // output=embed is what makes the keyless URL render as a map instead of
+    // Google refusing to be framed.
+    expect(url.searchParams.get("output")).toBe("embed");
+  });
+
+  it("links the expand target to the same point the embed shows", () => {
+    for (const g of Object.values(GEOMETRY)) {
+      const url = new URL(mapPageUrl(g));
+      expect(url.hostname).toBe("www.google.com");
+      expect(url.searchParams.get("query")).toBe(`${g.lat},${g.lon}`);
+    }
+  });
+
+  it("places every crossing where the corridor actually is", () => {
+    // The coordinates are copied from config/odot_camera_inventory.json by
+    // hand; a swapped pair or dropped sign would drop the pin on the wrong
+    // hemisphere. Inner SE Portland bounds catch every such transposition.
+    for (const g of Object.values(GEOMETRY)) {
+      expect(g.lat).toBeGreaterThan(45.49);
+      expect(g.lat).toBeLessThan(45.52);
+      expect(g.lon).toBeGreaterThan(-122.67);
+      expect(g.lon).toBeLessThan(-122.64);
+    }
   });
 });
 
