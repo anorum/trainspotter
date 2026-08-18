@@ -1,6 +1,7 @@
-# Blockade architecture
+# PDX Train architecture
 
-This is the current-truth description of how Blockade works: what each piece owns, the contracts between them, and how to operate it.
+This is the current-truth description of how PDX Train works: what each piece owns, the contracts between them, and how to operate it.
+(The product is PDX Train; `blockade` remains the code namespace - see the [README](../README.md).)
 The original proposals live in [docs/history/](history/) as a record of what was planned; where they disagree with this document, this document wins.
 
 ## The system in one picture
@@ -31,7 +32,7 @@ flowchart LR
     kafka -->|observations + sessions,<br/>tailed| api
     api --> pg
     s3 -->|frame images| api
-    api -->|blockade.home.alexnorum.com| browser[Browser<br/>board / sheet / patterns]
+    api -->|pdxtrain.alexnorum.com<br/>blockade.home.alexnorum.com| browser[Browser<br/>board / sheet / patterns]
 ```
 
 One detection, one event stream, everything downstream is a consumer.
@@ -151,7 +152,7 @@ Model weights never live in git; they ship through this prefix.
 ## Deploy and operations
 
 ArgoCD tracks `main` and applies `deploy/` recursively - edit the repo, not the cluster.
-Cluster-wide platform (Kafka/Strimzi, Prometheus, ArgoCD itself) lives in the homelab repo; everything specific to Blockade lives here under `deploy/`, next to what it deploys.
+Cluster-wide platform (Kafka/Strimzi, Prometheus, ArgoCD itself) lives in the homelab repo; everything specific to PDX Train lives here under `deploy/`, next to what it deploys.
 Images build per service on merge (QEMU arm64, GHCR, `:latest` + SHA tags); a new image reaches pods via rollout restart.
 All code changes go through the no-mistakes gate on a feature branch; nothing lands on main directly.
 

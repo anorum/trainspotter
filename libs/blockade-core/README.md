@@ -1,6 +1,6 @@
 # blockade-core
 
-The shared library every Blockade service builds on.
+The shared library every PDX Train service builds on.
 One copy of the record schemas, the detectors, the session and alert logic, and the storage/bus helpers - several services, no drift.
 
 What lives here and why:
