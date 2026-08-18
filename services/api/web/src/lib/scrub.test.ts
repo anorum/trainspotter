@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { STALE_AFTER_MS, stateAt, withTimes, type TimelineObs } from "./scrub";
+import { STALE_AFTER_MS, blockedSpans, stateAt, withTimes, type TimelineObs } from "./scrub";
 
 const T0 = Date.UTC(2026, 7, 12, 5, 45, 0);
 const SCORED = "classifier/abc123";
@@ -239,5 +239,56 @@ describe("withTimes", () => {
     expect(parsed.tMs).toBe(at(0));
     expect({ ...parsed, tMs: undefined }).toEqual({ ...rows[0], tMs: undefined });
     expect(rows[0].tMs).toBeUndefined();
+  });
+});
+
+describe("blockedSpans", () => {
+  it("keeps a one-frame train visible until the camera's next judgement", () => {
+    // The 12:55 case: one BLOCKED frame, CLEAR ten minutes later. The lane
+    // must show red for exactly the interval scrubbing would show red.
+    const rows = [row(0, "camA", "CLEAR"), row(600, "camA", "BLOCKED"), row(1200, "camA", "CLEAR")];
+    expect(blockedSpans(rows)).toEqual([[at(600), at(1200)]]);
+  });
+
+  it("caps an unanswered BLOCKED at freshness, exactly like the board", () => {
+    const rows = [row(0, "camA", "BLOCKED")];
+    expect(blockedSpans(rows)).toEqual([[at(0), at(0) + STALE_AFTER_MS]]);
+  });
+
+  it("merges a run of BLOCKED frames into one span", () => {
+    const rows = [
+      row(0, "camA", "BLOCKED"),
+      row(300, "camA", "BLOCKED"),
+      row(600, "camA", "BLOCKED"),
+      row(900, "camA", "CLEAR"),
+    ];
+    expect(blockedSpans(rows)).toEqual([[at(0), at(900)]]);
+  });
+
+  it("lets any camera's fresh BLOCKED keep the lane red past a partner's CLEAR", () => {
+    // Blocked-bias: camB's CLEAR cannot end camA's claim.
+    const rows = [
+      row(0, "camA", "BLOCKED"),
+      row(60, "camB", "CLEAR"),
+      row(300, "camA", "CLEAR"),
+    ];
+    expect(blockedSpans(rows)).toEqual([[at(0), at(300)]]);
+  });
+
+  it("ignores policy UNKNOWNs on both sides of the rule", () => {
+    // A non-scoring camera's heartbeat neither opens a span nor ends one.
+    const rows = [
+      row(0, "camA", "BLOCKED"),
+      row(60, "camA", "UNKNOWN", { version: UNSCORED }),
+      row(300, "camA", "CLEAR"),
+    ];
+    expect(blockedSpans(rows)).toEqual([[at(0), at(300)]]);
+  });
+
+  it("a real UNKNOWN judgement supersedes its own camera's BLOCKED", () => {
+    // The camera looked and refused to judge - its earlier train claim ends,
+    // matching stateAt, where a fresh real UNKNOWN replaces the vote.
+    const rows = [row(0, "camA", "BLOCKED"), row(300, "camA", "UNKNOWN")];
+    expect(blockedSpans(rows)).toEqual([[at(0), at(300)]]);
   });
 });

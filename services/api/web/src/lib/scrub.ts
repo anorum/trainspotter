@@ -113,3 +113,47 @@ export function stateAt(rows: readonly TimelineObs[], atMs: number): ScrubbedSta
     frames,
   };
 }
+
+/** The scrubber's rule, swept over a whole window: the intervals during which
+ * the board would have shown BLOCKED.
+ *
+ * Blocked-bias makes this a union: the consensus is BLOCKED exactly while
+ * some camera's latest judgement is a fresh BLOCKED, so each BLOCKED row
+ * opens a span that runs until that camera's next judgement supersedes it or
+ * freshness expires - whichever comes first. Overlapping spans merge. The
+ * lanes under the slider draw these, which is what makes them agree with
+ * what scrubbing to any instant would show.
+ *
+ * `rows` ascending by captured_at, as /api/v1/timeline returns.
+ */
+export function blockedSpans(rows: readonly TimelineObs[]): [number, number][] {
+  // Each camera's judgement instants, in order, for the supersession lookup.
+  const nextJudgement = new Map<string, number[]>();
+  for (const o of rows) {
+    if (isPolicyUnknown(o)) continue;
+    const t = o.tMs ?? Date.parse(o.captured_at);
+    let list = nextJudgement.get(o.camera_id);
+    if (!list) nextJudgement.set(o.camera_id, (list = []));
+    list.push(t);
+  }
+  const spans: [number, number][] = [];
+  const cursor = new Map<string, number>();
+  for (const o of rows) {
+    if (o.state !== "BLOCKED" || isPolicyUnknown(o)) continue;
+    const t = o.tMs ?? Date.parse(o.captured_at);
+    const times = nextJudgement.get(o.camera_id)!;
+    let i = cursor.get(o.camera_id) ?? 0;
+    while (times[i] <= t) i++;
+    cursor.set(o.camera_id, i);
+    const supersededAt = i < times.length ? times[i] : Infinity;
+    spans.push([t, Math.min(supersededAt, t + STALE_AFTER_MS)]);
+  }
+  spans.sort((a, b) => a[0] - b[0]);
+  const merged: [number, number][] = [];
+  for (const [a, b] of spans) {
+    const last = merged[merged.length - 1];
+    if (last && a <= last[1]) last[1] = Math.max(last[1], b);
+    else merged.push([a, b]);
+  }
+  return merged;
+}
