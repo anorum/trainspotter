@@ -358,7 +358,7 @@ export default function LiveBoard() {
           ))}
         </div>
         <span class="data when">
-          {scrubbing ? new Date(scrubT!).toLocaleString() : "now"}
+          {scrubbing ? new Date(scrubT!).toLocaleString("en-US") : "now"}
         </span>
       </div>
 
@@ -449,7 +449,7 @@ export default function LiveBoard() {
                 <figcaption>
                   {cam.name}
                   {cam.captured_at && (
-                    <span class="data"> · {new Date(cam.captured_at).toLocaleTimeString()}</span>
+                    <span class="data"> · {new Date(cam.captured_at).toLocaleTimeString("en-US")}</span>
                   )}
                 </figcaption>
               </figure>
@@ -521,7 +521,7 @@ function stateLine(c: Crossing): string {
     return `blocked ${duration(c.open_session.started_at)}`;
   }
   if (c.since) {
-    return `${c.state.toLowerCase()} since ${new Date(c.since).toLocaleTimeString()}`;
+    return `${c.state.toLowerCase()} since ${new Date(c.since).toLocaleTimeString("en-US")}`;
   }
   return c.state.toLowerCase();
 }
@@ -542,13 +542,29 @@ const css = `
 .scrub .track { flex: 1; min-width: 0; }
 .scrub input { width: 100%; display: block; accent-color: var(--signal-amber); }
 .scrub button { background: var(--panel); color: var(--crossbuck); border: 1px solid var(--hairline); border-radius: 4px; padding: 0.3rem 0.8rem; cursor: pointer; font-family: var(--display); letter-spacing: 0.05em; }
+/* The button and timestamp both relabel the instant a drag leaves "live",
+   and they share the slider's flex row: unreserved, the relabel resizes the
+   track under the held pointer and corrupts the drag's pointer-x mapping.
+   Each reserves at least its widest text: 23ch is the longest en-US
+   toLocaleString datetime ("10/30/2026, 12:38:58 AM"), and the timestamp
+   pins that locale rather than the browser's so the reserve is exact
+   everywhere. 23ch holds 23 characters only because .data is a monospace
+   family: every glyph there carries the '0' advance that ch measures, so
+   the reserve is void if --data stops being fixed-pitch. The button's
+   7.5rem is instead a measurement of its wider label, "Back to live", in
+   --display: nothing derives it, so re-measure it if either label changes. */
+.scrub > button { min-width: 7.5rem; }
 .scrub button.live { color: var(--signal-green); }
-.scrub .when { color: var(--muted); min-width: 11ch; text-align: right; font-size: 0.85rem; }
-/* Under ~640px the single row cannot hold Live + track + windows + timestamp;
-   drop the track onto its own row so the slider stays draggable. */
-@media (max-width: 640px) {
+.scrub .when { color: var(--muted); min-width: 23ch; text-align: right; font-size: 0.85rem; }
+/* Under ~768px the single row cannot hold Live + track + windows + timestamp
+   without squeezing the slider down to a stub; drop the track onto its own
+   row, where sibling relabels cannot resize it. Both flanking labels keep
+   their reserves here too, so the header wraps onto the same lines whether
+   the timestamp reads "now" or a full datetime, and no relabel moves any
+   row - including the track's - under a held pointer. */
+@media (max-width: 768px) {
   .scrub .track { flex-basis: 100%; order: 10; }
-  .scrub .when { min-width: 0; }
+  .scrub .when { margin-left: auto; }
 }
 .scrub-note { margin: -0.5rem 0 1rem; font-size: 0.85rem; }
 .lanes { display: grid; gap: 2px; padding: 2px 8px 0; }
