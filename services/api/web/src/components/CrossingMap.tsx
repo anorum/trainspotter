@@ -1,0 +1,121 @@
+/** The board's core view: the real corridor on a dark basemap, with a
+ * grade-crossing flasher at each featured crossing's true coordinates.
+ * Re-featuring a crossing adds its flasher where the crossing actually is.
+ *
+ * The marker is the signature: a two-lamp signal housing, the form of the
+ * flashers that guard the real crossing. CLEAR shows both lamps steady green,
+ * UNKNOWN steady amber, and BLOCKED alternates the two lamps in red at
+ * flasher cadence - the map says what the signals at the street are saying.
+ *
+ * Leaflet loads dynamically inside the effect: it touches `window` at import
+ * time, and this component's markup is server-rendered by the island build.
+ * The map fits bounds across every featured crossing, so re-featuring one
+ * puts its flasher on the map with no further work here.
+ */
+
+import "leaflet/dist/leaflet.css";
+import { useEffect, useRef } from "preact/hooks";
+import type * as Leaflet from "leaflet";
+import { FEATURED, GEOMETRY, type State } from "../lib/crossings";
+
+const TILES = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+const ATTRIBUTION = "&copy; OpenStreetMap contributors &copy; CARTO";
+
+export interface MapStates {
+  /** crossing_id -> live aspect, stale collapsing to UNKNOWN upstream. */
+  [crossingId: string]: State;
+}
+
+function flasherHtml(state: State, label: string): string {
+  return (
+    `<span class="flasher ${state}" aria-hidden="true"><i></i><i></i></span>` +
+    `<span class="maplabel">${label}</span>`
+  );
+}
+
+export default function CrossingMap({
+  states,
+  onSelect,
+}: {
+  states: MapStates;
+  /** Present when the board offers a choice; absent on a solo board. */
+  onSelect?: (crossingId: string) => void;
+}) {
+  const holder = useRef<HTMLDivElement>(null);
+  const map = useRef<Leaflet.Map | null>(null);
+  const markers = useRef<Map<string, Leaflet.Marker>>(new Map());
+  const applied = useRef<Map<string, State>>(new Map());
+  const leaflet = useRef<typeof Leaflet | null>(null);
+
+  useEffect(() => {
+    let disposed = false;
+    void (async () => {
+      const L = await import("leaflet");
+      if (disposed || !holder.current || map.current) return;
+      leaflet.current = L;
+      const m = L.map(holder.current, {
+        zoomControl: true,
+        scrollWheelZoom: false, // the page scroll must survive crossing the card
+        attributionControl: true,
+      });
+      // Text-only prefix: the default embeds a flag SVG that the site's
+      // global `svg` reset inflates to the size of the card.
+      m.attributionControl.setPrefix(
+        '<a href="https://leafletjs.com">Leaflet</a>',
+      );
+      L.tileLayer(TILES, { attribution: ATTRIBUTION, maxZoom: 19 }).addTo(m);
+      const points = FEATURED.map((id) => {
+        const g = GEOMETRY[id];
+        return [g.lat, g.lon] as [number, number];
+      });
+      if (points.length === 1) m.setView(points[0], 15);
+      else m.fitBounds(L.latLngBounds(points).pad(0.25));
+      for (const id of FEATURED) {
+        const g = GEOMETRY[id];
+        const marker = L.marker([g.lat, g.lon], {
+          icon: L.divIcon({
+            className: "flasher-pin",
+            html: flasherHtml(states[id] ?? "UNKNOWN", g.label),
+            iconSize: [34, 18],
+            iconAnchor: [17, 9],
+          }),
+          keyboard: Boolean(onSelect),
+          title: g.label,
+        }).addTo(m);
+        if (onSelect) marker.on("click", () => onSelect(id));
+        markers.current.set(id, marker);
+        applied.current.set(id, states[id] ?? "UNKNOWN");
+      }
+      map.current = m;
+    })();
+    return () => {
+      disposed = true;
+      map.current?.remove();
+      map.current = null;
+      markers.current.clear();
+    };
+  }, []);
+
+  // Aspect changes re-skin the existing markers; the map itself never
+  // rebuilds. The board re-renders every second and hands us a fresh object
+  // each time, so markers only touch the DOM when their aspect really moved.
+  useEffect(() => {
+    const L = leaflet.current;
+    if (!L) return;
+    for (const [id, marker] of markers.current) {
+      const aspect = states[id] ?? "UNKNOWN";
+      if (applied.current.get(id) === aspect) continue;
+      applied.current.set(id, aspect);
+      marker.setIcon(
+        L.divIcon({
+          className: "flasher-pin",
+          html: flasherHtml(aspect, GEOMETRY[id as keyof typeof GEOMETRY].label),
+          iconSize: [34, 18],
+          iconAnchor: [17, 9],
+        }),
+      );
+    }
+  }, [states]);
+
+  return <div class="crossing-map" ref={holder} />;
+}

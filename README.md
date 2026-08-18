@@ -1,7 +1,5 @@
 # PDX Train
 
-(The product is PDX Train; `blockade` survives as the code namespace - packages, CLIs, and the k8s namespace - because renaming working infrastructure buys nothing.)
-
 Detects freight train blockages at SE Portland grade crossings from public traffic camera imagery, alerts before you leave the house, and builds the longitudinal record needed to predict when they clear.
 
 Union Pacific's Brooklyn Yard sits less than a mile from the SE 11th/12th Ave grade crossings.
