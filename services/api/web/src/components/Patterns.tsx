@@ -18,7 +18,7 @@ import {
   worstHours,
 } from "../lib/analytics";
 import { FEATURED, crossingLabel, sessionsUrl } from "../lib/crossings";
-import { corridorDayHour, corridorHourOf, formatDayHeading, formatShortDate, formatShortTime } from "../lib/time";
+import { corridorDayHour, corridorHourOf, formatCorridorDayTime, formatShortDate } from "../lib/time";
 
 // Postgres dow 0 = Sunday; the sheet reads Monday-first like a work week.
 const DOW_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -98,7 +98,7 @@ export default function Patterns() {
                   <Durations a={a} />
                   <Daily a={a} />
                   <DayNight sessions={mine} tz={data.local_tz} />
-                  <Longest sessions={mine} />
+                  <Longest sessions={mine} tz={data.local_tz} />
                 </div>
               </>
             )}
@@ -240,8 +240,8 @@ function DayNight({ sessions, tz }: { sessions: SessionRow[]; tz?: string }) {
   if (day.length < 3 || night.length < 3) return null;
   const median = (xs: number[]) => xs.sort((a, b) => a - b)[Math.floor(xs.length / 2)];
   return (
-    <section class="half">
-      <h3>Day and night</h3>
+    <div class="chart">
+      <h3 class="display">Day and night</h3>
       <p class="data shift">
         <span>
           6a-6p: <strong>{Math.round(median(day))} min</strong> median · {day.length} trains
@@ -251,28 +251,28 @@ function DayNight({ sessions, tz }: { sessions: SessionRow[]; tz?: string }) {
         </span>
       </p>
       <p class="note">Night trains park; daytime moves mostly switch and clear.</p>
-    </section>
+    </div>
   );
 }
 
 /** The record book: the five longest blockages, with their dates. */
-function Longest({ sessions }: { sessions: SessionRow[] }) {
+function Longest({ sessions, tz }: { sessions: SessionRow[]; tz?: string }) {
   const top = [...sessions]
     .sort((a, b) => b.duration_seconds! - a.duration_seconds!)
     .slice(0, 5);
   if (top.length < 3) return null;
   return (
-    <section class="half">
-      <h3>Longest on record</h3>
+    <div class="chart">
+      <h3 class="display">Longest on record</h3>
       <ol class="data record">
         {top.map((r) => (
           <li>
             <strong>{Math.round(r.duration_seconds! / 60)} min</strong>
             {" · "}
-            {formatDayHeading(r.started_at)}, {formatShortTime(r.started_at)}
+            {formatCorridorDayTime(r.started_at, tz)}
           </li>
         ))}
       </ol>
-    </section>
+    </div>
   );
 }

@@ -44,37 +44,52 @@ export const formatDayHeading = (iso: string): string =>
     day: "numeric",
   });
 
-const hourFormats = new Map<string, Intl.DateTimeFormat>();
-
-/** Current hour (0-23) on the corridor's clock.
- *
- * Formatter construction is the expensive part of Intl and this runs every
- * render tick, so instances are cached per zone. `hour12: false` engines
- * report midnight as "24", hence the modulo.
- */
-export function corridorHour(localTz: string | null | undefined): number {
-  const tz = localTz ?? DEFAULT_LOCAL_TZ;
-  let fmt = hourFormats.get(tz);
-  if (!fmt) {
-    fmt = new Intl.DateTimeFormat(LOCALE, {
-      timeZone: tz,
-      hour: "numeric",
-      hour12: false,
-    });
-    hourFormats.set(tz, fmt);
-  }
-  return Number(fmt.format(new Date())) % 24;
+/** "Monday, August 17, 11:30 PM" on the corridor's clock - the record list.
+ *  The sheet's day-heading and short-time conventions, composed, but pinned
+ *  to the corridor zone so the page's "Times are Portland local" note holds. */
+export function formatCorridorDayTime(
+  iso: string,
+  localTz: string | null | undefined,
+): string {
+  const timeZone = localTz ?? DEFAULT_LOCAL_TZ;
+  const d = new Date(iso);
+  const day = d.toLocaleDateString(LOCALE, {
+    timeZone,
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+  const time = d.toLocaleTimeString(LOCALE, {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return `${day}, ${time}`;
 }
 
-/** Hour (0-23) of a given instant on the corridor's clock. */
-export function corridorHourOf(iso: string, localTz: string | null | undefined): number {
+const hourFormats = new Map<string, Intl.DateTimeFormat>();
+
+/** Formatter construction is the expensive part of Intl and the corridor hour
+ *  runs every render tick, so instances are cached per zone. */
+function cachedHourFormat(localTz: string | null | undefined): Intl.DateTimeFormat {
   const tz = localTz ?? DEFAULT_LOCAL_TZ;
   let fmt = hourFormats.get(tz);
   if (!fmt) {
     fmt = new Intl.DateTimeFormat(LOCALE, { timeZone: tz, hour: "numeric", hour12: false });
     hourFormats.set(tz, fmt);
   }
-  return Number(fmt.format(new Date(iso))) % 24;
+  return fmt;
+}
+
+/** Current hour (0-23) on the corridor's clock. `hour12: false` engines
+ *  report midnight as "24", hence the modulo. */
+export function corridorHour(localTz: string | null | undefined): number {
+  return corridorHourOf(new Date().toISOString(), localTz);
+}
+
+/** Hour (0-23) of a given instant on the corridor's clock. */
+export function corridorHourOf(iso: string, localTz: string | null | undefined): number {
+  return Number(cachedHourFormat(localTz).format(new Date(iso))) % 24;
 }
 
 /** Current day-of-week (0=Sunday) and hour on the corridor's clock. */
