@@ -28,12 +28,11 @@ import {
   GEOMETRY,
   mapPageUrl,
   RAIL_NAME,
-  sessionsUrl,
   SOLO,
   type State,
 } from "../lib/crossings";
 import CrossingMap from "./CrossingMap";
-import { stateAt, withTimes, type TimelineObs } from "../lib/scrub";
+import { blockedSpans, stateAt, withTimes, type TimelineObs } from "../lib/scrub";
 import { corridorHour, formatMinute, formatTime } from "../lib/time";
 
 interface CameraInfo {
@@ -58,12 +57,6 @@ interface Status {
   crossings: Crossing[];
 }
 
-interface SessionRow {
-  crossing_id: string;
-  started_at: string;
-  ended_at: string | null;
-}
-
 /** Scrub windows. Hours, labelled the way a dispatcher would say them. */
 const WINDOWS: [number, string][] = [
   [24, "24H"],
@@ -75,6 +68,11 @@ const WINDOWS: [number, string][] = [
 /** How long a failed history load silences the scrubber's retries. */
 const RETRY_COOLDOWN_MS = 5_000;
 
+/** How often the lanes re-pull their window unprompted. Half of ODOT's
+ *  slowest camera cadence (3-10 minutes), so a span's end is never more
+ *  than one cadence late. */
+const REFRESH_MS = 5 * 60_000;
+
 export default function LiveBoard() {
   const [status, setStatus] = useState<Status | null>(null);
   // A solo board is detail-first: its one crossing starts open.
@@ -82,12 +80,7 @@ export default function LiveBoard() {
   const [scrubT, setScrubT] = useState<number | null>(null); // null = live
   const [windowHours, setWindowHours] = useState(24);
   const [timelines, setTimelines] = useState<Record<string, TimelineObs[]>>({});
-  const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null);
-  // Two surfaces read the history store, and each owns its own flag: a
-  // recovered timeline says nothing about lanes that were never refetched.
-  // They share one note, so the board never stacks two outage lines.
-  const [lanesFailed, setLanesFailed] = useState(false);
   const [timelineFailed, setTimelineFailed] = useState(false);
   // The value is never read; each tick just re-renders the live durations.
   const [, setTick] = useState(0);
@@ -106,36 +99,14 @@ export default function LiveBoard() {
   // event would start another round of timeline fetches - one per featured
   // crossing - against an already sick store.
   const retryAfter = useRef(0);
-  // The lanes can fail while a timeline load is mid-flight, so the recovery
-  // check below the awaits must read live state, not the render's closure.
-  const lanesFailedRef = useRef(false);
-  const markLanes = (failed: boolean) => {
-    lanesFailedRef.current = failed;
-    setLanesFailed(failed);
-  };
-
+  // The mount effect's timer and SSE listener close over the first render,
+  // so they read the live window through a ref the button handler keeps in
+  // step with setWindowHours.
+  const windowHoursRef = useRef(24);
   // The panel's habit line loads the first time any crossing is selected.
   useEffect(() => {
     if (selected && !analytics) fetchAnalytics().then(setAnalytics, () => {});
   }, [selected]);
-
-  // The lanes under the scrubber: blockages findable by eye before scrubbing,
-  // so the history is worth a drag in the first place. Empty lanes are a
-  // claim about the corridor, so a store that cannot answer says so instead -
-  // and stays retryable, because this is the one surface with no live feed.
-  const loadLanes = () =>
-    fetch(sessionsUrl(500))
-      .then((r) => {
-        if (!r.ok) throw new Error(`sessions ${r.status}`);
-        return r.json();
-      })
-      .then(
-        (body) => {
-          setSessions(body.sessions);
-          markLanes(false);
-        },
-        () => markLanes(true),
-      );
 
   useEffect(() => {
     // If the first status fetch fails the page stays on "Contacting the
@@ -143,18 +114,77 @@ export default function LiveBoard() {
     fetch("/api/v1/status")
       .then((r) => (r.ok ? r.json() : null))
       .then((body) => body && setStatus(body), () => {});
-    void loadLanes();
+    // The lanes need the window's timeline before any scrub: blockages
+    // findable by eye are what make the history worth a drag at all.
+    void loadTimelines(24);
     const source = new EventSource("/api/v1/events");
-    source.addEventListener("status", (e) => setStatus(JSON.parse((e as MessageEvent).data)));
+    // Two triggers keep the loaded window live rather than a mount-time
+    // snapshot: a status event means consensus moved, so new observations
+    // exist to fetch; the timer catches span-ending CLEAR frames that
+    // change no crossing's state and so push no event - without it an
+    // ongoing span would freeze at blockedSpans' freshness cap while the
+    // SSE-fed board stayed red.
+    source.addEventListener("status", (e) => {
+      setStatus(JSON.parse((e as MessageEvent).data));
+      void refreshTimelines();
+    });
     const timer = setInterval(() => setTick((t) => t + 1), 1000);
+    // A tab whose initial load failed has nothing applied to refresh, so
+    // the timer retries the full load instead - through the normal
+    // retryAfter cooldown - and an untouched tab heals. Only the timer:
+    // retrying on every status event would hammer a store that is already
+    // sick.
+    const refresh = setInterval(() => {
+      if (appliedHours.current === 0) void loadTimelines(windowHoursRef.current);
+      else void refreshTimelines();
+    }, REFRESH_MS);
     return () => {
       source.close();
       clearInterval(timer);
+      clearInterval(refresh);
     };
   }, []);
 
-  // Scrub data loads lazily the first time the slider moves off "now", and
-  // reloads when the window widens past what has been fetched.
+  const fetchWindow = (hours: number) =>
+    Promise.all(
+      FEATURED.map(async (id) => {
+        const r = await fetch(`/api/v1/timeline?crossing_id=${id}&hours=${hours}`);
+        if (!r.ok) throw new Error(`timeline ${r.status}`);
+        return [id, withTimes((await r.json()).observations)] as const;
+      }),
+    );
+
+  // Re-pull the window already applied, which loadTimelines' guard would
+  // call a no-op. Skips while a wider load is in flight - that load will
+  // land fresher data itself, and superseding it here would strand
+  // loadedHours above what the store ever delivered.
+  const refreshTimelines = async () => {
+    const hours = appliedHours.current;
+    if (hours === 0 || hours !== loadedHours.current) return;
+    if (Date.now() < retryAfter.current) return;
+    const generation = ++loadGeneration.current;
+    try {
+      const entries = await fetchWindow(hours);
+      if (generation === loadGeneration.current) {
+        setTimelines(Object.fromEntries(entries));
+        retryAfter.current = 0;
+        // The note may be up because a wider window's load failed; this
+        // refresh proved nothing about that window, so only a refresh that
+        // covers the one on screen may take the note down.
+        if (hours >= windowHoursRef.current) setTimelineFailed(false);
+      }
+    } catch {
+      // The data on screen still covers the window, so no failure note;
+      // the cooldown keeps a sick store from being re-polled by every
+      // status event.
+      if (generation === loadGeneration.current) {
+        retryAfter.current = Date.now() + RETRY_COOLDOWN_MS;
+      }
+    }
+  };
+
+  // The window's full load: eager on mount so the lanes render before any
+  // scrub, and again whenever the window widens past what has been fetched.
   const loadTimelines = async (hours: number) => {
     if (loadedHours.current >= hours) {
       // Gate on committed data, not the guard: a wider load still in flight
@@ -171,20 +201,12 @@ export default function LiveBoard() {
     loadedHours.current = hours;
     const generation = ++loadGeneration.current;
     try {
-      const entries = await Promise.all(
-        FEATURED.map(async (id) => {
-          const r = await fetch(`/api/v1/timeline?crossing_id=${id}&hours=${hours}`);
-          if (!r.ok) throw new Error(`timeline ${r.status}`);
-          return [id, withTimes((await r.json()).observations)] as const;
-        }),
-      );
+      const entries = await fetchWindow(hours);
       if (generation === loadGeneration.current) {
         setTimelines(Object.fromEntries(entries));
         appliedHours.current = hours;
         retryAfter.current = 0;
         setTimelineFailed(false);
-        // The store is evidently back; the lanes have no other way to learn it.
-        if (lanesFailedRef.current) void loadLanes();
       }
     } catch {
       // Fall back to the window actually on screen so a later scrub retries;
@@ -198,21 +220,14 @@ export default function LiveBoard() {
   };
 
   const scrubbing = scrubT !== null;
-  // Sessions parsed once per fetch, not per 1-second tick: the lanes only
-  // need each row's epoch bounds, and 500 ISO parses per render is real work
-  // on a phone. null end = still open, substituted with `now` at render.
+  // The lanes are the scrubber's own rule swept over the loaded window, so a
+  // red span under the slider and a red board at that instant can never
+  // disagree - including one-frame trains too brief to become sessions.
   const laneSpans = useMemo(() => {
-    const by: Record<string, [number, number | null][]> = Object.fromEntries(
-      FEATURED.map((id) => [id, []]),
-    );
-    for (const s of sessions) {
-      by[s.crossing_id]?.push([
-        new Date(s.started_at).getTime(),
-        s.ended_at ? new Date(s.ended_at).getTime() : null,
-      ]);
-    }
+    const by: Record<string, [number, number][]> = {};
+    for (const id of FEATURED) by[id] = blockedSpans(timelines[id] ?? []);
     return by;
-  }, [sessions]);
+  }, [timelines]);
   const board = useMemo(() => {
     if (!status) return null;
     if (!scrubbing) return status;
@@ -263,7 +278,7 @@ export default function LiveBoard() {
   const windowStart = now - windowHours * 3600 * 1000;
   const lanes = FEATURED.map((id) =>
     laneSpans[id]
-      .map(([a, b]) => [a, b ?? now] as [number, number])
+      .map(([a, b]) => [a, Math.min(b, now)] as [number, number])
       .filter(([a, b]) => b > windowStart && a < now),
   );
 
@@ -335,12 +350,15 @@ export default function LiveBoard() {
               class={windowHours === hours ? "win on" : "win"}
               aria-pressed={windowHours === hours}
               onClick={async () => {
+                windowHoursRef.current = hours;
                 setWindowHours(hours);
                 if (scrubbing) {
                   const newStart = Date.now() - hours * 3600 * 1000;
                   if (scrubT !== null && scrubT < newStart) setScrubT(newStart);
-                  await loadTimelines(hours);
                 }
+                // The lanes redraw for the wider window whether or not a
+                // scrub is in progress, so the data must widen with it.
+                await loadTimelines(hours);
               }}
             >
               {label}
@@ -355,7 +373,7 @@ export default function LiveBoard() {
       {/* Without this the board would render a history-store outage as empty
           lanes and crossings with no recent signal - a corridor with nothing
           on it and dead detectors, rather than a store that cannot answer. */}
-      {(lanesFailed || timelineFailed) && (
+      {timelineFailed && (
         <p class="empty scrub-note">
           The history store is not answering; the past will be back.
         </p>
