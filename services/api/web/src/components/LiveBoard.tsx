@@ -494,27 +494,28 @@ export default function LiveBoard() {
                 cameras look at, in the same frame the cameras get. Keyless
                 Google embed, loaded only when scrolled to; pan and zoom work
                 in place, the link opens the full page. */}
-            <figure class="locate">
-              <iframe
-                src={mapEmbedUrl(GEOMETRY[chosen.crossing_id as CrossingId])}
-                title={`Map of the ${crossingLabel(chosen.crossing_id)} crossing`}
-                loading="lazy"
-                referrerpolicy="no-referrer-when-downgrade"
-              />
-              <figcaption>
-                {GEOMETRY[chosen.crossing_id as CrossingId].street} at the rail line
-                <span class="data">
-                  {" · "}
-                  <a
-                    href={mapPageUrl(GEOMETRY[chosen.crossing_id as CrossingId])}
-                    target="_blank"
-                    rel="noopener"
-                  >
-                    Google Maps ↗
-                  </a>
-                </span>
-              </figcaption>
-            </figure>
+            {(() => {
+              const g = GEOMETRY[chosen.crossing_id as CrossingId];
+              return (
+                <figure class="locate">
+                  <iframe
+                    src={mapEmbedUrl(g)}
+                    title={`Map of the ${crossingLabel(chosen.crossing_id)} crossing`}
+                    loading="lazy"
+                    referrerpolicy="no-referrer-when-downgrade"
+                  />
+                  <figcaption>
+                    {g.street} at the rail line
+                    <span class="data">
+                      {" · "}
+                      <a href={mapPageUrl(g)} target="_blank" rel="noopener">
+                        Google Maps ↗
+                      </a>
+                    </span>
+                  </figcaption>
+                </figure>
+              );
+            })()}
           </div>
         </section>
       )}

@@ -1,7 +1,7 @@
 /** The one place the site decides how a moment is written.
  *
  * Locale is pinned to en-US everywhere: the scrub row reserves exactly the
- * widest en-US datetime (23ch, see LiveBoard's scrub CSS), and a board that
+ * widest en-US datetime (20ch, see LiveBoard's scrub CSS), and a board that
  * pinned one label while the sheet followed the browser would show two date
  * conventions on one screen.
  *
@@ -19,8 +19,9 @@ export const DEFAULT_LOCAL_TZ = "America/Los_Angeles";
 export const formatTime = (iso: string): string =>
   new Date(iso).toLocaleTimeString(LOCALE);
 
-/** "8/17/2026, 4:42 AM" - the scrub label; the slider steps in whole
- *  minutes, so seconds would be three characters of permanent ":00". */
+/** "8/17/2026, 4:42 AM" - the scrub label. The slider steps in whole
+ *  minutes, so displayed seconds are meaningless precision (the step grid is
+ *  anchored at render time and carries its arbitrary sub-minute offset). */
 export const formatMinute = (iso: string): string =>
   new Date(iso).toLocaleString(LOCALE, {
     year: "numeric", month: "numeric", day: "numeric",
