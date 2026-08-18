@@ -51,7 +51,7 @@ function isPolicyUnknown(o: TimelineObs): boolean {
  *  Mirrors DEFAULT_STALE_AFTER in state.py; the two have to move together, or
  *  the scrubbed board and the live board disagree about whether the same
  *  instant had a witness. */
-export const STALE_AFTER_MS = 12 * 60_000;
+export const STALE_AFTER_MS = 15 * 60_000;
 
 export interface ScrubbedState {
   state: State;

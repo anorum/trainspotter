@@ -29,21 +29,20 @@ from datetime import UTC, datetime, timedelta
 from blockade.api.models import CameraFrameInfo, CrossingStatus, StatusResponse
 from blockade.schemas import BlockageSession, CrossingState, ObservationRecord
 
-DEFAULT_STALE_AFTER = timedelta(minutes=12)
+DEFAULT_STALE_AFTER = timedelta(minutes=15)
 """How long one camera's judgement still counts. Two ceilings decide the number.
 
 **Floor, from the cameras.** The bound has to clear more than one refresh, or a single
-skipped one reads as a dead detector. It was 6 minutes, three times the ~2 minute
-cadence observed when it was first chosen; ODOT has since been measured refreshing
-every four to five minutes, which had left 6 closer to one cadence than to three. 12
-comfortably clears two of the worst measured cadence. See deploy/poller/README.md on
-why the interval moves.
+skipped one reads as a dead detector. The refresh keeps drifting: ~2 minutes when this
+was first chosen, 4-5 minutes by mid-August daytime, and 621 seconds measured overnight
+2026-08-18. 12 minutes left under two minutes of headroom over that worst case; 15
+clears it with margin. See deploy/poller/README.md on why the interval moves.
 
 **Ceiling, from the sessionizer.** Staleness must not outlive a session close, or the
 board claims a live blockage the train sheet has already ended and timed. A session
-closes ``DEFAULT_GAP`` (10 minutes, blockade.sessions) after its last BLOCKED reading
-plus ``OUT_OF_ORDERNESS`` (2 minutes, sessionizer.runner) of drift margin, so 12
-minutes is the most this bound may be.
+closes ``DEFAULT_GAP`` (15 minutes, blockade.sessions) after its last BLOCKED reading
+plus ``OUT_OF_ORDERNESS`` (2 minutes, sessionizer.runner) of drift margin, so 17
+minutes is the most this bound may be; 15 keeps the two moving together.
 
 Moving it is a policy change, not a comment fix: re-derive it against both ceilings.
 ``STALE_AFTER_MS`` in web/src/lib/scrub.ts is this same bound on the client, and the
