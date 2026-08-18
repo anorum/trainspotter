@@ -554,12 +554,13 @@ const css = `
 .scrub .when { color: var(--muted); min-width: 23ch; text-align: right; font-size: 0.85rem; }
 /* Under ~768px the single row cannot hold Live + track + windows + timestamp
    without squeezing the slider down to a stub; drop the track onto its own
-   row, where sibling relabels cannot resize it. The timestamp's reserve goes
-   (it would be dead width in the wrapped rows) but the button keeps its own,
-   so the top row never re-wraps between the live and scrubbed states. */
+   row, where sibling relabels cannot resize it. Both flanking labels keep
+   their reserves here too, so the header wraps onto the same lines whether
+   the timestamp reads "now" or a full datetime, and no relabel moves any
+   row - including the track's - under a held pointer. */
 @media (max-width: 768px) {
   .scrub .track { flex-basis: 100%; order: 10; }
-  .scrub .when { min-width: 0; }
+  .scrub .when { margin-left: auto; }
 }
 .scrub-note { margin: -0.5rem 0 1rem; font-size: 0.85rem; }
 .lanes { display: grid; gap: 2px; padding: 2px 8px 0; }
