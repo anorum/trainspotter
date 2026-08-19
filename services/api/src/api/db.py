@@ -19,9 +19,10 @@ Plain functions over an asyncpg pool.
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import datetime
 
 import asyncpg
+from blockade.sessions import is_certified
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS observations (
@@ -53,8 +54,12 @@ CREATE TABLE IF NOT EXISTS sessions (
     peak_queue_occupancy real,
     is_open          bool NOT NULL,
     ingested_at      timestamptz NOT NULL DEFAULT now(),
+    observation_count int,
     PRIMARY KEY (session_id, detector_version)
 );
+-- Evidence column for rows created before it existed; NULL means the row
+-- passed the old derivation minimums and reads as certified.
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS observation_count int;
 CREATE INDEX IF NOT EXISTS sessions_crossing_start ON sessions (crossing_id, started_at DESC);
 """
 
@@ -165,13 +170,15 @@ async def _upsert(conn: asyncpg.Connection, observations: list[dict], sessions: 
         await conn.executemany(
             """INSERT INTO sessions
                (session_id, detector_version, crossing_id, started_at,
-                ended_at, duration_seconds, peak_queue_occupancy, is_open)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+                ended_at, duration_seconds, peak_queue_occupancy, is_open,
+                observation_count)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
                ON CONFLICT (session_id, detector_version) DO UPDATE SET
                  ended_at = EXCLUDED.ended_at,
                  duration_seconds = EXCLUDED.duration_seconds,
                  peak_queue_occupancy = EXCLUDED.peak_queue_occupancy,
                  is_open = EXCLUDED.is_open,
+                 observation_count = EXCLUDED.observation_count,
                  ingested_at = now()""",
             [
                 (
@@ -183,6 +190,7 @@ async def _upsert(conn: asyncpg.Connection, observations: list[dict], sessions: 
                     s.get("duration_seconds"),
                     s.get("peak_queue_occupancy"),
                     s["is_open"],
+                    s.get("observation_count"),
                 )
                 for s in sessions
             ],
@@ -242,93 +250,13 @@ async def session_list(pool: asyncpg.Pool, crossing_id: str | None, limit: int) 
             "peak_queue_occupancy": r["peak_queue_occupancy"],
             "is_open": r["is_open"],
             "detector_version": r["detector_version"],
+            "observation_count": r["observation_count"],
+            # The one read-side rule, applied server-side so every consumer
+            # tiers rows identically.
+            "certified": is_certified(r["observation_count"], r["duration_seconds"]),
         }
         for r in rows
     ]
-
-
-async def sightings(pool: asyncpg.Pool, crossing_id: str, days: int) -> list[dict]:
-    """Blocked runs the session minimums filtered out - the one-frame trains.
-
-    Applies the board's own rule (a BLOCKED judgement holds until its camera's
-    next judgement supersedes it or freshness expires), then subtracts every
-    interval a recorded session already covers. What remains is what a camera
-    saw but the record book declined to certify: real at today's frame
-    cadence, so the sheet shows them as sightings rather than hiding them.
-    """
-    from blockade.api.state import DEFAULT_STALE_AFTER
-
-    stale_ms = DEFAULT_STALE_AFTER.total_seconds() * 1000
-    rows = await pool.fetch(
-        """SELECT camera_id, captured_at, state, confidence
-           FROM (
-             SELECT DISTINCT ON (camera_id, captured_at)
-                    camera_id, captured_at, state, confidence, detector_version
-             FROM observations
-             WHERE crossing_id = $1 AND captured_at > now() - make_interval(days => $2)
-             ORDER BY camera_id, captured_at, ingested_at DESC
-           ) resolved
-           WHERE detector_version NOT LIKE 'unscored/%'
-           ORDER BY captured_at""",
-        crossing_id,
-        days,
-    )
-    by_camera: dict[str, list] = {}
-    for r in rows:
-        by_camera.setdefault(r["camera_id"], []).append(r)
-    spans: list[tuple[float, float, int, float]] = []  # start_ms, end_ms, frames, peak
-    for cam_rows in by_camera.values():
-        for i, r in enumerate(cam_rows):
-            if r["state"] != "BLOCKED":
-                continue
-            t = r["captured_at"].timestamp() * 1000
-            nxt = (
-                cam_rows[i + 1]["captured_at"].timestamp() * 1000
-                if i + 1 < len(cam_rows)
-                else float("inf")
-            )
-            spans.append((t, min(nxt, t + stale_ms), 1, r["confidence"]))
-    spans.sort()
-    merged: list[list] = []
-    for a, b, n, c in spans:
-        if merged and a <= merged[-1][1]:
-            merged[-1][1] = max(merged[-1][1], b)
-            merged[-1][2] += n
-            merged[-1][3] = max(merged[-1][3], c)
-        else:
-            merged.append([a, b, n, c])
-
-    sessions = await pool.fetch(
-        """SELECT started_at, ended_at FROM (
-             SELECT DISTINCT ON (session_id) *
-             FROM sessions WHERE crossing_id = $1
-             ORDER BY session_id, ingested_at DESC
-           ) latest
-           WHERE ended_at IS NULL OR ended_at > now() - make_interval(days => $2)""",
-        crossing_id,
-        days,
-    )
-    taken = [
-        (
-            r["started_at"].timestamp() * 1000,
-            (r["ended_at"].timestamp() * 1000 if r["ended_at"] else float("inf")),
-        )
-        for r in sessions
-    ]
-    out = []
-    for a, b, n, c in merged:
-        if any(a < tb and b > ta for ta, tb in taken):
-            continue  # the record book already tells this story
-        out.append(
-            {
-                "started_at": datetime.fromtimestamp(a / 1000, tz=UTC).isoformat(),
-                "ended_at": datetime.fromtimestamp(b / 1000, tz=UTC).isoformat(),
-                "frames": n,
-                "peak_confidence": c,
-            }
-        )
-    out.reverse()  # newest first, like the sheet reads
-    return out
 
 
 LOCAL_TZ = "America/Los_Angeles"
@@ -380,6 +308,12 @@ async def analytics(pool: asyncpg.Pool) -> dict:
               FROM sessions ORDER BY session_id, ingested_at DESC
             ) latest
             WHERE NOT is_open AND duration_seconds IS NOT NULL
+              -- Certified runs only, restating blockade.sessions.is_certified
+              -- (SQL cannot call it; the two are pinned against each other in
+              -- tests): NULL evidence is a legacy row, certified by the old
+              -- derivation minimums it passed.
+              AND (observation_count IS NULL
+                   OR (observation_count >= 2 AND duration_seconds >= 300))
             ORDER BY started_at"""
     )
     grid, closed = await asyncio.gather(grid_q, closed_q)

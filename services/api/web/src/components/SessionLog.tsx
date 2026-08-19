@@ -13,10 +13,12 @@ import type { TimelineObs } from "../lib/scrub";
 import { formatDayHeading, formatShortTime } from "../lib/time";
 
 interface Session {
-  /** "session" is the certified record; "sighting" is a blocked run too
-   *  brief for the record book's minimums - real at today's frame cadence,
-   *  shown distinctly rather than hidden. */
-  kind?: "sighting";
+  /** Server-computed by the one read-side rule: a certified row met the
+   *  evidence minimums; an uncertified one is a sighting - a run too brief
+   *  to certify, real at today's frame cadence, shown distinctly. */
+  certified: boolean;
+  observation_count: number | null;
+  peak_queue_occupancy: number | null;
   session_id: string;
   crossing_id: string;
   started_at: string;
@@ -24,8 +26,6 @@ interface Session {
   duration_seconds: number | null;
   is_open: boolean;
   detector_version: string;
-  frames?: number;
-  peak_confidence?: number;
 }
 
 // The sheet shows only the featured crossings, so on a solo sheet the chips
@@ -36,7 +36,6 @@ const PAD_MS = 2 * 60_000;
 
 export default function SessionLog() {
   const [sessions, setSessions] = useState<Session[] | null>(null);
-  const [sightings, setSightings] = useState<Session[]>([]);
   const [failed, setFailed] = useState(false);
   const [filter, setFilter] = useState(FILTERS[0]);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -54,37 +53,6 @@ export default function SessionLog() {
         (body) => setSessions(body.sessions),
         () => setFailed(true),
       );
-    // Sightings are additive: their failure must not blank the sheet.
-    void Promise.all(
-      FEATURED.map(async (id) => {
-        const r = await fetch(`/api/v1/sightings?crossing_id=${id}&days=14`);
-        if (!r.ok) return [];
-        const body = await r.json();
-        return body.sightings.map(
-          (g: {
-            started_at: string;
-            ended_at: string;
-            frames: number;
-            peak_confidence: number;
-          }): Session => ({
-            kind: "sighting",
-            session_id: `sighting-${id}-${g.started_at}`,
-            crossing_id: id,
-            started_at: g.started_at,
-            ended_at: g.ended_at,
-            duration_seconds:
-              (new Date(g.ended_at).getTime() - new Date(g.started_at).getTime()) / 1000,
-            is_open: false,
-            detector_version: "",
-            frames: g.frames,
-            peak_confidence: g.peak_confidence,
-          }),
-        );
-      }),
-    ).then(
-      (lists) => setSightings(lists.flat()),
-      () => {},
-    );
   }, []);
 
   const toggle = async (s: Session) => {
@@ -119,9 +87,9 @@ export default function SessionLog() {
   if (!sessions) return <p class="loading">Pulling the sheet...</p>;
 
   // Plain derivations: at <=200 rows there is nothing worth memoizing.
-  const shown = featuredOnly([...sessions, ...sightings])
-    .filter((s) => filter === "ALL" || s.crossing_id === filter)
-    .sort((a, b) => b.started_at.localeCompare(a.started_at));
+  const shown = featuredOnly(sessions).filter(
+    (s) => filter === "ALL" || s.crossing_id === filter,
+  );
   const longest = Math.max(1, ...shown.map((s) => s.duration_seconds ?? 0));
   const byDay: [string, Session[]][] = [];
   for (const s of shown) {
@@ -167,12 +135,12 @@ export default function SessionLog() {
                   onClick={() => toggle(s)}
                 >
                   <span
-                    class={s.kind === "sighting" ? "aspect sighted" : s.is_open ? "aspect pulse" : "aspect"}
-                    style={s.kind === "sighting" ? undefined : `background:${COLORS.BLOCKED}`}
+                    class={!s.certified ? "aspect sighted" : s.is_open ? "aspect pulse" : "aspect"}
+                    style={!s.certified ? undefined : `background:${COLORS.BLOCKED}`}
                   />
                   <span class="display name">
                     {crossingLabel(s.crossing_id)}
-                    {s.kind === "sighting" && <span class="data kind"> · sighting</span>}
+                    {!s.certified && <span class="data kind"> · sighting</span>}
                   </span>
                   <span class="data start">{formatShortTime(s.started_at)}</span>
                   <span class="bar-lane" aria-hidden="true">
@@ -182,7 +150,11 @@ export default function SessionLog() {
                     />
                   </span>
                   <span class="data dur">
-                    {s.is_open ? "in progress" : human(s.duration_seconds)}
+                    {s.is_open
+                      ? "in progress"
+                      : !s.certified && s.observation_count === 1
+                        ? "single frame"
+                        : human(s.duration_seconds)}
                   </span>
                 </button>
 
@@ -232,8 +204,8 @@ export default function SessionLog() {
                           ))}
                         </div>
                         <p class="scored data">
-                          {s.kind === "sighting"
-                            ? `${s.frames === 1 ? "single frame" : `${s.frames} frames`} · peak confidence ${Math.round((s.peak_confidence ?? 0) * 100)}%`
+                          {!s.certified
+                            ? `${s.observation_count === 1 ? "single frame" : `${s.observation_count} frames`} · peak confidence ${Math.round((s.peak_queue_occupancy ?? 0) * 100)}%`
                             : `scored by ${s.detector_version}`}
                         </p>
                       </>
