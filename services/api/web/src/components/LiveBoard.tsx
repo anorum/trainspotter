@@ -222,7 +222,7 @@ export default function LiveBoard() {
   const scrubbing = scrubT !== null;
   // The lanes are the scrubber's own rule swept over the loaded window, so a
   // red span under the slider and a red board at that instant can never
-  // disagree - including one-frame trains too brief to become sessions.
+  // disagree - one-frame trains included.
   const laneSpans = useMemo(() => {
     const by: Record<string, [number, number][]> = {};
     for (const id of FEATURED) by[id] = blockedSpans(timelines[id] ?? []);
