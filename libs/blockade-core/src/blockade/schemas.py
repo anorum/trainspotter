@@ -157,6 +157,11 @@ class BlockageSession(BaseRecord):
     peak_queue_occupancy: float | None = None
     is_open: bool = True
     detector_version: str
+    observation_count: int | None = None
+    """How many BLOCKED frames built this run - the evidence a consumer
+    thresholds on. None on rows recorded before the field existed; those
+    all passed the era's derivation minimums, so readers treat None as
+    certified."""
 
     @staticmethod
     def make_session_id(crossing_id: str, started_at: datetime) -> str:

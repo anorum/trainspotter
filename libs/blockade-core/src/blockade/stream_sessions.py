@@ -16,11 +16,12 @@ same observations - that equivalence is pinned by tests, and a disagreement
 is a concrete counterexample rather than a vague worry.
 
 Emission protocol, shaped for the compacted ``crossing.sessions.v1`` topic:
-a session is emitted with ``is_open=True`` as soon as it qualifies (enough
-observations, long enough) and re-emitted as it grows; the final emission on
-close has ``is_open=False``. Every emission carries the same deterministic
+every blocked run is emitted with ``is_open=True`` from its first BLOCKED
+observation and re-emitted as it grows; the final emission on close has
+``is_open=False``. Every emission carries the same deterministic
 ``session_id``, so compaction keeps exactly one row per session - the latest.
-Runs that never qualify close silently, matching the oracle's filters.
+The record keeps every run, however brief; whether a run counts as a
+certified session is decided on the read side, not here.
 """
 
 from __future__ import annotations
@@ -98,8 +99,7 @@ class StreamingSessionizer:
             # element is processed before the close timer fires; relying on
             # the timer would silently drop the close emission. The stale timer
             # later fires against the fresh state and is ignored.
-            if self._qualifies(state):
-                emissions.append(self._session(state, is_open=False))
+            emissions.append(self._session(state, is_open=False))
             state = None
         if state is None:
             state = SessionizerState(
@@ -115,8 +115,7 @@ class StreamingSessionizer:
             state.observation_count += 1
             state.peak_confidence = max(state.peak_confidence, obs.confidence)
 
-        if self._qualifies(state):
-            emissions.append(self._session(state, is_open=True))
+        emissions.append(self._session(state, is_open=True))
         # One millisecond past the boundary, because the gap is inclusive: an
         # observation exactly `gap` after the last one continues the session
         # (the oracle's rule is `<=`), so the timer must fire strictly after
@@ -131,19 +130,11 @@ class StreamingSessionizer:
         timer that a later observation has already superseded."""
         if state is None or fired_at_ms <= state.last_blocked_ms + self._gap_ms:
             return state, []
-        emissions = [self._session(state, is_open=False)] if self._qualifies(state) else []
-        return None, emissions
+        return None, [self._session(state, is_open=False)]
 
     @property
     def _gap_ms(self) -> int:
         return int(self.params.gap.total_seconds() * 1000)
-
-    def _qualifies(self, state: SessionizerState) -> bool:
-        long_enough = (
-            state.last_blocked_ms - state.started_at_ms
-            >= self.params.min_duration.total_seconds() * 1000
-        )
-        return state.observation_count >= self.params.min_observations and long_enough
 
     def _session(self, state: SessionizerState, is_open: bool) -> BlockageSession:
         started = from_ms(state.started_at_ms)
@@ -156,4 +147,5 @@ class StreamingSessionizer:
             peak_queue_occupancy=state.peak_confidence,
             is_open=is_open,
             detector_version=state.detector_version,
+            observation_count=state.observation_count,
         )

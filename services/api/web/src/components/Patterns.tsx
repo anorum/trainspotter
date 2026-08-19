@@ -37,6 +37,7 @@ interface SessionRow {
   started_at: string;
   duration_seconds: number | null;
   is_open: boolean;
+  certified: boolean;
 }
 
 export default function Patterns() {
@@ -71,8 +72,9 @@ export default function Patterns() {
   return (
     <div class="patterns">
       {FEATURED.map((id) => {
+        // Certified rows only: uncertified sightings would skew the medians low.
         const mine = sessions.filter(
-          (r) => r.crossing_id === id && !r.is_open && r.duration_seconds,
+          (r) => r.crossing_id === id && !r.is_open && r.certified && r.duration_seconds,
         );
         const a = data.crossings[id];
         const worst = a && worstHours(a);

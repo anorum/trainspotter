@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from blockade.schemas import CrossingState, ObservationRecord
-from blockade.sessions import DEFAULT_GAP, SessionParams, derive_sessions, suggest_gap
+from blockade.sessions import DEFAULT_GAP, SessionParams, derive_sessions, is_certified, suggest_gap
 
 START = datetime(2026, 8, 9, 18, 56, tzinfo=UTC)
 
@@ -56,7 +56,9 @@ def test_an_overnight_cadence_drift_does_not_shred_a_parked_train():
     assert sessions[0].duration_seconds == 8 * 621
 
     old_policy = derive_sessions(rows, SessionParams(gap=timedelta(minutes=10)))
-    assert old_policy == [], "the incident: every fragment of a real blockage dropped"
+    assert all(not is_certified(s.observation_count, s.duration_seconds) for s in old_policy), (
+        "the incident's fragments survive in the record now, but uncertified"
+    )
 
 
 def test_genuinely_separate_blockages_stay_separate():
@@ -68,17 +70,34 @@ def test_genuinely_separate_blockages_stay_separate():
     assert len(sessions) == 2
 
 
-def test_short_detections_are_dropped():
-    """Eight of eighteen sessions found on one camera in nineteen hours were
-    under five minutes, and none were real. docs/history/design.md scopes them
-    out."""
+def test_short_detections_are_recorded_but_not_certified():
+    """The record keeps every run; certification is the read-side rule. The
+    old derivation deleted short runs outright, which at a 3-10 minute frame
+    cadence deleted real through-trains - measured 2026-08-18 as 77 sightings
+    against 38 sessions in 14 days."""
     sessions = derive_sessions([obs(0), obs(2), obs(3)])
 
-    assert sessions == []
+    assert len(sessions) == 1
+    assert sessions[0].observation_count == 3
+    assert not is_certified(sessions[0].observation_count, sessions[0].duration_seconds)
 
 
-def test_a_single_blocked_frame_is_never_a_session():
-    assert derive_sessions([obs(0)]) == []
+def test_a_single_blocked_frame_is_a_recorded_uncertified_run():
+    sessions = derive_sessions([obs(0)])
+
+    assert len(sessions) == 1
+    assert sessions[0].observation_count == 1
+    assert sessions[0].duration_seconds == 0
+    assert not is_certified(1, 0)
+
+
+def test_certification_thresholds():
+    """The read-side rule: two observations and five minutes, with legacy
+    rows (no evidence recorded) grandfathered as certified."""
+    assert is_certified(2, 300)
+    assert not is_certified(1, 300)
+    assert not is_certified(2, 299)
+    assert is_certified(None, None)
 
 
 def test_unknown_neither_extends_nor_ends_a_session():
@@ -141,4 +160,7 @@ def test_tighter_parameters_rebuild_differently():
     narrow = derive_sessions(rows, SessionParams(gap=timedelta(minutes=10)))
 
     assert len(wide) == 1
-    assert len(narrow) == 0, "both halves fall under the 5-minute minimum once split"
+    assert len(narrow) == 2, "the split halves stay in the record"
+    assert all(not is_certified(s.observation_count, s.duration_seconds) for s in narrow), (
+        "both halves fall under the certification minimums once split"
+    )

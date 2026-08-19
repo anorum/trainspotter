@@ -63,6 +63,7 @@ def _sess(
     crossing_id: str = "SE_12TH_CLINTON",
     base: datetime = T0,
     ended_min: float | None = None,
+    observation_count: int | None = None,
 ) -> dict:
     started = base + timedelta(minutes=started_min)
     if is_open:
@@ -80,6 +81,7 @@ def _sess(
         "duration_seconds": None if ended is None else int((ended - started).total_seconds()),
         "peak_queue_occupancy": 0.7,
         "is_open": is_open,
+        "observation_count": observation_count,
     }
 
 
@@ -407,168 +409,72 @@ async def test_session_list_limit_caps_the_result(pool) -> None:
     assert len(rows) == 3
 
 
-def _recent() -> datetime:
-    """Sightings anchor on now() in SQL, so their fixtures anchor there too.
-    Whole seconds, because the derivation round-trips timestamps through
-    epoch milliseconds and the assertions compare ISO strings exactly."""
-    return datetime.now(UTC).replace(microsecond=0) - timedelta(hours=2)
-
-
-async def test_sightings_hold_a_blocked_frame_until_the_next_judgement(pool) -> None:
-    """The board's own rule replayed over history: a BLOCKED judgement holds
-    until its camera's next judgement supersedes it, and with no session
-    covering the run it surfaces on the sheet as a sighting."""
-    b = _recent()
+async def test_session_list_tiers_rows_by_certification(pool) -> None:
+    """The one read-side rule, applied server-side: a multi-frame five-minute
+    run reads certified, a single-frame run reads uncertified, and a legacy
+    row with no recorded evidence is certified by the minimums it passed at
+    derivation time."""
     await db.upsert_batch(
         pool,
-        [
-            _obs(0, state="BLOCKED", detector_version="motion/1", base=b),
-            _obs(4, state="CLEAR", detector_version="motion/1", base=b),
-        ],
         [],
-    )
-
-    out = await db.sightings(pool, "SE_12TH_CLINTON", days=14)
-    assert [(s["started_at"], s["ended_at"], s["frames"]) for s in out] == [
-        (b.isoformat(), (b + timedelta(minutes=4)).isoformat(), 1)
-    ]
-
-
-async def test_sightings_cap_a_lone_blocked_frame_at_the_freshness_limit(pool) -> None:
-    """A camera that went quiet mid-train: the BLOCKED word holds only as long
-    as the board would trust it, so the span ends at the staleness cap rather
-    than stretching to a judgement an hour later."""
-    from blockade.api.state import DEFAULT_STALE_AFTER
-
-    b = _recent()
-    await db.upsert_batch(
-        pool,
-        [
-            _obs(0, state="BLOCKED", detector_version="motion/1", base=b),
-            _obs(60, state="CLEAR", detector_version="motion/1", base=b),
-        ],
-        [],
-    )
-
-    out = await db.sightings(pool, "SE_12TH_CLINTON", days=14)
-    assert [s["ended_at"] for s in out] == [(b + DEFAULT_STALE_AFTER).isoformat()]
-
-
-async def test_sightings_ignore_unscored_rows_entirely(pool) -> None:
-    """unscored/% heartbeats are not judgements: an unscored BLOCKED mints no
-    sighting, and an unscored row between two real judgements does not
-    supersede the BLOCKED word before it."""
-    b = _recent()
-    await db.upsert_batch(
-        pool,
-        [
-            _obs(0, state="BLOCKED", detector_version="unscored/1", base=b, camera="odot-679"),
-            _obs(0, state="BLOCKED", detector_version="motion/1", base=b),
-            _obs(2, state="UNKNOWN", detector_version="unscored/1", base=b),
-            _obs(5, state="CLEAR", detector_version="motion/1", base=b),
-        ],
-        [],
-    )
-
-    out = await db.sightings(pool, "SE_12TH_CLINTON", days=14)
-    assert [(s["started_at"], s["ended_at"], s["frames"]) for s in out] == [
-        (b.isoformat(), (b + timedelta(minutes=5)).isoformat(), 1)
-    ]
-
-
-async def test_sightings_merge_overlapping_camera_spans(pool) -> None:
-    """Two cameras watching the same train are one sighting: overlapping spans
-    merge, the frame count sums, and the peak confidence is the max."""
-    b = _recent()
-    await db.upsert_batch(
-        pool,
-        [
-            _obs(0, state="BLOCKED", detector_version="motion/1", base=b, confidence=0.5),
-            _obs(6, state="CLEAR", detector_version="motion/1", base=b),
-            _obs(
-                3,
-                state="BLOCKED",
-                detector_version="motion/1",
-                base=b,
-                camera="odot-679",
-                confidence=0.94,
-            ),
-            _obs(8, state="CLEAR", detector_version="motion/1", base=b, camera="odot-679"),
-        ],
-        [],
-    )
-
-    out = await db.sightings(pool, "SE_12TH_CLINTON", days=14)
-    assert [(s["started_at"], s["ended_at"], s["frames"]) for s in out] == [
-        (b.isoformat(), (b + timedelta(minutes=8)).isoformat(), 2)
-    ]
-    assert out[0]["peak_confidence"] == pytest.approx(0.94)
-
-
-async def test_sightings_subtract_certified_sessions_including_straddlers(pool) -> None:
-    """What a session certifies is not a sighting - including when the session
-    started before the window's leading edge. Filtering sessions by started_at
-    would drop that straddler and resurface its BLOCKED frames as a phantom
-    duplicating the record book."""
-    now = datetime.now(UTC).replace(microsecond=0)
-    covered = now - timedelta(hours=3)
-    edge = now - timedelta(days=13, hours=12)
-    survivor = now - timedelta(hours=1)
-    await db.upsert_batch(
-        pool,
-        [
-            _obs(0, state="BLOCKED", detector_version="motion/1", base=covered),
-            _obs(5, state="CLEAR", detector_version="motion/1", base=covered),
-            _obs(0, state="BLOCKED", detector_version="motion/1", base=edge),
-            _obs(5, state="CLEAR", detector_version="motion/1", base=edge),
-            _obs(0, state="BLOCKED", detector_version="motion/1", base=survivor),
-            _obs(4, state="CLEAR", detector_version="motion/1", base=survivor),
-        ],
         [
             _sess(
-                "covering",
-                detector_version="motion/1",
+                "t-certified",
+                detector_version="m/1",
                 is_open=False,
-                base=covered,
-                started_min=-5,
-                ended_min=10,
+                started_min=0,
+                ended_min=6,
+                observation_count=3,
             ),
             _sess(
-                "straddler",
-                detector_version="motion/1",
+                "t-sighting",
+                detector_version="m/1",
                 is_open=False,
-                base=now,
-                started_min=-20 * 24 * 60,
-                ended_min=-13 * 24 * 60,
+                started_min=30,
+                ended_min=30,
+                observation_count=1,
             ),
+            _sess("t-legacy", detector_version="m/1", is_open=False, started_min=60),
         ],
     )
 
-    out = await db.sightings(pool, "SE_12TH_CLINTON", days=14)
-    assert [s["started_at"] for s in out] == [survivor.isoformat()]
+    rows = {r["session_id"]: r for r in await db.session_list(pool, "SE_12TH_CLINTON", limit=10)}
+    assert rows["t-certified"]["certified"] is True
+    assert rows["t-sighting"]["certified"] is False
+    assert rows["t-sighting"]["observation_count"] == 1
+    assert rows["t-legacy"]["certified"] is True, (
+        "no evidence recorded means the old minimums passed it"
+    )
 
 
-async def test_sightings_subtract_an_open_session_from_before_the_window(pool) -> None:
-    """An open session is a running certification up to now: even one whose
-    started_at predates the whole window keeps its BLOCKED frames off the
-    sightings tier."""
-    b = _recent()
+async def test_analytics_counts_certified_sessions_only(pool) -> None:
+    """The analytics SQL restates blockade.sessions.is_certified because SQL
+    cannot call it; this pin is what keeps the two rules identical. An
+    uncertified run must inflate neither the session count nor the durations."""
     await db.upsert_batch(
         pool,
-        [
-            _obs(0, state="BLOCKED", detector_version="motion/1", base=b),
-            _obs(5, state="CLEAR", detector_version="motion/1", base=b),
-        ],
+        [_obs(0, state="BLOCKED", detector_version="m/1")],
         [
             _sess(
-                "open-straddler",
-                detector_version="motion/1",
-                is_open=True,
-                base=datetime.now(UTC),
-                started_min=-20 * 24 * 60,
-            )
+                "c-certified",
+                detector_version="m/1",
+                is_open=False,
+                started_min=0,
+                ended_min=6,
+                observation_count=2,
+            ),
+            _sess(
+                "c-sighting",
+                detector_version="m/1",
+                is_open=False,
+                started_min=120,
+                ended_min=120,
+                observation_count=1,
+            ),
         ],
     )
 
-    out = await db.sightings(pool, "SE_12TH_CLINTON", days=14)
-    assert out == []
+    out = await db.analytics(pool)
+    entry = out["SE_12TH_CLINTON"]
+    assert entry["sessions_closed"] == 1
+    assert entry["durations_seconds"] == [360]

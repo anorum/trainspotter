@@ -202,7 +202,8 @@ def test_the_next_train_does_not_reclose_a_session_the_boot_inherited() -> None:
     drive(processor, old_train + then_quiet, already_published=True)
     emitted, _ = drive(processor, next_train)
 
-    assert [s.is_open for s in emitted] == [True]
+    assert all(s.is_open for s in emitted), "no close may be re-announced"
+    assert {s.started_at for s in emitted} == {next_train[0].captured_at}
     assert emitted[0].started_at == next_train[0].captured_at
 
 
@@ -219,8 +220,9 @@ def test_the_next_train_does_close_a_session_that_was_open_at_shutdown() -> None
     drive(processor, open_at_shutdown, already_published=True)
     emitted, _ = drive(processor, next_train)
 
-    assert [s.is_open for s in emitted] == [False, True]
+    assert [s.is_open for s in emitted][:1] == [False], "the inherited close goes out first"
     assert emitted[0].started_at == open_at_shutdown[0].captured_at
+    assert all(s.is_open for s in emitted[1:]), "then the new train's own upserts"
 
 
 def outage_backlog() -> tuple[list[ObservationRecord], list[ObservationRecord]]:
@@ -250,7 +252,7 @@ def test_the_sweep_closes_a_session_the_previous_life_never_saw() -> None:
     opened, _ = drive(processor, buried)
     swept = processor.sweep(now=T0 + timedelta(hours=8))
 
-    assert [(s.crossing_id, s.is_open) for s in opened] == [("SE_POWELL", True)]
+    assert {(s.crossing_id, s.is_open) for s in opened} == {("SE_POWELL", True)}
     assert ("SE_POWELL", False) in [(s.crossing_id, s.is_open) for s in swept]
     assert processor.open_count == 0
 
@@ -267,8 +269,9 @@ def test_the_next_train_closes_a_session_the_previous_life_never_saw() -> None:
     drive(processor, buried)
     emitted, _ = drive(processor, next_train)
 
-    assert [s.is_open for s in emitted] == [False, True]
+    assert [s.is_open for s in emitted][:1] == [False]
     assert emitted[0].started_at == buried[0].captured_at
+    assert all(s.is_open for s in emitted[1:])
 
 
 def test_the_deployments_argv_reaches_the_run_command() -> None:
@@ -527,13 +530,15 @@ async def test_a_life_that_dies_mid_drain_leaves_its_work_to_be_redone() -> None
         settings,
         killed,
     )
-    assert [s["is_open"] for s in produced(doomed, settings.kafka_sessions_topic)] == [True]
+    opens = produced(doomed, settings.kafka_sessions_topic)
+    assert opens and all(s["is_open"] for s in opens), "life 1 announced only opens"
 
     life2 = FakeProgress(boundary=life1.committed or 0)
     reborn = FakeProducer()
     await drain(FakeTailer([backlog, []]), reborn, life2, settings)
 
     sessions = produced(reborn, settings.kafka_sessions_topic)
-    assert [s["is_open"] for s in sessions] == [True, False], "the close life 1 never made"
+    assert sessions[-1]["is_open"] is False, "the close life 1 never made"
+    assert all(s["is_open"] for s in sessions[:-1])
     assert life1.committed is None, "a drain that never reached the head finished nothing"
     assert life2.committed == len(backlog)

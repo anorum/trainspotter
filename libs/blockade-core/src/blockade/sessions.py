@@ -21,7 +21,31 @@ from datetime import timedelta
 from blockade.schemas import BlockageSession, CrossingState, ObservationRecord
 
 DEFAULT_GAP = timedelta(minutes=15)
-DEFAULT_MIN_DURATION = timedelta(minutes=5)
+
+CERTIFIED_MIN_OBSERVATIONS = 2
+"""A single BLOCKED reading is never certified. One frame can be wrong; two
+consecutive ones are much less likely to be."""
+
+CERTIFIED_MIN_DURATION = timedelta(minutes=5)
+"""Runs shorter than this are not certified. docs/history/design.md scopes
+the project to blockages of five minutes or more, and of eighteen short
+detections measured on one camera in nineteen hours, eight were under five
+minutes and none of those were real - with the old detector. The record now
+keeps every run; these thresholds are how analytics and the sheet's
+certified tier read it, not what the record deletes."""
+
+
+def is_certified(observation_count: int | None, duration_seconds: int | None) -> bool:
+    """The read-side rule consumers threshold with. The analytics SQL in
+    services/api db.py restates it (it cannot call Python); the two are
+    pinned against each other in tests. None evidence means a legacy row,
+    which passed the old derivation minimums by construction."""
+    if observation_count is None:
+        return True
+    return (
+        observation_count >= CERTIFIED_MIN_OBSERVATIONS
+        and (duration_seconds or 0) >= CERTIFIED_MIN_DURATION.total_seconds()
+    )
 
 
 @dataclass(frozen=True)
@@ -47,19 +71,6 @@ class SessionParams:
     the CDN serving frames minutes after their capture stamp. Use
     `suggest_gap` to check it against real cadence rather than trusting it.
     """
-
-    min_duration: timedelta = DEFAULT_MIN_DURATION
-    """Sessions shorter than this are dropped.
-
-    docs/history/design.md scopes the project to blockages of five minutes or
-    more, and short detections are overwhelmingly noise: of eighteen sessions
-    found on one camera in nineteen hours, eight were under five minutes and
-    none of those were real.
-    """
-
-    min_observations: int = 2
-    """A single BLOCKED reading is never a session. One frame can be wrong; two
-    consecutive ones are much less likely to be."""
 
 
 def suggest_gap(observations: Sequence[ObservationRecord], safety: float = 2.0) -> timedelta:
@@ -116,11 +127,9 @@ def _close(
     params: SessionParams,
     detector_version: str,
 ) -> list[BlockageSession]:
-    if len(run) < params.min_observations:
+    if not run:
         return []
     started, ended = run[0].captured_at, run[-1].captured_at
-    if ended - started < params.min_duration:
-        return []
     return [
         BlockageSession(
             session_id=BlockageSession.make_session_id(crossing_id, started),
@@ -131,5 +140,6 @@ def _close(
             peak_queue_occupancy=max(o.confidence for o in run),
             is_open=False,
             detector_version=detector_version or run[0].detector_version,
+            observation_count=len(run),
         )
     ]
