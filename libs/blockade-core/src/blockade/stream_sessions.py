@@ -16,11 +16,12 @@ same observations - that equivalence is pinned by tests, and a disagreement
 is a concrete counterexample rather than a vague worry.
 
 Emission protocol, shaped for the compacted ``crossing.sessions.v1`` topic:
-a session is emitted with ``is_open=True`` as soon as it qualifies (enough
-observations, long enough) and re-emitted as it grows; the final emission on
-close has ``is_open=False``. Every emission carries the same deterministic
+every blocked run is emitted with ``is_open=True`` from its first BLOCKED
+observation and re-emitted as it grows; the final emission on close has
+``is_open=False``. Every emission carries the same deterministic
 ``session_id``, so compaction keeps exactly one row per session - the latest.
-Runs that never qualify close silently, matching the oracle's filters.
+The record keeps every run, however brief; whether a run counts as a
+certified session is decided on the read side, not here.
 """
 
 from __future__ import annotations
