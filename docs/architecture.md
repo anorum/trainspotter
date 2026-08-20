@@ -29,7 +29,7 @@ flowchart LR
     detector -->|crossing.observations.v1| kafka
     kafka -->|observations| sessionizer
     sessionizer -->|crossing.sessions.v1<br/>crossing.alerts.v1| kafka
-    kafka -->|observations + sessions,<br/>tailed| api
+    kafka -->|frames + observations<br/>+ sessions, tailed| api
     api --> pg
     s3 -->|frame images| api
     api -->|pdxtrain.alexnorum.com<br/>blockade.home.alexnorum.com| browser[Browser<br/>board / sheet / patterns]
@@ -102,6 +102,8 @@ One pod serving both the JSON API and the static site, plus the Postgres materia
 - **Board** (`/api/v1/status`, `/api/v1/events` SSE, frames): `LiveState` in `blockade-core/api/state.py` is a pure reducer rebuilt on every boot by groupless Kafka tailers; readiness gates traffic until the replay passes boot-time end offsets.
   Consensus is blocked-biased (any fresh BLOCKED wins; a glare-blind camera's CLEAR cannot veto its partner's train) and anything older than fifteen minutes is stale, so a dead detector can never leave BLOCKED frozen on screen.
   Fifteen is bounded on both sides: above the worst measured camera cadence (692s overnight, ~11.5 minutes, from the Aug 12-18 measurement above) with ~3.5 minutes of margin, and no longer than the gap deadline plus drift margin a session close takes, so the board never claims a blockage the train sheet has already ended.
+  The board also says whose fault stale pictures are: a third groupless tail on `crossing.frames.v1` feeds every poll outcome into the reducer, and `/status` carries a `feed` block blaming in evidence order - `capture_stale` (no poll heartbeat at all: ours), `upstream_down` (a full error streak on every camera: ODOT's server), `upstream_stale` (healthy polls but nothing new past the staleness bound: ODOT's cameras frozen) - which the board renders as an amber note (`feedNote` in `web/src/lib/feed.ts`).
+  The verdict transitions on event time like every other reducer rule, except that a silent poller produces no record to announce itself, so the SSE heartbeat tick re-judges on wall clock and pushes the verdict instead of a bare keep-alive.
 - **Materializer**: two grouped consumers upsert observations and sessions into Postgres, committing offsets only after the transaction - at-least-once, absorbed by deterministic keys.
 - **History** (`/api/v1/timeline`, `/sessions`, `/analytics`): plain SQL in `db.py`; analytics buckets are corridor-local (America/Los_Angeles) via SQL `AT TIME ZONE`.
   The record keeps every blocked run from its first frame, carrying its evidence (`observation_count`); certification - two observations spanning five minutes, `blockade.sessions.is_certified` - is a read-side rule.
@@ -130,7 +132,7 @@ Schema is `CREATE TABLE IF NOT EXISTS` on API start - at this scale a migration 
 
 | Topic | Key | Producer | Consumers | Semantics |
 | --- | --- | --- | --- | --- |
-| `crossing.frames.v1` | camera_id | poller outbox | detector | at-least-once; payload is the manifest line, byte for byte |
+| `crossing.frames.v1` | camera_id | poller outbox | detector, api tailer | at-least-once; payload is the manifest line, byte for byte |
 | `crossing.observations.v1` | crossing_id | detector | sessionizer, api tailer | at-least-once; 7-day retention; the dataset's live edge |
 | `crossing.sessions.v1` | session_id | sessionizer | api tailer, api materializer | compacted; one row per session survives, the latest emission |
 | `crossing.alerts.v1` | crossing_id | sessionizer | none yet | rising edges only; the future notifier's feed |

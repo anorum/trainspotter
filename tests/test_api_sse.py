@@ -52,29 +52,28 @@ async def test_the_heartbeat_pushes_a_wall_clock_verdict_change(
     monkeypatch.setattr(app_module, "HEARTBEAT_SECONDS", 0.05)
     app = build_app(settings=_settings(tmp_path))
 
-    async with _running(app) as client:
-        async with client.stream("GET", "/api/v1/events") as resp:
-            lines = resp.aiter_lines()
-            assert await anext(lines) == "event: status"
-            first = json.loads((await anext(lines)).removeprefix("data: "))
-            assert first["feed"]["status"] == "ok"
+    async with _running(app) as client, client.stream("GET", "/api/v1/events") as resp:
+        lines = resp.aiter_lines()
+        assert await anext(lines) == "event: status"
+        first = json.loads((await anext(lines)).removeprefix("data: "))
+        assert first["feed"]["status"] == "ok"
 
-            # A quiet tick with an unmoved verdict stays a bare comment.
+        # A quiet tick with an unmoved verdict stays a bare comment.
+        line = await anext(lines)
+        while line == "":
             line = await anext(lines)
-            while line == "":
+        assert line == ": heartbeat"
+
+        # The poller's last word was ten minutes ago. Event time saw
+        # nothing change, so no queue signal will ever come; only the
+        # heartbeat's wall-clock re-judgement can deliver the news.
+        app.state.live.apply_frame(_last_poll(10.0))
+
+        async with asyncio.timeout(5):
+            while True:
                 line = await anext(lines)
-            assert line == ": heartbeat"
-
-            # The poller's last word was ten minutes ago. Event time saw
-            # nothing change, so no queue signal will ever come; only the
-            # heartbeat's wall-clock re-judgement can deliver the news.
-            app.state.live.apply_frame(_last_poll(10.0))
-
-            async with asyncio.timeout(5):
-                while True:
-                    line = await anext(lines)
-                    if line == "event: status":
-                        break
-                    assert line in ("", ": heartbeat")
-            pushed = json.loads((await anext(lines)).removeprefix("data: "))
-            assert pushed["feed"]["status"] == "capture_stale"
+                if line == "event: status":
+                    break
+                assert line in ("", ": heartbeat")
+        pushed = json.loads((await anext(lines)).removeprefix("data: "))
+        assert pushed["feed"]["status"] == "capture_stale"
