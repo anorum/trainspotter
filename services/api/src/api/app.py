@@ -15,6 +15,7 @@ know to hide the stats surface entirely rather than render an error.
 from __future__ import annotations
 
 import asyncio
+import time
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -89,7 +90,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         nonlocal pool
         # Metrics on their own port: the public HTTPRoute forwards every path
         # on 8000, so /metrics there would be internet-facing.
-        start_http_server(settings.metrics_port)
+        metrics_server, _ = start_http_server(settings.metrics_port)
         materializer = None
         if settings.database_url:
             # The feed's Kafka replay and the pool's connect+DDL are
@@ -105,6 +106,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         if pool is not None:
             await pool.close()
         await feed.stop()
+        metrics_server.shutdown()
+        metrics_server.server_close()
 
     def history_pool() -> asyncpg.Pool:
         if pool is None:
@@ -115,16 +118,21 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
     @app.middleware("http")
     async def measure(request, call_next):  # type: ignore[no-untyped-def]
-        import time as _time
-
-        began = _time.perf_counter()
-        response = await call_next(request)
-        # The matched route's template, never the raw path: object keys and
-        # query strings would explode the label cardinality.
-        route = getattr(request.scope.get("route"), "path", "unmatched")
-        HTTP_REQUESTS.labels(route, request.method, str(response.status_code)).inc()
-        HTTP_SECONDS.labels(route).observe(_time.perf_counter() - began)
-        return response
+        began = time.perf_counter()
+        # An unhandled handler exception only becomes a 500 above this
+        # middleware, in ServerErrorMiddleware - count it on the way out or
+        # the dashboard's 5xx panel misses exactly the crashes it exists for.
+        status = "500"
+        try:
+            response = await call_next(request)
+            status = str(response.status_code)
+            return response
+        finally:
+            # The matched route's template, never the raw path: object keys
+            # and query strings would explode the label cardinality.
+            route = getattr(request.scope.get("route"), "path", "unmatched")
+            HTTP_REQUESTS.labels(route, request.method, status).inc()
+            HTTP_SECONDS.labels(route).observe(time.perf_counter() - began)
 
     @app.get("/healthz")
     async def healthz() -> dict:
