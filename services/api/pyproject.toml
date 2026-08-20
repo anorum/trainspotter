@@ -6,6 +6,7 @@ readme = "README.md"
 # Ceiling tracks the python:3.11-slim runtime images, not PyFlink (gone); move both together.
 requires-python = ">=3.11,<3.12"
 dependencies = [
+    "prometheus-client>=0.20",
     "blockade-core[kafka]",
     "fastapi>=0.115",
     "uvicorn>=0.30",

@@ -1,0 +1,369 @@
+---
+# The app's Grafana dashboard, provisioned the kube-prometheus-stack way: the
+# sidecar watches every namespace for ConfigMaps labeled grafana_dashboard.
+# Lives with the app per "infra next to what it deploys".
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pdxtrain-dashboard
+  namespace: blockade
+  labels:
+    grafana_dashboard: "1"
+data:
+  pdxtrain.json: |
+    {
+     "uid": "pdxtrain",
+     "title": "PDX Train",
+     "tags": [
+      "pdxtrain",
+      "blockade"
+     ],
+     "timezone": "browser",
+     "schemaVersion": 39,
+     "refresh": "30s",
+     "time": {
+      "from": "now-6h",
+      "to": "now"
+     },
+     "panels": [
+      {
+       "id": 1,
+       "title": "Frame age per camera (the TripCheck stall detector)",
+       "type": "timeseries",
+       "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 7
+       },
+       "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+       },
+       "targets": [
+        {
+         "expr": "time() - blockade_last_new_frame_timestamp",
+         "refId": "A",
+         "legendFormat": "{{camera_id}}"
+        }
+       ],
+       "fieldConfig": {
+        "defaults": {
+         "custom": {},
+         "unit": "s",
+         "thresholds": {
+          "mode": "absolute",
+          "steps": [
+           {
+            "color": "green",
+            "value": null
+           },
+           {
+            "color": "yellow",
+            "value": 600
+           },
+           {
+            "color": "red",
+            "value": 1200
+           }
+          ]
+         }
+        },
+        "overrides": []
+       },
+       "options": {}
+      },
+      {
+       "id": 2,
+       "title": "Consecutive poll failures",
+       "type": "timeseries",
+       "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 7
+       },
+       "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+       },
+       "targets": [
+        {
+         "expr": "blockade_consecutive_errors",
+         "refId": "A",
+         "legendFormat": "{{camera_id}}"
+        }
+       ],
+       "fieldConfig": {
+        "defaults": {
+         "custom": {},
+         "thresholds": {
+          "mode": "absolute",
+          "steps": [
+           {
+            "color": "green",
+            "value": null
+           },
+           {
+            "color": "yellow",
+            "value": 3
+           },
+           {
+            "color": "red",
+            "value": 8
+           }
+          ]
+         }
+        },
+        "overrides": []
+       },
+       "options": {}
+      },
+      {
+       "id": 3,
+       "title": "Sessionizer",
+       "type": "stat",
+       "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 7
+       },
+       "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+       },
+       "targets": [
+        {
+         "expr": "blockade_sessionizer_caught_up",
+         "refId": "A",
+         "legendFormat": "caught up"
+        },
+        {
+         "expr": "blockade_sessionizer_open_sessions",
+         "refId": "B",
+         "legendFormat": "open sessions"
+        }
+       ],
+       "fieldConfig": {
+        "defaults": {
+         "custom": {}
+        },
+        "overrides": []
+       },
+       "options": {}
+      },
+      {
+       "id": 4,
+       "title": "Judgements per minute, by state",
+       "type": "timeseries",
+       "gridPos": {
+        "x": 0,
+        "y": 7,
+        "w": 12,
+        "h": 7
+       },
+       "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+       },
+       "targets": [
+        {
+         "expr": "sum by (state) (rate(blockade_detector_scored_total[10m])) * 60",
+         "refId": "A",
+         "legendFormat": "{{state}}"
+        }
+       ],
+       "fieldConfig": {
+        "defaults": {
+         "custom": {}
+        },
+        "overrides": []
+       },
+       "options": {}
+      },
+      {
+       "id": 5,
+       "title": "Poll outcomes (10m rate)",
+       "type": "timeseries",
+       "gridPos": {
+        "x": 12,
+        "y": 7,
+        "w": 12,
+        "h": 7
+       },
+       "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+       },
+       "targets": [
+        {
+         "expr": "sum by (status) (rate(blockade_frames_total[10m])) * 60",
+         "refId": "A",
+         "legendFormat": "{{status}}"
+        }
+       ],
+       "fieldConfig": {
+        "defaults": {
+         "custom": {}
+        },
+        "overrides": []
+       },
+       "options": {}
+      },
+      {
+       "id": 6,
+       "title": "Requests/s by route",
+       "type": "timeseries",
+       "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 8,
+        "h": 7
+       },
+       "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+       },
+       "targets": [
+        {
+         "expr": "sum by (route) (rate(blockade_api_requests_total[5m]))",
+         "refId": "A",
+         "legendFormat": "{{route}}"
+        }
+       ],
+       "fieldConfig": {
+        "defaults": {
+         "custom": {},
+         "unit": "reqps"
+        },
+        "overrides": []
+       },
+       "options": {}
+      },
+      {
+       "id": 7,
+       "title": "p95 latency by route",
+       "type": "timeseries",
+       "gridPos": {
+        "x": 8,
+        "y": 14,
+        "w": 8,
+        "h": 7
+       },
+       "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+       },
+       "targets": [
+        {
+         "expr": "histogram_quantile(0.95, sum by (route, le) (rate(blockade_api_request_seconds_bucket[5m])))",
+         "refId": "A",
+         "legendFormat": "{{route}}"
+        }
+       ],
+       "fieldConfig": {
+        "defaults": {
+         "custom": {},
+         "unit": "s"
+        },
+        "overrides": []
+       },
+       "options": {}
+      },
+      {
+       "id": 8,
+       "title": "Live viewers (SSE) & errors",
+       "type": "timeseries",
+       "gridPos": {
+        "x": 16,
+        "y": 14,
+        "w": 8,
+        "h": 7
+       },
+       "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+       },
+       "targets": [
+        {
+         "expr": "blockade_api_sse_clients",
+         "refId": "A",
+         "legendFormat": "open streams"
+        },
+        {
+         "expr": "sum (rate(blockade_api_requests_total{status=~\"5..\"}[5m])) * 60",
+         "refId": "B",
+         "legendFormat": "5xx per min"
+        }
+       ],
+       "fieldConfig": {
+        "defaults": {
+         "custom": {}
+        },
+        "overrides": []
+       },
+       "options": {}
+      },
+      {
+       "id": 9,
+       "title": "Pod memory (blockade)",
+       "type": "timeseries",
+       "gridPos": {
+        "x": 0,
+        "y": 21,
+        "w": 12,
+        "h": 7
+       },
+       "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+       },
+       "targets": [
+        {
+         "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"blockade\", container!=\"\"})",
+         "refId": "A",
+         "legendFormat": "{{pod}}"
+        }
+       ],
+       "fieldConfig": {
+        "defaults": {
+         "custom": {},
+         "unit": "bytes"
+        },
+        "overrides": []
+       },
+       "options": {}
+      },
+      {
+       "id": 10,
+       "title": "Pod CPU (blockade)",
+       "type": "timeseries",
+       "gridPos": {
+        "x": 12,
+        "y": 21,
+        "w": 12,
+        "h": 7
+       },
+       "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+       },
+       "targets": [
+        {
+         "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"blockade\", container!=\"\"}[5m]))",
+         "refId": "A",
+         "legendFormat": "{{pod}}"
+        }
+       ],
+       "fieldConfig": {
+        "defaults": {
+         "custom": {},
+         "unit": "percentunit"
+        },
+        "overrides": []
+       },
+       "options": {}
+      }
+     ]
+    }

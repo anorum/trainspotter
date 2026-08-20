@@ -26,11 +26,22 @@ from blockade.schemas import parse_utc
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from prometheus_client import Counter, Gauge, Histogram, start_http_server
 
 from api import db
 from api.images import FrameImages
 from api.materializer import Materializer
 from api.tailer import StateFeed
+
+HTTP_REQUESTS = Counter(
+    "blockade_api_requests_total",
+    "HTTP requests served, by route template",
+    ["route", "method", "status"],
+)
+HTTP_SECONDS = Histogram(
+    "blockade_api_request_seconds", "Request latency, by route template", ["route"]
+)
+SSE_CLIENTS = Gauge("blockade_api_sse_clients", "Open event-stream connections")
 
 HEARTBEAT_SECONDS = 20
 
@@ -76,6 +87,9 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         nonlocal pool
+        # Metrics on their own port: the public HTTPRoute forwards every path
+        # on 8000, so /metrics there would be internet-facing.
+        start_http_server(settings.metrics_port)
         materializer = None
         if settings.database_url:
             # The feed's Kafka replay and the pool's connect+DDL are
@@ -98,6 +112,19 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         return pool
 
     app = FastAPI(title="blockade-api", lifespan=lifespan)
+
+    @app.middleware("http")
+    async def measure(request, call_next):  # type: ignore[no-untyped-def]
+        import time as _time
+
+        began = _time.perf_counter()
+        response = await call_next(request)
+        # The matched route's template, never the raw path: object keys and
+        # query strings would explode the label cardinality.
+        route = getattr(request.scope.get("route"), "path", "unmatched")
+        HTTP_REQUESTS.labels(route, request.method, str(response.status_code)).inc()
+        HTTP_SECONDS.labels(route).observe(_time.perf_counter() - began)
+        return response
 
     @app.get("/healthz")
     async def healthz() -> dict:
@@ -177,6 +204,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     async def events() -> StreamingResponse:
         async def stream():
             queue = feed.subscribe()
+            SSE_CLIENTS.inc()
             try:
                 yield _sse("status", state.snapshot().model_dump_json())
                 while True:
@@ -186,6 +214,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                     except TimeoutError:
                         yield ": heartbeat\n\n"
             finally:
+                SSE_CLIENTS.dec()
                 feed.unsubscribe(queue)
 
         return StreamingResponse(
