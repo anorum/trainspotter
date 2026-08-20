@@ -53,6 +53,24 @@ class CrossingStatus(BaseModel):
     cameras: list[CameraFrameInfo] = []
 
 
+class FeedHealth(BaseModel):
+    """Who to blame when the pictures go stale.
+
+    The poller publishes every poll outcome, so the board can distinguish
+    "ODOT stopped serving" (their outage, our pipeline healthy and waiting)
+    from "our capture went quiet" (ours to fix). ``ok`` when neither.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    status: str = "ok"
+    """ok | upstream_down | upstream_stale | capture_stale."""
+    since: datetime | None = None
+    """When the condition began: the last successful poll (upstream_down),
+    the last new image (upstream_stale), or the last poll heard at all
+    (capture_stale)."""
+
+
 class StatusResponse(BaseModel):
     """The whole board: every crossing, one generation timestamp."""
 
@@ -60,3 +78,4 @@ class StatusResponse(BaseModel):
 
     generated_at: datetime
     crossings: list[CrossingStatus]
+    feed: FeedHealth = FeedHealth()

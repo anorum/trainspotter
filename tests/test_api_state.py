@@ -10,7 +10,14 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from blockade.api.state import DEFAULT_STALE_AFTER, LiveState
-from blockade.schemas import BlockageSession, CrossingState, ObservationRecord
+from blockade.schemas import (
+    BlockageSession,
+    CapturedAtSource,
+    CrossingState,
+    FetchStatus,
+    FrameRecord,
+    ObservationRecord,
+)
 from blockade.sessions import SessionParams
 from sessionizer.runner import OUT_OF_ORDERNESS
 
@@ -260,3 +267,83 @@ def test_a_non_scoring_cameras_heartbeat_cannot_hide_a_dead_witness():
     # The pictures still flow: the blind camera's frames stay on the panel.
     division_view = next(c for c in clinton.cameras if c.camera_id == "odot-679")
     assert division_view.object_key is not None
+
+
+# ---------------------------------------------------------------- feed blame
+
+
+def frame(minute: float, camera: str = "odot-678", status: str = "ok") -> FrameRecord:
+    fetched = T0 + timedelta(minutes=minute)
+    return FrameRecord(
+        camera_id=camera,
+        crossing_id="SE_12TH_CLINTON",
+        fetched_at=fetched,
+        captured_at=fetched,
+        captured_at_source=CapturedAtSource.FETCHED_AT,
+        fetch_status=FetchStatus(status),
+        object_key=None if status != "ok" else f"frames/{camera}/{minute}.jpg",
+        poller_version="test/1",
+    )
+
+
+def test_feed_blames_odot_when_every_camera_errors() -> None:
+    """Three straight failures on every camera is their server refusing us -
+    the banner must say so instead of letting the board look broken."""
+    state = fresh()
+    for m in range(3):
+        state.apply_frame(frame(float(m), "odot-678", "error"))
+        state.apply_frame(frame(float(m), "odot-679", "error"))
+
+    board = state.snapshot(now=T0 + timedelta(minutes=4))
+    assert board.feed.status == "upstream_down"
+
+
+def test_a_decommissioned_cameras_replayed_polls_cannot_veto_the_verdict() -> None:
+    """The groupless tail replays the whole topic on every boot, including
+    cameras long removed from the roster. A retired camera's final healthy
+    poll must not sit in the books with a zero error streak, blocking the
+    every-camera-erroring consensus forever."""
+    state = fresh()
+    state.apply_frame(frame(0.0, "odot-retired", "ok"))
+    for m in range(1, 4):
+        state.apply_frame(frame(float(m), "odot-678", "error"))
+        state.apply_frame(frame(float(m), "odot-679", "error"))
+
+    board = state.snapshot(now=T0 + timedelta(minutes=4))
+    assert board.feed.status == "upstream_down"
+    assert board.feed.since is None, "the retired camera's ok poll must not count"
+
+
+def test_feed_blames_frozen_cameras_when_polls_succeed_without_new_images() -> None:
+    """The 2026-08-19 morning case: TripCheck answering 304 forever. Healthy
+    polls, no new pictures past the staleness bound - theirs, not ours."""
+    state = fresh()
+    state.apply_frame(frame(0.0, "odot-678", "ok"))
+    for m in range(1, 30):
+        state.apply_frame(frame(float(m), "odot-678", "not_modified"))
+
+    board = state.snapshot(now=T0 + timedelta(minutes=30))
+    assert board.feed.status == "upstream_stale"
+    assert board.feed.since == T0
+
+
+def test_feed_blames_us_when_the_poller_goes_silent() -> None:
+    """No poll outcomes at all outranks every other verdict: without the
+    heartbeat we cannot testify about ODOT, and the silence is ours."""
+    state = fresh()
+    state.apply_frame(frame(0.0, "odot-678", "error"))
+
+    board = state.snapshot(now=T0 + timedelta(minutes=10))
+    assert board.feed.status == "capture_stale"
+
+
+def test_feed_recovers_to_ok_and_flags_the_change() -> None:
+    state = fresh()
+    for m in range(3):
+        state.apply_frame(frame(float(m), "odot-678", "error"))
+    state.changed = False
+    state.apply_frame(frame(3.0, "odot-678", "ok"))
+
+    assert state.changed, "a blame transition is a board change the SSE must push"
+    board = state.snapshot(now=T0 + timedelta(minutes=4))
+    assert board.feed.status == "ok"

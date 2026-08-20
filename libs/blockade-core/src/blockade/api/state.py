@@ -26,8 +26,23 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from blockade.api.models import CameraFrameInfo, CrossingStatus, StatusResponse
-from blockade.schemas import BlockageSession, CrossingState, ObservationRecord
+from blockade.api.models import CameraFrameInfo, CrossingStatus, FeedHealth, StatusResponse
+from blockade.schemas import (
+    BlockageSession,
+    CrossingState,
+    FetchStatus,
+    FrameRecord,
+    ObservationRecord,
+)
+
+CAPTURE_SILENT_AFTER = timedelta(minutes=5)
+"""No poll outcome heard at all for this long means our own capture is the
+problem - the poller reports every attempt, success or failure, every ~30s,
+so silence is ours regardless of what ODOT is doing."""
+
+UPSTREAM_ERROR_STREAK = 3
+"""Consecutive failed polls on every camera before the verdict is that
+ODOT's server is down rather than one flaky request."""
 
 DEFAULT_STALE_AFTER = timedelta(minutes=15)
 """How long one camera's judgement still counts. Two ceilings decide the number.
@@ -81,12 +96,21 @@ class LiveState:
             crossing_id: [cid for cid, _ in cams if scoring is None or cid in scoring]
             for crossing_id, cams in cameras_by_crossing.items()
         }
+        self._roster = {cid for cams in cameras_by_crossing.values() for cid, _ in cams}
         # One open session per crossing, plus the last emission per crossing
         # for change detection - both bounded by the roster. Closed sessions
         # are history and belong to Postgres, not this reducer.
         self._open_by_crossing: dict[str, BlockageSession] = {}
         self._last_session: dict[str, BlockageSession] = {}
         self._by_camera: dict[str, ObservationRecord] = {}
+        # Poll outcomes, for blaming staleness correctly: last outcome of any
+        # kind, last non-error outcome, last genuinely new image, and the
+        # error streak - each per camera, all bounded by the roster.
+        self._last_poll: dict[str, datetime] = {}
+        self._last_ok: dict[str, datetime] = {}
+        self._last_new: dict[str, datetime] = {}
+        self._error_streak: dict[str, int] = {}
+        self._feed_status: str = "ok"
         self._state_since: dict[str, tuple[CrossingState, datetime]] = {}
         self._latest_frame: dict[str, tuple[str, datetime]] = {}
         self.changed = False
@@ -118,6 +142,55 @@ class LiveState:
             self._state_since[obs.crossing_id] = (state, obs.captured_at)
             self.changed = True
 
+    def apply_frame(self, record: FrameRecord) -> None:
+        """One poll outcome. The poller reports every attempt, so this stream
+        is the heartbeat that lets staleness be blamed correctly.
+
+        Records from cameras outside the roster are dropped: the groupless
+        tail replays the whole topic on boot, and a decommissioned camera's
+        final healthy polls would otherwise sit in the books forever with a
+        zero error streak, vetoing the upstream_down verdict."""
+        cam = record.camera_id
+        if cam not in self._roster:
+            return
+        self._last_poll[cam] = record.fetched_at
+        if record.fetch_status is FetchStatus.ERROR:
+            self._error_streak[cam] = self._error_streak.get(cam, 0) + 1
+        else:
+            self._error_streak[cam] = 0
+            self._last_ok[cam] = record.fetched_at
+            if record.fetch_status is FetchStatus.OK:
+                self._last_new[cam] = record.fetched_at
+        # Event time, like every other reducer rule: the record's own clock
+        # decides transitions, so replay converges identically to live.
+        status = self._feed(record.fetched_at).status
+        if status != self._feed_status:
+            self._feed_status = status
+            self.changed = True
+
+    def _feed(self, now: datetime) -> FeedHealth:
+        """Blame for stale pictures, in order of what the evidence supports.
+
+        Capture silence outranks everything: with no poll outcomes at all we
+        cannot testify about ODOT either way, and the fault is ours. A full
+        error streak on every camera is their server refusing us. Fresh
+        successful polls that yield no new image for longer than the
+        staleness bound is their cameras frozen behind a healthy server.
+        """
+        if not self._last_poll:
+            return FeedHealth(status="ok")
+        newest_poll = max(self._last_poll.values())
+        if now - newest_poll > CAPTURE_SILENT_AFTER:
+            return FeedHealth(status="capture_stale", since=newest_poll)
+        streaks = [self._error_streak.get(c, 0) for c in self._last_poll]
+        if streaks and all(s >= UPSTREAM_ERROR_STREAK for s in streaks):
+            last_ok = max(self._last_ok.values(), default=None)
+            return FeedHealth(status="upstream_down", since=last_ok)
+        newest_new = max(self._last_new.values(), default=None)
+        if newest_new is not None and now - newest_new > self._stale_after:
+            return FeedHealth(status="upstream_stale", since=newest_new)
+        return FeedHealth(status="ok")
+
     def apply_session(self, session: BlockageSession) -> None:
         previous = self._last_session.get(session.crossing_id)
         self._last_session[session.crossing_id] = session
@@ -138,7 +211,7 @@ class LiveState:
             self._crossing_status(crossing_id, now)
             for crossing_id in sorted(self._cameras_by_crossing)
         ]
-        return StatusResponse(generated_at=now, crossings=crossings)
+        return StatusResponse(generated_at=now, crossings=crossings, feed=self._feed(now))
 
     # ------------------------------------------------------------ internals
 

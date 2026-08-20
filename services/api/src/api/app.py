@@ -115,6 +115,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         return pool
 
     app = FastAPI(title="blockade-api", lifespan=lifespan)
+    app.state.live = state
 
     @app.middleware("http")
     async def measure(request, call_next):  # type: ignore[no-untyped-def]
@@ -214,13 +215,26 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             queue = feed.subscribe()
             SSE_CLIENTS.inc()
             try:
-                yield _sse("status", state.snapshot().model_dump_json())
+                snapshot = state.snapshot()
+                sent_feed_status = snapshot.feed.status
+                yield _sse("status", snapshot.model_dump_json())
                 while True:
                     try:
                         await asyncio.wait_for(queue.get(), timeout=HEARTBEAT_SECONDS)
-                        yield _sse("status", state.snapshot().model_dump_json())
+                        snapshot = state.snapshot()
+                        sent_feed_status = snapshot.feed.status
+                        yield _sse("status", snapshot.model_dump_json())
                     except TimeoutError:
-                        yield ": heartbeat\n\n"
+                        # The feed verdict can move on wall clock alone - a
+                        # silent poller produces no record to announce its own
+                        # death - so the quiet tick re-judges before settling
+                        # for a bare keep-alive comment.
+                        snapshot = state.snapshot()
+                        if snapshot.feed.status != sent_feed_status:
+                            sent_feed_status = snapshot.feed.status
+                            yield _sse("status", snapshot.model_dump_json())
+                        else:
+                            yield ": heartbeat\n\n"
             finally:
                 SSE_CLIENTS.dec()
                 feed.unsubscribe(queue)

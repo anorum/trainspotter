@@ -28,6 +28,12 @@ export const formatMinute = (iso: string): string =>
     hour: "numeric", minute: "2-digit",
   });
 
+/** "8:14 PM" - the feed note's verdict time, written the way it would be
+ *  said. The sheet's columns keep the 2-digit hour below for alignment; a
+ *  sentence has nothing to line up. */
+export const formatClockTime = (iso: string): string =>
+  new Date(iso).toLocaleTimeString(LOCALE, { hour: "numeric", minute: "2-digit" });
+
 /** "8:05 PM" - the sheet's compact start/frame times. */
 export const formatShortTime = (iso: string): string =>
   new Date(iso).toLocaleTimeString(LOCALE, { hour: "2-digit", minute: "2-digit" });
