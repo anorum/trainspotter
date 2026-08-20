@@ -20,7 +20,7 @@ import os
 from blockade.api.state import LiveState
 from blockade.bus import TopicTailer
 from blockade.config import Settings
-from blockade.schemas import BlockageSession, ObservationRecord
+from blockade.schemas import BlockageSession, FrameRecord, ObservationRecord
 
 log = logging.getLogger(__name__)
 
@@ -38,16 +38,26 @@ class StateFeed:
         self._observations_tail = TopicTailer(
             settings.kafka_bootstrap, settings.kafka_observations_topic, "blockade-api-obs"
         )
+        # Poll outcomes, so the board can blame stale pictures correctly:
+        # ODOT down, ODOT frozen, or our own capture gone quiet.
+        self._frames_tail = TopicTailer(
+            settings.kafka_bootstrap, settings.kafka_frames_topic, "blockade-api-frames"
+        )
         self._tasks: list[asyncio.Task] = []
         self._subscribers: set[asyncio.Queue[None]] = set()
 
     async def start(self) -> None:
         # Independent brokers-and-offsets handshakes; startup pays the max,
         # not the sum, and readiness gates on both regardless.
-        await asyncio.gather(self._sessions_tail.start(), self._observations_tail.start())
+        await asyncio.gather(
+            self._sessions_tail.start(),
+            self._observations_tail.start(),
+            self._frames_tail.start(),
+        )
         self._tasks = [
             asyncio.create_task(self._run(self._sessions_tail, self._apply_session)),
             asyncio.create_task(self._run(self._observations_tail, self._apply_observation)),
+            asyncio.create_task(self._run(self._frames_tail, self._apply_frame)),
         ]
 
     async def stop(self) -> None:
@@ -56,12 +66,17 @@ class StateFeed:
         await asyncio.gather(*self._tasks, return_exceptions=True)
         await self._sessions_tail.stop()
         await self._observations_tail.stop()
+        await self._frames_tail.stop()
 
     @property
     def ready(self) -> bool:
         """Readiness: both tails past their boot-time end offsets, so a fresh
         pod never serves a half-rebuilt board."""
-        return self._sessions_tail.caught_up and self._observations_tail.caught_up
+        return (
+            self._sessions_tail.caught_up
+            and self._observations_tail.caught_up
+            and self._frames_tail.caught_up
+        )
 
     def subscribe(self) -> asyncio.Queue[None]:
         queue: asyncio.Queue[None] = asyncio.Queue(maxsize=2)
@@ -99,6 +114,9 @@ class StateFeed:
 
     def _apply_observation(self, value: bytes) -> None:
         self.state.apply_observation(ObservationRecord.model_validate_json(value))
+
+    def _apply_frame(self, value: bytes) -> None:
+        self.state.apply_frame(FrameRecord.model_validate_json(value))
 
     def _notify(self) -> None:
         for queue in self._subscribers:

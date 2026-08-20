@@ -52,9 +52,15 @@ interface Crossing {
   cameras: CameraInfo[];
 }
 
+interface FeedHealth {
+  status: "ok" | "upstream_down" | "upstream_stale" | "capture_stale";
+  since: string | null;
+}
+
 interface Status {
   generated_at: string;
   crossings: Crossing[];
+  feed?: FeedHealth;
 }
 
 /** Scrub windows. Hours, labelled the way a dispatcher would say them. */
@@ -629,6 +635,7 @@ const css = `
 .cameras .noframe { aspect-ratio: 4/3; display: grid; place-items: center; color: var(--muted); border: 1px dashed var(--hairline); border-radius: 4px; }
 .cameras figcaption { color: var(--muted); font-size: 0.85rem; margin-top: 0.35rem; }
 .board-map { position: relative; margin: 0.5rem 0 0.75rem; }
+.feednote { margin: 0.5rem 0 0; padding: 0.4rem 0.8rem; border: 1px solid var(--signal-amber); border-radius: 4px; color: var(--signal-amber); background: color-mix(in srgb, var(--signal-amber) 8%, transparent); }
 .board-map .crossing-map { width: 100%; height: clamp(300px, 45vh, 460px); border: 1px solid var(--hairline); border-radius: 6px; background: var(--panel); position: relative; z-index: 0; }
 .railchip { position: absolute; top: 10px; right: 10px; z-index: 500; background: rgba(0,0,0,0.55); color: var(--muted); font-size: 0.7rem; letter-spacing: 0.3em; padding: 0.25rem 0.6rem 0.25rem 0.8rem; border: 1px solid var(--hairline); border-radius: 4px; pointer-events: none; }
 .maplabel { position: absolute; left: 42px; top: 0; white-space: nowrap; color: var(--crossbuck); font-family: var(--display); font-size: 17px; letter-spacing: 0.05em; text-transform: uppercase; text-shadow: 0 1px 4px rgba(0,0,0,0.9); }
