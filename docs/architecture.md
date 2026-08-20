@@ -166,8 +166,9 @@ All code changes go through the no-mistakes gate on a feature branch; nothing la
 Imperative, never in git: the `aws-roles` Secret (IRSA role ARNs), `odot-credentials`, `postgres-credentials`, `regcred`, and the `blockade-cameras` ConfigMap.
 When the roster schema gains a field, roll images before recreating the ConfigMap; when it loses one, recreate the ConfigMap first - `Camera` is `extra="forbid"` in both directions.
 
-Monitoring: the poller, detector, and sessionizer each expose Prometheus metrics on :9102 with a ServiceMonitor, and the poller's `deploy/poller/alerts.yaml` carries the rules that matter, including `BlockadePollerMetricsMissing` - the absent() rule that fires when the poller's own series stop arriving and every other poller rule has therefore gone blind.
-The api is the gap: it publishes only :8000, has no metrics and no ServiceMonitor, so the pod serving the board, the SSE feed, the history endpoints, and the materializer is unscraped.
+Monitoring: the poller, detector, sessionizer, and api each expose Prometheus metrics on :9102 with a ServiceMonitor, and the poller's `deploy/poller/alerts.yaml` carries the rules that matter, including `BlockadePollerMetricsMissing` - the absent() rule that fires when the poller's own series stop arriving and every other poller rule has therefore gone blind.
+The api serves its metrics on that separate port rather than :8000 because the public HTTPRoute forwards every path on :8000, so `/metrics` there would be internet-facing.
+`deploy/monitoring/dashboard.yaml` is the app's Grafana dashboard, a `grafana_dashboard`-labeled ConfigMap the kube-prometheus-stack sidecar provisions; `tests/test_api_metrics.py` joins its panel queries against the series the api actually exports so a renamed metric can't blank a panel silently.
 A deploy-manifest test asserts every ServiceMonitor actually selects a Service, because the one time it didn't, all alerting was silently dead for two days.
 
 ### Common tasks
