@@ -96,6 +96,7 @@ class LiveState:
             crossing_id: [cid for cid, _ in cams if scoring is None or cid in scoring]
             for crossing_id, cams in cameras_by_crossing.items()
         }
+        self._roster = {cid for cams in cameras_by_crossing.values() for cid, _ in cams}
         # One open session per crossing, plus the last emission per crossing
         # for change detection - both bounded by the roster. Closed sessions
         # are history and belong to Postgres, not this reducer.
@@ -143,8 +144,15 @@ class LiveState:
 
     def apply_frame(self, record: FrameRecord) -> None:
         """One poll outcome. The poller reports every attempt, so this stream
-        is the heartbeat that lets staleness be blamed correctly."""
+        is the heartbeat that lets staleness be blamed correctly.
+
+        Records from cameras outside the roster are dropped: the groupless
+        tail replays the whole topic on boot, and a decommissioned camera's
+        final healthy polls would otherwise sit in the books forever with a
+        zero error streak, vetoing the upstream_down verdict."""
         cam = record.camera_id
+        if cam not in self._roster:
+            return
         self._last_poll[cam] = record.fetched_at
         if record.fetch_status is FetchStatus.ERROR:
             self._error_streak[cam] = self._error_streak.get(cam, 0) + 1

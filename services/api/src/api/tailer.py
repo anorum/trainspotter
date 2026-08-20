@@ -1,9 +1,9 @@
 """Feeds the live-state reducer from the bus.
 
-Two groupless tailers (sessions from the beginning - compaction makes that the
-full history; observations from the beginning of retention), one shared
-reducer, one change-notification queue per SSE subscriber. Decisions live in
-blockade.api.state; this file only moves records.
+Three groupless tailers (sessions from the beginning - compaction makes that
+the full history; observations and frames from the beginning of retention),
+one shared reducer, one change-notification queue per SSE subscriber.
+Decisions live in blockade.api.state; this file only moves records.
 
 Fail-fast on purpose: an unhandled tailer error exits the process, kubelet
 restarts the pod, and the replay rebuilds the world. A silently dead tailer
@@ -48,7 +48,7 @@ class StateFeed:
 
     async def start(self) -> None:
         # Independent brokers-and-offsets handshakes; startup pays the max,
-        # not the sum, and readiness gates on both regardless.
+        # not the sum, and readiness gates on all of them regardless.
         await asyncio.gather(
             self._sessions_tail.start(),
             self._observations_tail.start(),
@@ -70,8 +70,8 @@ class StateFeed:
 
     @property
     def ready(self) -> bool:
-        """Readiness: both tails past their boot-time end offsets, so a fresh
-        pod never serves a half-rebuilt board."""
+        """Readiness: all three tails past their boot-time end offsets, so a
+        fresh pod never serves a half-rebuilt board."""
         return (
             self._sessions_tail.caught_up
             and self._observations_tail.caught_up
