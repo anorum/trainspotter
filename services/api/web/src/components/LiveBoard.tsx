@@ -32,6 +32,7 @@ import {
   type State,
 } from "../lib/crossings";
 import CrossingMap from "./CrossingMap";
+import { type FeedHealth, feedNote } from "../lib/feed";
 import { blockedSpans, stateAt, withTimes, type TimelineObs } from "../lib/scrub";
 import { corridorHour, formatMinute, formatTime } from "../lib/time";
 
@@ -50,11 +51,6 @@ interface Crossing {
   open_session: { started_at: string } | null;
   latest_observation: { confidence: number; reason: string; captured_at: string } | null;
   cameras: CameraInfo[];
-}
-
-interface FeedHealth {
-  status: "ok" | "upstream_down" | "upstream_stale" | "capture_stale";
-  since: string | null;
 }
 
 interface Status {
@@ -280,6 +276,10 @@ export default function LiveBoard() {
   const featured = featuredOnly(board.crossings);
   const shown = FEATURED.flatMap((id) => featured.filter((c) => c.crossing_id === id));
   const chosen = shown.find((c) => c.crossing_id === selected) ?? null;
+  // Whose fault stale pictures are. Read from the live status, not the
+  // scrubbed board: the verdict is a statement about the feed now, and it
+  // holds while the slider is anywhere.
+  const note = feedNote(status?.feed);
   const now = Date.now();
   const windowStart = now - windowHours * 3600 * 1000;
   const lanes = FEATURED.map((id) =>
@@ -306,6 +306,8 @@ export default function LiveBoard() {
         />
         <span class="railchip data">{RAIL_NAME}</span>
       </div>
+
+      {note && <p class="feednote">{note}</p>}
 
       <div class="scrub">
         <button
