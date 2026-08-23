@@ -8,7 +8,7 @@ import "../styles/global.css";
 interface Props {
   title: string;
   description: string;
-  active: "board" | "log" | "patterns";
+  active: "board" | "log" | "patterns" | "data";
 }
 
 const { title, description, active } = Astro.props;
@@ -21,6 +21,11 @@ const { title, description, active } = Astro.props;
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     <meta name="description" content={description} />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="theme-color" content="#0e141c" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   </head>
   <body>
     <Masthead active={active} />
