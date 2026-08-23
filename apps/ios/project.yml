@@ -56,13 +56,12 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.alexnorum.PDXTrain.watchkitapp
-        INFOPLIST_KEY_WKCompanionAppBundleIdentifier: com.alexnorum.PDXTrain
-        INFOPLIST_KEY_CFBundleDisplayName: PDX Train
     info:
       path: Sources/WatchApp/Info.plist
       properties:
         CFBundleDisplayName: PDX Train
         WKApplication: true
+        WKCompanionAppBundleIdentifier: com.alexnorum.PDXTrain
     dependencies:
       - target: PDXTrainWatchWidget
         embed: true

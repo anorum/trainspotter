@@ -53,6 +53,16 @@ struct ComplicationView: View {
     private var color: Color { Theme.aspectColor(entry.aspect, stale: entry.stale) }
     private var word: String { Theme.aspectWord(entry.aspect, stale: entry.stale) }
 
+    /// Distinct per aspect so the circular form survives accented rendering.
+    private var symbol: String {
+        if entry.stale { return "questionmark" }
+        switch entry.aspect {
+        case .blocked: return "train.side.front.car"
+        case .clear: return "checkmark"
+        case .unknown: return "questionmark"
+        }
+    }
+
     var body: some View {
         switch family {
         case .accessoryCorner:
@@ -84,9 +94,15 @@ struct ComplicationView: View {
             }
             .containerBackground(.clear, for: .widget)
         default:
+            // Shape carries the state, not hue alone: watchOS renders
+            // complications in accented mode on tinted faces, which flattens
+            // every color to one tint - a red-vs-green dot would say nothing
+            // there. The glyph differs per aspect, so it reads on any face.
             ZStack {
                 Circle().fill(color.opacity(0.25))
-                Circle().fill(color).frame(width: 22, height: 22)
+                Image(systemName: symbol)
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(color)
             }
             .containerBackground(.clear, for: .widget)
         }
