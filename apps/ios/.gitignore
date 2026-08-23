@@ -1,0 +1,3 @@
+*.xcodeproj
+Sources/App/Info.plist
+Sources/Widget/Info.plist

@@ -1,0 +1,44 @@
+# PDX Train for iPhone
+
+One screen and a widget: red or green at 12th & Clinton, at a glance.
+The widget is the product - home screen and lock screen aspects that update on
+WidgetKit's budget (every 5-15 minutes, matching the cameras' own cadence).
+The app is the widget's home: the flasher big enough to read across a room,
+the blocked ticker, and the same ODOT-vs-us honesty note the website shows.
+
+## One-time setup
+
+1. Install Xcode from the App Store (the command-line tools are not enough),
+   then point the tooling at it:
+   `sudo xcode-select -s /Applications/Xcode.app`
+2. `brew install xcodegen`
+3. From this directory: `xcodegen generate && open PDXTrain.xcodeproj`
+   (The `.xcodeproj` is generated and gitignored; `project.yml` is the truth.)
+4. In Xcode, select the `PDXTrain` target -> Signing & Capabilities -> choose
+   your team for BOTH targets (app and widget).
+   - A free Apple ID works but the install expires after 7 days and needs a
+     re-run from Xcode.
+   - The $99/year developer account removes that dance (and enables
+     TestFlight installs from your phone with no cable).
+5. Plug in the phone (or pick it under Devices over Wi-Fi), press Run.
+6. Add the widget: long-press the home screen -> Edit -> Add Widget ->
+   PDX Train. The lock-screen variants are under Customize Lock Screen.
+7. Siri works immediately with the built-in phrases ("Hey Siri, PDX Train
+   status" or "Is the train blocking in PDX Train" - Apple requires the app
+   name in built-in phrases). For the natural wording: open the Shortcuts
+   app -> + -> add the "Check the crossing" action -> rename the shortcut to
+   "Is the train currently blocking" - that exact phrase now works with Siri,
+   and Siri speaks the answer either way ("Yes - a train has been blocking
+   12th and Clinton for 24 minutes").
+
+## Layout
+
+- `project.yml` - XcodeGen spec: app target + widget extension, iOS 17+.
+- `Sources/Shared` - the wire contract (`/api/v1/status` reduced to a
+  glance), the board's colors, and the twin-lamp Flasher view. Compiled into
+  both targets.
+- `Sources/App` - the one-screen SwiftUI app.
+- `Sources/Widget` - the WidgetKit timeline and views.
+
+No secrets, no accounts, no write access: the app is a read-only client of
+the public board, and deleting it forgets nothing.

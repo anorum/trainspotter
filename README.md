@@ -12,6 +12,7 @@ That is the point of the project.
 
 Architecture: [docs/architecture.md](docs/architecture.md) - what each piece owns and the contracts between them.
 Local dev board: `scripts/dev-web.sh` - hot-reloading UI at localhost:4321 against the live API, read-only.
+On a phone: the site installs from the browser as a home-screen app, and [apps/ios/](apps/ios/README.md) is the native iPhone app - widgets, Siri, the same board.
 Decisions: [docs/adr/](docs/adr/).
 Original proposals, kept as history: [docs/history/](docs/history/).
 
