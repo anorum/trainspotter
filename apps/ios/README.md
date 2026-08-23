@@ -31,6 +31,19 @@ the blocked ticker, and the same ODOT-vs-us honesty note the website shows.
    and Siri speaks the answer either way ("Yes - a train has been blocking
    12th and Clinton for 24 minutes").
 
+## The watch
+
+The watch app embeds in the phone app, so installing the phone app offers the
+watch app on the paired Watch automatically (or install it from the Watch app
+on the phone). Add a complication: long-press the watch face -> Edit ->
+Complications -> pick a slot -> PDX Train. The corner and inline forms carry
+the state in the fewest pixels; circular is the plain red/green dot.
+
+Bundle IDs are nested deliberately (`com.alexnorum.PDXTrain`, `.Widget`,
+`.watchkitapp`, `.watchkitapp.widget`): iOS refuses to install an extension
+whose id is not prefixed by its parent app's, which the simulator reports as
+"Mismatched bundle IDs".
+
 ## Layout
 
 - `project.yml` - XcodeGen spec: app target + widget extension, iOS 17+.
@@ -38,6 +51,9 @@ the blocked ticker, and the same ODOT-vs-us honesty note the website shows.
   glance), the board's colors, and the twin-lamp Flasher view. Compiled into
   both targets.
 - `Sources/App` - the one-screen SwiftUI app.
+- `Sources/WatchApp` - the watchOS app (aspect, ticker, nothing else).
+- `Sources/WatchWidget` - watch-face complications: circular, corner,
+  rectangular, inline.
 - `Sources/Widget` - the WidgetKit timeline and views.
 
 No secrets, no accounts, no write access: the app is a read-only client of
