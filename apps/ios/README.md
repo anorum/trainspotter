@@ -15,7 +15,8 @@ the blocked ticker, and the same ODOT-vs-us honesty note the website shows.
 3. From this directory: `xcodegen generate && open PDXTrain.xcodeproj`
    (The `.xcodeproj` is generated and gitignored; `project.yml` is the truth.)
 4. In Xcode, select the `PDXTrain` target -> Signing & Capabilities -> choose
-   your team for BOTH targets (app and widget).
+   your team for ALL FOUR targets - PDXTrain, PDXTrainWidget,
+   PDXTrainWatch, PDXTrainWatchWidget - or the install fails.
    - A free Apple ID works but the install expires after 7 days and needs a
      re-run from Xcode.
    - The $99/year developer account removes that dance (and enables
@@ -36,8 +37,10 @@ the blocked ticker, and the same ODOT-vs-us honesty note the website shows.
 The watch app embeds in the phone app, so installing the phone app offers the
 watch app on the paired Watch automatically (or install it from the Watch app
 on the phone). Add a complication: long-press the watch face -> Edit ->
-Complications -> pick a slot -> PDX Train. The corner and inline forms carry
-the state in the fewest pixels; circular is the plain red/green dot.
+Complications -> pick a slot -> PDX Train. Every form carries a per-aspect glyph
+(train / checkmark / question mark) rather than color alone: watchOS renders
+complications in accented mode on tinted faces, where hue flattens to a single
+tint and a red-vs-green dot would say nothing.
 
 Bundle IDs are nested deliberately (`com.alexnorum.PDXTrain`, `.Widget`,
 `.watchkitapp`, `.watchkitapp.widget`): iOS refuses to install an extension
@@ -46,10 +49,13 @@ whose id is not prefixed by its parent app's, which the simulator reports as
 
 ## Layout
 
-- `project.yml` - XcodeGen spec: app target + widget extension, iOS 17+.
+- `project.yml` - XcodeGen spec: four targets - the iOS app and its widget
+  extension (iOS 17+), plus the watch app and its complication extension
+  (watchOS 10+). Bundle ids are pinned there, not derived.
 - `Sources/Shared` - the wire contract (`/api/v1/status` reduced to a
-  glance), the board's colors, and the twin-lamp Flasher view. Compiled into
-  both targets.
+  glance), the board's colors, the twin-lamp Flasher view, and the timeline
+  entry and provider both widget extensions share. Compiled into all four
+  targets.
 - `Sources/App` - the one-screen SwiftUI app.
 - `Sources/WatchApp` - the watchOS app (aspect, ticker, nothing else).
 - `Sources/WatchWidget` - watch-face complications: circular, corner,

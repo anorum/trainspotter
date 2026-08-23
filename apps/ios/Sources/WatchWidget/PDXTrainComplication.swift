@@ -14,6 +14,12 @@ struct ComplicationView: View {
 
 
     var body: some View {
+        // Every family draws on the face's own background.
+        content.containerBackground(.clear, for: .widget)
+    }
+
+    @ViewBuilder
+    private var content: some View {
         switch family {
         case .accessoryCorner:
             Circle()
@@ -27,14 +33,11 @@ struct ComplicationView: View {
                         Text(word)
                     }
                 }
-                .containerBackground(.clear, for: .widget)
         case .accessoryInline:
             if let since = entry.blockedSince {
                 Text("Blocked \(since, style: .relative)")
-                    .containerBackground(.clear, for: .widget)
             } else {
                 Text("12th & Clinton: \(word.lowercased())")
-                    .containerBackground(.clear, for: .widget)
             }
         case .accessoryRectangular:
             VStack(alignment: .leading, spacing: 2) {
@@ -44,7 +47,6 @@ struct ComplicationView: View {
                     Text(since, style: .relative).font(.caption2)
                 }
             }
-            .containerBackground(.clear, for: .widget)
         default:
             // Shape carries the state, not hue alone: watchOS renders
             // complications in accented mode on tinted faces, which flattens
@@ -56,7 +58,6 @@ struct ComplicationView: View {
                     .font(.system(size: 20, weight: .bold))
                     .foregroundStyle(color)
             }
-            .containerBackground(.clear, for: .widget)
         }
     }
 }
