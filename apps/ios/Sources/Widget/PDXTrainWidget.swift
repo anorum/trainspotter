@@ -6,51 +6,8 @@
 import SwiftUI
 import WidgetKit
 
-struct Entry: TimelineEntry {
-    let date: Date
-    let aspect: Aspect
-    let stale: Bool
-    let blockedSince: Date?
-}
-
-struct Provider: TimelineProvider {
-    func placeholder(in _: Context) -> Entry {
-        Entry(date: .now, aspect: .clear, stale: false, blockedSince: nil)
-    }
-
-    func getSnapshot(in context: Context, completion: @escaping (Entry) -> Void) {
-        if context.isPreview {
-            completion(placeholder(in: context))
-            return
-        }
-        Task { completion(await current()) }
-    }
-
-    func getTimeline(in _: Context, completion: @escaping (Timeline<Entry>) -> Void) {
-        Task {
-            let entry = await current()
-            // Ask again in five minutes; WidgetKit throttles as it sees fit.
-            completion(Timeline(entries: [entry], policy: .after(.now + 5 * 60)))
-        }
-    }
-
-    private func current() async -> Entry {
-        guard let status = try? await BoardAPI.fetch(), let crossing = status.clinton else {
-            return Entry(date: .now, aspect: .unknown, stale: true, blockedSince: nil)
-        }
-        return Entry(
-            date: status.generatedAt,
-            aspect: crossing.state,
-            stale: crossing.stale,
-            blockedSince: crossing.state == .blocked
-                ? (crossing.openSession?.startedAt ?? crossing.since)
-                : nil
-        )
-    }
-}
-
 struct WidgetView: View {
-    let entry: Entry
+    let entry: AspectEntry
     @Environment(\.widgetFamily) private var family
 
     private var color: Color { Theme.aspectColor(entry.aspect, stale: entry.stale) }
@@ -59,9 +16,13 @@ struct WidgetView: View {
     var body: some View {
         switch family {
         case .accessoryCircular:
+            // Lock-screen accessory widgets always render vibrant, which
+            // flattens every color to one tint - so the glyph, not the hue,
+            // has to carry the state here.
             ZStack {
-                Circle().fill(color.opacity(0.25))
-                Circle().fill(color).frame(width: 24, height: 24)
+                AccessoryWidgetBackground()
+                Image(systemName: entry.symbol)
+                    .font(.system(size: 20, weight: .bold))
             }
             .containerBackground(.clear, for: .widget)
         case .accessoryRectangular:
@@ -106,7 +67,7 @@ struct WidgetView: View {
 @main
 struct PDXTrainWidget: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "PDXTrainAspect", provider: Provider()) { entry in
+        StaticConfiguration(kind: "PDXTrainAspect", provider: AspectProvider()) { entry in
             WidgetView(entry: entry)
         }
         .configurationDisplayName("Crossing aspect")

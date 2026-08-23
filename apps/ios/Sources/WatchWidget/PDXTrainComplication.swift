@@ -5,63 +5,13 @@
 import SwiftUI
 import WidgetKit
 
-struct ComplicationEntry: TimelineEntry {
-    let date: Date
-    let aspect: Aspect
-    let stale: Bool
-    let blockedSince: Date?
-}
-
-struct ComplicationProvider: TimelineProvider {
-    func placeholder(in _: Context) -> ComplicationEntry {
-        ComplicationEntry(date: .now, aspect: .clear, stale: false, blockedSince: nil)
-    }
-
-    func getSnapshot(in context: Context, completion: @escaping (ComplicationEntry) -> Void) {
-        if context.isPreview {
-            completion(placeholder(in: context))
-            return
-        }
-        Task { completion(await current()) }
-    }
-
-    func getTimeline(in _: Context, completion: @escaping (Timeline<ComplicationEntry>) -> Void) {
-        Task {
-            completion(Timeline(entries: [await current()], policy: .after(.now + 5 * 60)))
-        }
-    }
-
-    private func current() async -> ComplicationEntry {
-        guard let status = try? await BoardAPI.fetch(), let crossing = status.clinton else {
-            return ComplicationEntry(date: .now, aspect: .unknown, stale: true, blockedSince: nil)
-        }
-        return ComplicationEntry(
-            date: status.generatedAt,
-            aspect: crossing.state,
-            stale: crossing.stale,
-            blockedSince: crossing.state == .blocked
-                ? (crossing.openSession?.startedAt ?? crossing.since)
-                : nil
-        )
-    }
-}
-
 struct ComplicationView: View {
-    let entry: ComplicationEntry
+    let entry: AspectEntry
     @Environment(\.widgetFamily) private var family
 
     private var color: Color { Theme.aspectColor(entry.aspect, stale: entry.stale) }
     private var word: String { Theme.aspectWord(entry.aspect, stale: entry.stale) }
 
-    /// Distinct per aspect so the circular form survives accented rendering.
-    private var symbol: String {
-        if entry.stale { return "questionmark" }
-        switch entry.aspect {
-        case .blocked: return "train.side.front.car"
-        case .clear: return "checkmark"
-        case .unknown: return "questionmark"
-        }
-    }
 
     var body: some View {
         switch family {
@@ -69,8 +19,10 @@ struct ComplicationView: View {
             Circle()
                 .fill(color)
                 .widgetLabel {
+                    // Self-describing on tinted faces, where the dot's color
+                    // flattens away: a bare duration would not say what it is.
                     if let since = entry.blockedSince {
-                        Text(since, style: .relative)
+                        Text("Blocked \(since, style: .relative)")
                     } else {
                         Text(word)
                     }
@@ -100,7 +52,7 @@ struct ComplicationView: View {
             // there. The glyph differs per aspect, so it reads on any face.
             ZStack {
                 Circle().fill(color.opacity(0.25))
-                Image(systemName: symbol)
+                Image(systemName: entry.symbol)
                     .font(.system(size: 20, weight: .bold))
                     .foregroundStyle(color)
             }
@@ -112,7 +64,7 @@ struct ComplicationView: View {
 @main
 struct PDXTrainComplication: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "PDXTrainAspectWatch", provider: ComplicationProvider()) { entry in
+        StaticConfiguration(kind: "PDXTrainAspectWatch", provider: AspectProvider()) { entry in
             ComplicationView(entry: entry)
         }
         .configurationDisplayName("Crossing aspect")
