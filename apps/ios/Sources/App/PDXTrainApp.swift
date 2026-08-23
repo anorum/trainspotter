@@ -27,14 +27,20 @@ struct BoardView: View {
         }
         .task { await load() }
         .onReceive(refresh) { _ in Task { await load() } }
-        .onReceive(flash) { _ in flashPhase.toggle() }
+        .onReceive(flash) { _ in
+            if blocked { flashPhase.toggle() }
+        }
+    }
+
+    private var blocked: Bool {
+        guard let crossing = status?.clinton else { return false }
+        return crossing.state == .blocked && !crossing.stale
     }
 
     @ViewBuilder
     private var content: some View {
         if let crossing = status?.clinton {
             let color = Theme.aspectColor(crossing.state, stale: crossing.stale)
-            let blocked = crossing.state == .blocked && !crossing.stale
             VStack(spacing: 24) {
                 Spacer()
                 Flasher(

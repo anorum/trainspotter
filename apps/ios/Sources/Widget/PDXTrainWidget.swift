@@ -18,7 +18,11 @@ struct Provider: TimelineProvider {
         Entry(date: .now, aspect: .clear, stale: false, blockedSince: nil)
     }
 
-    func getSnapshot(in _: Context, completion: @escaping (Entry) -> Void) {
+    func getSnapshot(in context: Context, completion: @escaping (Entry) -> Void) {
+        if context.isPreview {
+            completion(placeholder(in: context))
+            return
+        }
         Task { completion(await current()) }
     }
 
