@@ -12,6 +12,9 @@ struct PDXTrainWatchApp: App {
 struct WatchBoardView: View {
     @State private var status: BoardStatus?
     @State private var failed = false
+    // Advanced on every refresh tick so age-based staleness re-evaluates
+    // even when the fetch fails and nothing else changes.
+    @State private var now = Date()
 
     private let refresh = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
@@ -21,20 +24,16 @@ struct WatchBoardView: View {
             content
         }
         .task { await load() }
-        .onReceive(refresh) { _ in Task { await load() } }
-    }
-
-    /// Silent fetch failures keep the last status on screen; past the
-    /// horizon that status is presented as stale rather than as current.
-    private var agedOut: Bool {
-        guard let generated = status?.generatedAt else { return false }
-        return Date.now.timeIntervalSince(generated) > AspectProvider.stalenessHorizon
+        .onReceive(refresh) { _ in
+            now = .now
+            Task { await load() }
+        }
     }
 
     @ViewBuilder
     private var content: some View {
-        if let crossing = status?.clinton {
-            let stale = crossing.stale || agedOut
+        if let status, let crossing = status.clinton {
+            let stale = crossing.stale || status.agedOut(at: now)
             let color = Theme.aspectColor(crossing.state, stale: stale)
             let blocked = crossing.state == .blocked && !stale
             VStack(spacing: 6) {
@@ -52,11 +51,9 @@ struct WatchBoardView: View {
                         .font(.caption.monospaced())
                         .foregroundStyle(Theme.red)
                 }
-                if let generated = status?.generatedAt {
-                    Text("updated \(generated.formatted(date: .omitted, time: .shortened))")
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(Theme.muted)
-                }
+                Text("updated \(status.generatedAt.formatted(date: .omitted, time: .shortened))")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(Theme.muted)
             }
         } else if failed {
             Button("Retry") { Task { await load() } }.tint(Theme.amber)

@@ -31,6 +31,9 @@ struct BoardView: View {
     @State private var status: BoardStatus?
     @State private var failed = false
     @State private var flashPhase = false
+    // Advanced on every refresh tick so age-based staleness re-evaluates
+    // even when the fetch fails and nothing else changes.
+    @State private var now = Date()
     // State rather than a constant so a later "fit me and the crossing" is a
     // reassignment, not a restructure.
     @State private var camera = Crossing.home
@@ -43,14 +46,19 @@ struct BoardView: View {
 
     private var crossing: CrossingNow? { status?.clinton }
 
+    private var stale: Bool {
+        guard let status, let crossing else { return false }
+        return crossing.stale || status.agedOut(at: now)
+    }
+
     private var blocked: Bool {
         guard let crossing else { return false }
-        return crossing.state == .blocked && !crossing.stale
+        return crossing.state == .blocked && !stale
     }
 
     private var color: Color {
         guard let crossing else { return Theme.muted }
-        return Theme.aspectColor(crossing.state, stale: crossing.stale)
+        return Theme.aspectColor(crossing.state, stale: stale)
     }
 
     var body: some View {
@@ -61,7 +69,10 @@ struct BoardView: View {
         .background(Theme.ink)
         .preferredColorScheme(.dark)
         .task { await load() }
-        .onReceive(refresh) { _ in Task { await load() } }
+        .onReceive(refresh) { _ in
+            now = .now
+            Task { await load() }
+        }
         .onReceive(flash) { _ in
             if blocked { flashPhase.toggle() }
         }
@@ -141,7 +152,7 @@ struct BoardView: View {
 
     private var aspectWord: String {
         guard let crossing else { return failed ? "NO ANSWER" : "LOOKING" }
-        return Theme.aspectWord(crossing.state, stale: crossing.stale)
+        return Theme.aspectWord(crossing.state, stale: stale)
     }
 
     @ViewBuilder

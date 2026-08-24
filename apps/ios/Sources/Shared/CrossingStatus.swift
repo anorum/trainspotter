@@ -46,6 +46,14 @@ struct BoardStatus: Decodable {
     var clinton: CrossingNow? {
         crossings.first { $0.crossingId == "SE_12TH_CLINTON" }
     }
+
+    /// Whether this status has outlived the board's own staleness horizon
+    /// as of `now`. Callers pass a clock they refresh, so a status held
+    /// through silent fetch failures degrades on screen instead of
+    /// counting on as if current.
+    func agedOut(at now: Date) -> Bool {
+        now.timeIntervalSince(generatedAt) > AspectProvider.stalenessHorizon
+    }
 }
 
 enum BoardAPI {
