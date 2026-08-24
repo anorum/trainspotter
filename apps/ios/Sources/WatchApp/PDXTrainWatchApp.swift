@@ -21,6 +21,8 @@ struct WatchTrainSheetView: View {
     @State private var sessions: [TrainSession] = []
     @State private var failed = false
 
+    private let refresh = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
+
     var body: some View {
         ZStack {
             Theme.ink.ignoresSafeArea()
@@ -42,6 +44,7 @@ struct WatchTrainSheetView: View {
             }
         }
         .task { await load() }
+        .onReceive(refresh) { _ in Task { await load() } }
     }
 
     private func load() async {

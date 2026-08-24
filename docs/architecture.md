@@ -124,9 +124,13 @@ One pod serving both the JSON API and the static site, plus the Postgres materia
 
 ### iPhone and Apple Watch apps (`apps/ios`)
 
-A native read-only client of the public board: one-screen SwiftUI app, home/lock-screen widgets, a watch app with watch-face complications, and a Siri intent, all answering from `/api/v1/status`.
+A native read-only client of the public board: a map-and-sheet SwiftUI app (glance plaque, latest camera frame, train sheet), home/lock-screen widgets, a watch app with the train sheet a swipe below the glance plus watch-face complications, and a Siri intent - answering from `/api/v1/status`, `/api/v1/sessions`, and `/api/v1/frames/...`.
 Build, signing, and setup for both platforms live in [apps/ios/README.md](../apps/ios/README.md).
-Installed copies pin the status payload - `generated_at`, `crossings[].{crossing_id,state,stale,since,open_session.started_at}`, and the `feed` verdict strings - so renaming those fields breaks phones that the site's lockstep deploy would not.
+Installed copies pin their payloads, and a rename inside a present object fails the whole decode - blanking installed apps the site's lockstep deploy would not:
+
+- `/status`: `generated_at`, `crossings[].{crossing_id,state,stale,since,open_session.started_at,latest_observation.{camera_id,captured_at,object_key}}`, and the `feed` verdict strings.
+- `/sessions`: `sessions[].{session_id,started_at,duration_seconds,is_open,certified}`.
+- `/frames/{object_key}`: keys from `latest_observation.object_key` resolving to JPEG bytes.
 
 ### Postgres (deploy/postgres)
 
