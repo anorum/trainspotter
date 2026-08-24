@@ -55,7 +55,7 @@ struct BoardView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            map.ignoresSafeArea()
+            map
             plaque
         }
         .background(Theme.ink)
@@ -76,6 +76,7 @@ struct BoardView: View {
         }
         .mapStyle(.standard(elevation: .flat, emphasis: .muted, pointsOfInterest: .excludingAll))
         .mapControlVisibility(.hidden)
+        .ignoresSafeArea()
         .overlay(alignment: .topTrailing) { recenterButton }
     }
 
@@ -83,7 +84,7 @@ struct BoardView: View {
         ZStack {
             // The aspect bleeds into the streets: the one loud thing.
             Circle()
-                .fill(color.opacity(status == nil ? 0 : 0.38))
+                .fill(color.opacity(crossing == nil ? 0 : 0.38))
                 .frame(width: 190, height: 190)
                 .blur(radius: 34)
             Flasher(
