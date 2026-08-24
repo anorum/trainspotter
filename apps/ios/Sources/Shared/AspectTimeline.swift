@@ -37,11 +37,22 @@ struct AspectProvider: TimelineProvider {
         Task { completion(await current()) }
     }
 
+    /// Past this age the board itself calls the feed stale; the glance
+    /// must not outlive that on its own.
+    static let stalenessHorizon: TimeInterval = 15 * 60
+
     func getTimeline(in _: Context, completion: @escaping (Timeline<AspectEntry>) -> Void) {
         Task {
             // Ask again in five minutes; WidgetKit throttles as it sees fit,
-            // and the cameras only refresh every three to ten anyway.
-            completion(Timeline(entries: [await current()], policy: .after(.now + 5 * 60)))
+            // and the cameras only refresh every three to ten anyway. If it
+            // never comes back - budget exhausted, phone offline - a second,
+            // degraded entry takes over at the horizon so a blocked duration
+            // cannot keep counting on data nobody has checked.
+            let now = await current()
+            let expired = AspectEntry(
+                date: now.date + Self.stalenessHorizon,
+                aspect: now.aspect, stale: true, blockedSince: nil)
+            completion(Timeline(entries: [now, expired], policy: .after(.now + 5 * 60)))
         }
     }
 

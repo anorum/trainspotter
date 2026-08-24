@@ -24,14 +24,22 @@ struct WatchBoardView: View {
         .onReceive(refresh) { _ in Task { await load() } }
     }
 
+    /// Silent fetch failures keep the last status on screen; past the
+    /// horizon that status is presented as stale rather than as current.
+    private var agedOut: Bool {
+        guard let generated = status?.generatedAt else { return false }
+        return Date.now.timeIntervalSince(generated) > AspectProvider.stalenessHorizon
+    }
+
     @ViewBuilder
     private var content: some View {
         if let crossing = status?.clinton {
-            let color = Theme.aspectColor(crossing.state, stale: crossing.stale)
-            let blocked = crossing.state == .blocked && !crossing.stale
+            let stale = crossing.stale || agedOut
+            let color = Theme.aspectColor(crossing.state, stale: stale)
+            let blocked = crossing.state == .blocked && !stale
             VStack(spacing: 6) {
                 Flasher(color: color, lit: (true, !blocked), lampSize: 12)
-                Text(Theme.aspectWord(crossing.state, stale: crossing.stale))
+                Text(Theme.aspectWord(crossing.state, stale: stale))
                     .font(.system(.title3, weight: .bold))
                     .foregroundStyle(color)
                     .minimumScaleFactor(0.6)
@@ -43,6 +51,11 @@ struct WatchBoardView: View {
                     Text(started, style: .relative)
                         .font(.caption.monospaced())
                         .foregroundStyle(Theme.red)
+                }
+                if let generated = status?.generatedAt {
+                    Text("updated \(generated.formatted(date: .omitted, time: .shortened))")
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(Theme.muted)
                 }
             }
         } else if failed {
