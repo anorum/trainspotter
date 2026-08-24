@@ -37,10 +37,11 @@ the blocked ticker, and the same ODOT-vs-us honesty note the website shows.
 The watch app embeds in the phone app, so installing the phone app offers the
 watch app on the paired Watch automatically (or install it from the Watch app
 on the phone). Add a complication: long-press the watch face -> Edit ->
-Complications -> pick a slot -> PDX Train. Every form carries a per-aspect glyph
-(train / checkmark / question mark) rather than color alone: watchOS renders
-complications in accented mode on tinted faces, where hue flattens to a single
-tint and a red-vs-green dot would say nothing.
+Complications -> pick a slot -> PDX Train. Every form carries the state in
+something other than color - a per-aspect glyph (train / checkmark / question
+mark) on the circular forms, the aspect word or a labeled duration on the
+rest: watchOS renders complications in accented mode on tinted faces, where
+hue flattens to a single tint and a red-vs-green dot would say nothing.
 
 Bundle IDs are nested deliberately (`com.alexnorum.PDXTrain`, `.Widget`,
 `.watchkitapp`, `.watchkitapp.widget`): iOS refuses to install an extension

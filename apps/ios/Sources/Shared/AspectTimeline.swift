@@ -53,7 +53,9 @@ struct AspectProvider: TimelineProvider {
             date: status.generatedAt,
             aspect: crossing.state,
             stale: crossing.stale,
-            blockedSince: crossing.state == .blocked
+            // A stale feed's last word may have been "blocked"; a running
+            // duration would claim a freshness the cameras cannot back.
+            blockedSince: crossing.state == .blocked && !crossing.stale
                 ? (crossing.openSession?.startedAt ?? crossing.since)
                 : nil
         )
