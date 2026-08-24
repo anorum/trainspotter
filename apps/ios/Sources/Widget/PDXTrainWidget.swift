@@ -55,7 +55,7 @@ struct WidgetView: View {
                         .font(.caption2)
                         .foregroundStyle(Theme.muted)
                 }
-                Text(entry.date, style: .time)
+                Text(entry.asOf, style: .time)
                     .font(.system(size: 9).monospaced())
                     .foregroundStyle(Theme.muted)
             }

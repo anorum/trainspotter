@@ -5,7 +5,12 @@
 import WidgetKit
 
 struct AspectEntry: TimelineEntry {
+    /// When WidgetKit should start showing this entry - a display
+    /// transition time, never a claim about the data's age.
     let date: Date
+    /// When the board last spoke. This is the only timestamp a surface
+    /// may show, so an aged-out entry cannot look fresher than its data.
+    let asOf: Date
     let aspect: Aspect
     let stale: Bool
     let blockedSince: Date?
@@ -25,7 +30,7 @@ struct AspectEntry: TimelineEntry {
 
 struct AspectProvider: TimelineProvider {
     func placeholder(in _: Context) -> AspectEntry {
-        AspectEntry(date: .now, aspect: .clear, stale: false, blockedSince: nil)
+        AspectEntry(date: .now, asOf: .now, aspect: .clear, stale: false, blockedSince: nil)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (AspectEntry) -> Void) {
@@ -37,10 +42,6 @@ struct AspectProvider: TimelineProvider {
         Task { completion(await current()) }
     }
 
-    /// Past this age the board itself calls the feed stale; the glance
-    /// must not outlive that on its own.
-    static let stalenessHorizon: TimeInterval = 15 * 60
-
     func getTimeline(in _: Context, completion: @escaping (Timeline<AspectEntry>) -> Void) {
         Task {
             // Ask again in five minutes; WidgetKit throttles as it sees fit,
@@ -50,7 +51,7 @@ struct AspectProvider: TimelineProvider {
             // cannot keep counting on data nobody has checked.
             let now = await current()
             let expired = AspectEntry(
-                date: now.date + Self.stalenessHorizon,
+                date: now.asOf + BoardStatus.stalenessHorizon, asOf: now.asOf,
                 aspect: now.aspect, stale: true, blockedSince: nil)
             completion(Timeline(entries: [now, expired], policy: .after(.now + 5 * 60)))
         }
@@ -58,10 +59,11 @@ struct AspectProvider: TimelineProvider {
 
     private func current() async -> AspectEntry {
         guard let status = try? await BoardAPI.fetch(), let crossing = status.clinton else {
-            return AspectEntry(date: .now, aspect: .unknown, stale: true, blockedSince: nil)
+            return AspectEntry(date: .now, asOf: .now, aspect: .unknown, stale: true, blockedSince: nil)
         }
         return AspectEntry(
-            date: status.generatedAt,
+            date: .now,
+            asOf: status.generatedAt,
             aspect: crossing.state,
             stale: crossing.stale,
             // A stale feed's last word may have been "blocked"; a running
