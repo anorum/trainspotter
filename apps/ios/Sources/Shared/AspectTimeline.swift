@@ -8,8 +8,9 @@ struct AspectEntry: TimelineEntry {
     /// When WidgetKit should start showing this entry - a display
     /// transition time, never a claim about the data's age.
     let date: Date
-    /// When the board last spoke. This is the only timestamp a surface
-    /// may show, so an aged-out entry cannot look fresher than its data.
+    /// When the board last spoke - or, if it never answered, when we
+    /// last asked. The only timestamp a surface may show, so an aged-out
+    /// entry cannot look fresher than its data.
     let asOf: Date
     let aspect: Aspect
     let stale: Bool
@@ -50,10 +51,15 @@ struct AspectProvider: TimelineProvider {
             // degraded entry takes over at the horizon so a blocked duration
             // cannot keep counting on data nobody has checked.
             let now = await current()
-            let expired = AspectEntry(
-                date: now.asOf + BoardStatus.stalenessHorizon, asOf: now.asOf,
-                aspect: now.aspect, stale: true, blockedSince: nil)
-            completion(Timeline(entries: [now, expired], policy: .after(.now + 5 * 60)))
+            // An entry already stale needs no successor - and dating one in
+            // the past would hand WidgetKit an out-of-order timeline.
+            var entries = [now]
+            if !now.stale {
+                entries.append(AspectEntry(
+                    date: now.asOf + BoardStatus.stalenessHorizon, asOf: now.asOf,
+                    aspect: now.aspect, stale: true, blockedSince: nil))
+            }
+            completion(Timeline(entries: entries, policy: .after(.now + 5 * 60)))
         }
     }
 
@@ -61,14 +67,18 @@ struct AspectProvider: TimelineProvider {
         guard let status = try? await BoardAPI.fetch(), let crossing = status.clinton else {
             return AspectEntry(date: .now, asOf: .now, aspect: .unknown, stale: true, blockedSince: nil)
         }
+        // The server can hand over a status that is already past the
+        // horizon (a wedged generator behind a live server, a cached
+        // response); age it here like every other surface does.
+        let stale = crossing.stale || status.agedOut(at: .now)
         return AspectEntry(
             date: .now,
             asOf: status.generatedAt,
             aspect: crossing.state,
-            stale: crossing.stale,
+            stale: stale,
             // A stale feed's last word may have been "blocked"; a running
             // duration would claim a freshness the cameras cannot back.
-            blockedSince: crossing.state == .blocked && !crossing.stale
+            blockedSince: crossing.state == .blocked && !stale
                 ? (crossing.openSession?.startedAt ?? crossing.since)
                 : nil
         )
