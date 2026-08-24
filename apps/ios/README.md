@@ -1,10 +1,12 @@
-# PDX Train for iPhone
+# PDX Train for iPhone and Apple Watch
 
-One screen and a widget: red or green at 12th & Clinton, at a glance.
-The widget is the product - home screen and lock screen aspects that update on
-WidgetKit's budget (every 5-15 minutes, matching the cameras' own cadence).
-The app is the widget's home: the flasher big enough to read across a room,
-the blocked ticker, and the same ODOT-vs-us honesty note the website shows.
+One screen, a widget, and a watch face: red or green at 12th & Clinton, at a
+glance. The glanceable surfaces are the product - home screen, lock screen,
+and watch-face aspects that update on WidgetKit's budget (every 5-15 minutes,
+matching the cameras' own cadence).
+The app is their home: the crossing on a map with its own flasher as the pin,
+the aspect on a plaque big enough to read across a room, the blocked ticker,
+and the same ODOT-vs-us honesty note the website shows.
 
 ## One-time setup
 
