@@ -1,8 +1,9 @@
 // The app is deliberately one screen: the crossing where it lives, on a map
 // quiet enough that only the streets and the rail line read, with the
-// crossing's own flasher as the pin and a plaque that says the aspect big
-// enough to read from across a room. The widget is the product; this is
-// its home - and the place a "you are here" can land later.
+// crossing's own flasher as the pin. A sheet that never dismisses rides over
+// it: collapsed, a plaque that says the aspect big enough to read from across
+// a room; pulled up, the camera's own frame and the train sheet. The widget is
+// the product; this is its home - and the place a "you are here" can land later.
 import MapKit
 import SwiftUI
 
@@ -37,12 +38,14 @@ struct BoardView: View {
     // State rather than a constant so a later "fit me and the crossing" is a
     // reassignment, not a restructure.
     @State private var camera = Crossing.home
+    @State private var sessions: [TrainSession] = []
+    @State private var detent: PresentationDetent = .height(200)
 
     private let refresh = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
     private let flash = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
 
-    private let plaqueShape = UnevenRoundedRectangle(topLeadingRadius: 28, topTrailingRadius: 28)
     private let tickerFont = Font.system(.body, design: .monospaced)
+    private let frameShape = RoundedRectangle(cornerRadius: 12)
 
     private var crossing: CrossingNow? { status?.clinton }
 
@@ -62,20 +65,18 @@ struct BoardView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            map
-            plaque
-        }
-        .background(Theme.ink)
-        .preferredColorScheme(.dark)
-        .task { await load() }
-        .onReceive(refresh) { _ in
-            now = .now
-            Task { await load() }
-        }
-        .onReceive(flash) { _ in
-            if blocked { flashPhase.toggle() }
-        }
+        map
+            .background(Theme.ink)
+            .preferredColorScheme(.dark)
+            .sheet(isPresented: .constant(true)) { boardSheet }
+            .task { await load() }
+            .onReceive(refresh) { _ in
+                now = .now
+                Task { await load() }
+            }
+            .onReceive(flash) { _ in
+                if blocked { flashPhase.toggle() }
+            }
     }
 
     private var map: some View {
@@ -121,6 +122,26 @@ struct BoardView: View {
         .padding(16)
     }
 
+    private var boardSheet: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 28) {
+                plaque
+                snapshot
+                trainSheet
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 18)
+            .padding(.bottom, 32)
+        }
+        .scrollIndicators(.hidden)
+        .presentationDetents([.height(200), .medium, .large], selection: $detent)
+        .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+        .presentationBackground(Theme.ink)
+        .presentationDragIndicator(.visible)
+        .interactiveDismissDisabled()
+        .preferredColorScheme(.dark)
+    }
+
     private var plaque: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("12TH & CLINTON")
@@ -142,12 +163,50 @@ struct BoardView: View {
             }
             ticker
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 22)
-        .padding(.bottom, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.ink, in: plaqueShape)
-        .overlay(plaqueShape.stroke(Theme.hairline, lineWidth: 1))
+    }
+
+    /// The picture behind the verdict: the exact frame the classifier
+    /// judged, straight from the crossing's camera.
+    @ViewBuilder
+    private var snapshot: some View {
+        if let observation = crossing?.latestObservation {
+            VStack(alignment: .leading, spacing: 8) {
+                sectionLabel("FROM THE CAMERA")
+                AsyncImage(url: BoardAPI.frameURL(observation.objectKey)) { image in
+                    image.resizable().aspectRatio(contentMode: .fit)
+                } placeholder: {
+                    frameShape
+                        .fill(Theme.panel)
+                        .aspectRatio(4 / 3, contentMode: .fit)
+                        .overlay(ProgressView().tint(Theme.muted))
+                }
+                .clipShape(frameShape)
+                .overlay(frameShape.stroke(Theme.hairline, lineWidth: 1))
+                Text("\(observation.cameraId) - \(observation.capturedAt.formatted(date: .omitted, time: .shortened))")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(Theme.muted)
+            }
+        }
+    }
+
+    /// The dispatcher's record: every blockage, newest first.
+    @ViewBuilder
+    private var trainSheet: some View {
+        if !sessions.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                sectionLabel("TRAIN SHEET")
+                    .padding(.bottom, 4)
+                TrainSheetList(sessions: sessions)
+            }
+        }
+    }
+
+    private func sectionLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.system(.footnote).width(.condensed))
+            .kerning(2)
+            .foregroundStyle(Theme.muted)
     }
 
     private var aspectWord: String {
@@ -198,11 +257,14 @@ struct BoardView: View {
     }
 
     private func load() async {
+        async let sheet = BoardAPI.trainSheet()
         do {
             status = try await BoardAPI.fetch()
             failed = false
         } catch {
             failed = status == nil
         }
+        // A sheet that fails leaves the last one standing rather than blanking.
+        if let lines = try? await sheet { sessions = lines }
     }
 }

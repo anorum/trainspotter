@@ -1,11 +1,56 @@
-// The wrist version: aspect, ticker, nothing else. Complications are the real
-// product on the watch; this app is where a tap on one lands.
+// The wrist version: the aspect and its ticker, with the train sheet one page
+// below. Complications are the real product on the watch; this app is where a
+// tap on one lands.
 import SwiftUI
 
 @main
 struct PDXTrainWatchApp: App {
     var body: some Scene {
-        WindowGroup { WatchBoardView() }
+        WindowGroup {
+            TabView {
+                WatchBoardView()
+                WatchTrainSheetView()
+            }
+            .tabViewStyle(.verticalPage)
+        }
+    }
+}
+
+/// The dispatcher's record, one swipe below the glance.
+struct WatchTrainSheetView: View {
+    @State private var sessions: [TrainSession] = []
+    @State private var failed = false
+
+    var body: some View {
+        ZStack {
+            Theme.ink.ignoresSafeArea()
+            if sessions.isEmpty {
+                Text(failed ? "The board is not answering." : "Nothing on the sheet yet.")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.muted)
+                    .multilineTextAlignment(.center)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("TRAIN SHEET")
+                            .font(.system(.caption2).width(.condensed))
+                            .kerning(1.5)
+                            .foregroundStyle(Theme.muted)
+                        TrainSheetList(sessions: sessions)
+                    }
+                }
+            }
+        }
+        .task { await load() }
+    }
+
+    private func load() async {
+        do {
+            sessions = try await BoardAPI.trainSheet(limit: 10)
+            failed = false
+        } catch {
+            failed = sessions.isEmpty
+        }
     }
 }
 
