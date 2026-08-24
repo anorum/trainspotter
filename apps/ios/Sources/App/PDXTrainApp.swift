@@ -173,13 +173,27 @@ struct BoardView: View {
         if let observation = crossing?.latestObservation {
             VStack(alignment: .leading, spacing: 8) {
                 sectionLabel("FROM THE CAMERA")
-                AsyncImage(url: BoardAPI.frameURL(observation.objectKey)) { image in
-                    image.resizable().aspectRatio(contentMode: .fit)
-                } placeholder: {
-                    frameShape
-                        .fill(Theme.panel)
-                        .aspectRatio(4 / 3, contentMode: .fit)
-                        .overlay(ProgressView().tint(Theme.muted))
+                AsyncImage(url: BoardAPI.frameURL(observation.objectKey)) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().aspectRatio(contentMode: .fit)
+                    case .failure:
+                        // Honest failure beats an eternal spinner; the next
+                        // observation brings a new URL and a fresh attempt.
+                        frameShape
+                            .fill(Theme.panel)
+                            .aspectRatio(4 / 3, contentMode: .fit)
+                            .overlay {
+                                Text("The picture did not arrive.")
+                                    .font(.footnote)
+                                    .foregroundStyle(Theme.muted)
+                            }
+                    default:
+                        frameShape
+                            .fill(Theme.panel)
+                            .aspectRatio(4 / 3, contentMode: .fit)
+                            .overlay(ProgressView().tint(Theme.muted))
+                    }
                 }
                 .clipShape(frameShape)
                 .overlay(frameShape.stroke(Theme.hairline, lineWidth: 1))
