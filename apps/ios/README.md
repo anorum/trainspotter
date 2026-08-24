@@ -56,7 +56,10 @@ whose id is not prefixed by its parent app's, which the simulator reports as
   glance), the board's colors, the twin-lamp Flasher view, and the timeline
   entry and provider both widget extensions share. Compiled into all four
   targets.
-- `Sources/App` - the one-screen SwiftUI app.
+- `Sources/App` - the one-screen SwiftUI app: the crossing on a muted dark
+  map, its own flasher as the pin, the aspect on a plaque below. The camera
+  position is state and the pin is a plain `Annotation`, so adding "you are
+  here" later is `UserAnnotation()` plus a location-usage string.
 - `Sources/WatchApp` - the watchOS app (aspect, ticker, nothing else).
 - `Sources/WatchWidget` - watch-face complications: circular, corner,
   rectangular, inline.
