@@ -16,6 +16,9 @@ targets:
   PDXTrain:
     type: application
     platform: iOS
+    scheme:
+      testTargets:
+        - PDXTrainTests
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.alexnorum.PDXTrain
@@ -32,6 +35,16 @@ targets:
       - target: PDXTrainWidget
       - target: PDXTrainWatch
         embed: true
+  PDXTrainTests:
+    type: bundle.unit-test
+    platform: iOS
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+    sources:
+      - Tests
+    dependencies:
+      - target: PDXTrain
   PDXTrainWidget:
     type: app-extension
     platform: iOS
