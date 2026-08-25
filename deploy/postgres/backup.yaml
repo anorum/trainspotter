@@ -5,8 +5,10 @@
 #
 # Same AWS model as every other pod: no stored credential, a projected token
 # exchanged via AssumeRoleWithWebIdentity. The `backup` role is write-only -
-# PutObject on backups/postgres/* and nothing else; a leaked backup pod can
-# neither read the corpus nor touch existing dumps.
+# PutObject on backups/postgres/* and nothing else; a leaked backup pod
+# cannot read the corpus. It could overwrite a dump at a known key
+# (timestamped names prevent accidents, not malice) - bucket versioning is
+# the guard for existing dumps.
 #
 # Ships suspended: the role ARN must exist in the imperative aws-roles Secret
 # (key: backup) first - see the migration runbook. Unsuspend by flipping the
@@ -48,7 +50,7 @@ spec:
                   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
                   out="/tmp/blockade-${stamp}.dump"
                   # Custom format: compressed, and pg_restore can pick tables.
-                  pg_dump --format=custom --no-owner --file="${out}"
+                  pg_dump --format=custom --file="${out}"
                   aws s3 cp "${out}" "s3://${BUCKET}/backups/postgres/blockade-${stamp}.dump"
                   echo "backup shipped: blockade-${stamp}.dump ($(du -h "${out}" | cut -f1))"
               env:
@@ -80,6 +82,11 @@ spec:
                 - name: aws-token
                   mountPath: /var/run/secrets/eks.amazonaws.com/serviceaccount
                   readOnly: true
+                # Scratch for the dump, like api/detector: never the node's
+                # writable layer, and bounded so a grown record cannot cause
+                # ephemeral-storage eviction.
+                - name: scratch
+                  mountPath: /tmp
               resources:
                 requests:
                   cpu: 100m
@@ -87,6 +94,9 @@ spec:
                 limits:
                   memory: 512Mi
           volumes:
+            - name: scratch
+              emptyDir:
+                sizeLimit: 2Gi
             - name: aws-token
               projected:
                 sources:
