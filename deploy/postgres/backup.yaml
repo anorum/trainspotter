@@ -1,0 +1,157 @@
+# Nightly record insurance: pg_dump the blockade database to S3, so losing
+# the homelab (or later, the cloud box) costs a restore, not an afternoon of
+# re-scoring frames. The record is a derived view - S3 frames plus code can
+# always rebuild it - so this dump is the fast path, not the only path.
+#
+# Same AWS model as every other pod: no stored credential, a projected token
+# exchanged via AssumeRoleWithWebIdentity. The `backup` role is write-only -
+# PutObject on backups/postgres/* and nothing else; a leaked backup pod
+# cannot read the corpus. It could overwrite a dump at a known key
+# (timestamped names prevent accidents, not malice), and the bucket is
+# unversioned (aws/README.md), so an overwritten dump is simply gone - an
+# accepted cost, because the record is derived: S3 frames plus code rebuild
+# it, and a destroyed dump loses only the fast path.
+#
+# The role ARN lives in the imperative aws-roles Secret (key: backup);
+# the recipe is in deploy/poller/README.md. The role is in place and the
+# job is live; re-suspend by flipping the field here, in git, if the
+# backup needs to be paused.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: postgres-backup
+  namespace: blockade
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+  namespace: blockade
+spec:
+  # 10:17 UTC = 02:17/03:17 corridor time, after the day's sessions close.
+  schedule: "17 10 * * *"
+  suspend: false
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      # A hung dump or stalled upload must fail, not linger: with
+      # concurrencyPolicy Forbid, a wedged Job silently skips every
+      # following night until someone deletes it by hand.
+      activeDeadlineSeconds: 3600
+      template:
+        spec:
+          serviceAccountName: postgres-backup
+          restartPolicy: Never
+          containers:
+            - name: dump
+              # Matches the server's major version; pg_dump refuses newer-than-server skew.
+              image: postgres:16-alpine
+              command: ["/bin/sh", "-ec"]
+              args:
+                - |
+                  apk add --no-cache aws-cli >/dev/null
+                  stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+                  out="/tmp/blockade-${stamp}.dump"
+                  # Custom format: compressed, and pg_restore can pick tables.
+                  pg_dump --format=custom --file="${out}"
+                  aws s3 cp "${out}" "s3://${BUCKET}/backups/postgres/blockade-${stamp}.dump"
+                  echo "backup shipped: blockade-${stamp}.dump ($(du -h "${out}" | cut -f1))"
+              env:
+                - name: PGHOST
+                  value: postgres
+                - name: PGDATABASE
+                  value: blockade
+                - name: PGUSER
+                  value: blockade
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres-credentials
+                      key: password
+                - name: BUCKET
+                  value: pdx-trainspotter
+                # --- IRSA by hand, as in every service pod: boto3/awscli reads
+                # these three and exchanges the projected token with STS.
+                - name: AWS_ROLE_ARN
+                  valueFrom:
+                    secretKeyRef:
+                      name: aws-roles
+                      key: backup
+                - name: AWS_WEB_IDENTITY_TOKEN_FILE
+                  value: /var/run/secrets/eks.amazonaws.com/serviceaccount/token
+                - name: AWS_REGION
+                  value: us-west-2
+              volumeMounts:
+                - name: aws-token
+                  mountPath: /var/run/secrets/eks.amazonaws.com/serviceaccount
+                  readOnly: true
+                # Scratch for the dump, like api/detector: never the node's
+                # writable layer, and bounded so a grown record cannot cause
+                # ephemeral-storage eviction.
+                - name: scratch
+                  mountPath: /tmp
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  memory: 512Mi
+          volumes:
+            - name: scratch
+              emptyDir:
+                sizeLimit: 2Gi
+            - name: aws-token
+              projected:
+                sources:
+                  - serviceAccountToken:
+                      # Must match the trust policy exactly; STS rejects otherwise.
+                      audience: sts.amazonaws.com
+                      expirationSeconds: 3600
+                      path: token
+---
+# A backup that fails unseen is theater. Both signals come from
+# kube-state-metrics, which the prometheus stack already scrapes.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: blockade-backup
+  namespace: blockade
+spec:
+  groups:
+    - name: blockade-backup
+      rules:
+        # Only failures from the last day: retained failed Jobs would
+        # otherwise keep this firing long after the next night succeeded.
+        # A transient bad night alerts for 24h and self-resolves; persistent
+        # brokenness is BlockadeBackupMissing's job.
+        - alert: BlockadeBackupFailed
+          expr: |
+            (kube_job_status_failed{namespace="blockade", job_name=~"postgres-backup-.*"} > 0)
+            and on(job_name)
+            (time() - kube_job_status_start_time{namespace="blockade", job_name=~"postgres-backup-.*"} < 86400)
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Last night's record backup failed"
+            description: "postgres-backup Job {{ $labels.job_name }} failed within the last 24h."
+        # No successful dump in 26 hours, while the CronJob is meant to run.
+        # The suspend guard keeps this quiet whenever the job is suspended.
+        # If the job has never once succeeded there is no completion series
+        # and this cannot fire - the failure alert and the unsuspend
+        # test-fire cover that window.
+        - alert: BlockadeBackupMissing
+          expr: |
+            (time() - max(kube_job_status_completion_time{namespace="blockade", job_name=~"postgres-backup-.*"}) > 93600)
+            and on()
+            (kube_cronjob_spec_suspend{namespace="blockade", cronjob="postgres-backup"} == 0)
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "No successful record backup in 26 hours"
+            description: "The postgres-backup CronJob is unsuspended but has not completed successfully in over a day."

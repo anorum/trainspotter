@@ -9,8 +9,11 @@ Each pod reads `AWS_ROLE_ARN` from the imperative `aws-roles` Secret, so the AWS
 kubectl create secret generic aws-roles -n blockade \
   --from-literal=poller=<blockade-poller role arn> \
   --from-literal=detector=<blockade-detector role arn> \
-  --from-literal=api=<blockade-api role arn>
+  --from-literal=api=<blockade-api role arn> \
+  --from-literal=backup=<blockade-backup role arn>
 ```
+
+The `backup` key feeds the postgres-backup CronJob (`deploy/postgres/backup.yaml`), which ships live and requires this key to exist before it can ship a dump.
 
 ArgoCD syncs `deploy/` directly; there is no substitution step.
 
