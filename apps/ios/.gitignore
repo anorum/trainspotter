@@ -1,3 +1,5 @@
 *.xcodeproj
 Sources/App/Info.plist
 Sources/Widget/Info.plist
+Sources/WatchApp/Info.plist
+Sources/WatchWidget/Info.plist

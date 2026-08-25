@@ -1,10 +1,12 @@
-# PDX Train for iPhone
+# PDX Train for iPhone and Apple Watch
 
-One screen and a widget: red or green at 12th & Clinton, at a glance.
-The widget is the product - home screen and lock screen aspects that update on
-WidgetKit's budget (every 5-15 minutes, matching the cameras' own cadence).
-The app is the widget's home: the flasher big enough to read across a room,
-the blocked ticker, and the same ODOT-vs-us honesty note the website shows.
+One screen, a widget, and a watch face: red or green at 12th & Clinton, at a
+glance. The glanceable surfaces are the product - home screen, lock screen,
+and watch-face aspects that update on WidgetKit's budget (every 5-15 minutes,
+matching the cameras' own cadence).
+The app is their home: the crossing on a map with its own flasher as the pin,
+the aspect on a plaque big enough to read across a room, the blocked ticker,
+and the same ODOT-vs-us honesty note the website shows.
 
 ## One-time setup
 
@@ -15,7 +17,8 @@ the blocked ticker, and the same ODOT-vs-us honesty note the website shows.
 3. From this directory: `xcodegen generate && open PDXTrain.xcodeproj`
    (The `.xcodeproj` is generated and gitignored; `project.yml` is the truth.)
 4. In Xcode, select the `PDXTrain` target -> Signing & Capabilities -> choose
-   your team for BOTH targets (app and widget).
+   your team for ALL FOUR targets - PDXTrain, PDXTrainWidget,
+   PDXTrainWatch, PDXTrainWatchWidget - or the install fails.
    - A free Apple ID works but the install expires after 7 days and needs a
      re-run from Xcode.
    - The $99/year developer account removes that dance (and enables
@@ -31,13 +34,44 @@ the blocked ticker, and the same ODOT-vs-us honesty note the website shows.
    and Siri speaks the answer either way ("Yes - a train has been blocking
    12th and Clinton for 24 minutes").
 
+## The watch
+
+The watch app embeds in the phone app, so installing the phone app offers the
+watch app on the paired Watch automatically (or install it from the Watch app
+on the phone). Add a complication: long-press the watch face -> Edit ->
+Complications -> pick a slot -> PDX Train. Every form carries the state in
+something other than color - a per-aspect glyph (train / checkmark / question
+mark) on the circular forms, the aspect word or a labeled duration on the
+rest: watchOS renders complications in accented mode on tinted faces, where
+hue flattens to a single tint and a red-vs-green dot would say nothing.
+
+Bundle IDs are nested deliberately (`com.alexnorum.PDXTrain`, `.Widget`,
+`.watchkitapp`, `.watchkitapp.widget`): iOS refuses to install an extension
+whose id is not prefixed by its parent app's, which the simulator reports as
+"Mismatched bundle IDs".
+
 ## Layout
 
-- `project.yml` - XcodeGen spec: app target + widget extension, iOS 17+.
+- `project.yml` - XcodeGen spec: four targets - the iOS app and its widget
+  extension (iOS 17+), plus the watch app and its complication extension
+  (watchOS 10+). Bundle ids are pinned there, not derived.
 - `Sources/Shared` - the wire contract (`/api/v1/status` reduced to a
-  glance), the board's colors, and the twin-lamp Flasher view. Compiled into
-  both targets.
-- `Sources/App` - the one-screen SwiftUI app.
+  glance), the board's colors, the twin-lamp Flasher view, and the timeline
+  entry and provider both widget extensions share. Compiled into all four
+  targets.
+- `Sources/App` - the SwiftUI app: the crossing on a muted dark map, its own
+  flasher as the pin, and a Maps-style persistent sheet whose collapsed face
+  is the aspect plaque - the glance stays primary. Pulled up, it shows the
+  exact camera frame the verdict came from and the train sheet (the
+  dispatcher's record of every blockage, from `/api/v1/sessions`). The camera
+  position is state and the pin is a plain `Annotation`, so adding "you are
+  here" later is `UserAnnotation()` plus a location-usage string.
+- `Sources/Shared/TrainSheetRow.swift` - one line of the train sheet, phone
+  and watch alike: open lines tick red, uncertified glimpses are dimmed.
+- `Sources/WatchApp` - the watchOS app: the aspect page, and the train
+  sheet one vertical swipe below it. Deliberately no map on the wrist.
+- `Sources/WatchWidget` - watch-face complications: circular, corner,
+  rectangular, inline.
 - `Sources/Widget` - the WidgetKit timeline and views.
 
 No secrets, no accounts, no write access: the app is a read-only client of
