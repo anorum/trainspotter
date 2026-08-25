@@ -121,14 +121,21 @@ spec:
   groups:
     - name: blockade-backup
       rules:
+        # Only failures from the last day: retained failed Jobs would
+        # otherwise keep this firing long after the next night succeeded.
+        # A transient bad night alerts for 24h and self-resolves; persistent
+        # brokenness is BlockadeBackupMissing's job.
         - alert: BlockadeBackupFailed
-          expr: kube_job_status_failed{namespace="blockade", job_name=~"postgres-backup-.*"} > 0
+          expr: |
+            (kube_job_status_failed{namespace="blockade", job_name=~"postgres-backup-.*"} > 0)
+            and on(job_name)
+            (time() - kube_job_status_start_time{namespace="blockade", job_name=~"postgres-backup-.*"} < 86400)
           for: 5m
           labels:
             severity: warning
           annotations:
-            summary: "The nightly record backup failed"
-            description: "postgres-backup Job {{ $labels.job_name }} failed; the record's fast restore path is a day staler than it should be."
+            summary: "Last night's record backup failed"
+            description: "postgres-backup Job {{ $labels.job_name }} failed within the last 24h."
         # No successful dump in 26 hours, while the CronJob is meant to run.
         # The suspend guard keeps this quiet until the IAM role exists and
         # the job is unsuspended. If the job has never once succeeded there
