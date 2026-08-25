@@ -136,6 +136,7 @@ Installed copies pin their payloads, and a rename inside a present object fails 
 
 The history store, on the 12TB disk.
 Everything in it is derived and replayable from Kafka and S3; losing it is an inconvenience, not data loss.
+A nightly `pg_dump` CronJob (`deploy/postgres/backup.yaml`) ships the record to `backups/postgres/` in S3 so that loss costs a restore rather than a re-score; it ships suspended until the `backup` role ARN lands in the `aws-roles` Secret.
 Schema is `CREATE TABLE IF NOT EXISTS` on API start - at this scale a migration framework is ceremony.
 
 ## Data contracts
@@ -166,6 +167,7 @@ A backfill deletes every session starting inside the re-scored window and insert
 
 - `frames/{camera_id}/{Y}/{m}/{d}/{H}/{epoch_ms}-{hash8}.jpg` - the corpus, content-addressed, kept forever; the reason history can always be re-derived at better accuracy.
 - `manifests/{camera_id}/.../{H}.jsonl.gz` - hourly-rolled manifest uploads; with the poller PVC these are the backfill source.
+- `backups/postgres/blockade-{timestamp}.dump` - nightly `pg_dump` of the history store (custom format); the fast restore path for Postgres.
 - `references/{camera_id}.npz|.json` and `references/classifier-{camera_id}.onnx` - detector models; every detector pod syncs the prefix at boot.
 
 Model weights never live in git; they ship through this prefix.
@@ -180,7 +182,8 @@ All code changes go through the no-mistakes gate on a feature branch; nothing la
 Imperative, never in git: the `aws-roles` Secret (IRSA role ARNs), `odot-credentials`, `postgres-credentials`, `regcred`, and the `blockade-cameras` ConfigMap.
 When the roster schema gains a field, roll images before recreating the ConfigMap; when it loses one, recreate the ConfigMap first - `Camera` is `extra="forbid"` in both directions.
 
-Monitoring: the poller, detector, sessionizer, and api each expose Prometheus metrics on :9102 with a ServiceMonitor, and the poller's `deploy/poller/alerts.yaml` carries the rules that matter, including `BlockadePollerMetricsMissing` - the absent() rule that fires when the poller's own series stop arriving and every other poller rule has therefore gone blind.
+Monitoring: the poller, detector, sessionizer, and api each expose Prometheus metrics on :9102 with a ServiceMonitor, and the poller's `deploy/poller/alerts.yaml` carries the poller rules that matter, including `BlockadePollerMetricsMissing` - the absent() rule that fires when the poller's own series stop arriving and every other poller rule has therefore gone blind.
+The backup rules live in `deploy/postgres/backup.yaml`, built on kube-state-metrics: `BlockadeBackupFailed` (a Job failed within the last 24h, so a transient bad night self-resolves) and `BlockadeBackupMissing` (no successful dump in 26 hours while the CronJob is unsuspended).
 The api serves its metrics on that separate port rather than :8000 because the public HTTPRoute forwards every path on :8000, so `/metrics` there would be internet-facing.
 `deploy/monitoring/dashboard.yaml` is the app's Grafana dashboard, a `grafana_dashboard`-labeled ConfigMap the kube-prometheus-stack sidecar provisions; `tests/test_api_metrics.py` joins its panel queries against the series the api actually exports so a renamed metric can't blank a panel silently.
 A deploy-manifest test asserts every ServiceMonitor actually selects a Service, because the one time it didn't, all alerting was silently dead for two days.
