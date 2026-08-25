@@ -136,7 +136,7 @@ Installed copies pin their payloads, and a rename inside a present object fails 
 
 The history store, on the 12TB disk.
 Everything in it is derived and replayable from Kafka and S3; losing it is an inconvenience, not data loss.
-A nightly `pg_dump` CronJob (`deploy/postgres/backup.yaml`) ships the record to `backups/postgres/` in S3 so that loss costs a restore rather than a re-score; it ships suspended until the `backup` role ARN lands in the `aws-roles` Secret.
+A nightly `pg_dump` CronJob (`deploy/postgres/backup.yaml`) ships the record to `backups/postgres/` in S3 so that loss costs a restore rather than a re-score; the job is live now that the `backup` role ARN is in the `aws-roles` Secret.
 Schema is `CREATE TABLE IF NOT EXISTS` on API start - at this scale a migration framework is ceremony.
 
 ## Data contracts

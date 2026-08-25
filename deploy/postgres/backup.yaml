@@ -13,8 +13,9 @@
 # it, and a destroyed dump loses only the fast path.
 #
 # The role ARN lives in the imperative aws-roles Secret (key: backup);
-# the recipe is in deploy/poller/README.md. Suspend
-# by flipping the field here, in git, once the role is in place.
+# the recipe is in deploy/poller/README.md. The role is in place and the
+# job is live; re-suspend by flipping the field here, in git, if the
+# backup needs to be paused.
 ---
 apiVersion: v1
 kind: ServiceAccount
