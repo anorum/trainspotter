@@ -38,7 +38,9 @@ effectively never fire at the measured ~21 KB per frame. See
 reasoning behind that.
 
 **No versioning.** Frames are written once and never modified; versioning would only accumulate
-delete markers during cache sweeps.
+delete markers during cache sweeps. The nightly dumps under `backups/postgres/` are write-once
+too; what leaving them unversioned costs, and why that is accepted, is spelled out in
+`deploy/postgres/backup.yaml`.
 
 **Requests dominate the early bill,** not storage: ~518k PUTs/month is ~$2.60, against ~$0.70 of
 storage in month one. Optimise the storage class only after that stops being true.

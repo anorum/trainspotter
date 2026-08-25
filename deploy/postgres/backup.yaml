@@ -7,12 +7,14 @@
 # exchanged via AssumeRoleWithWebIdentity. The `backup` role is write-only -
 # PutObject on backups/postgres/* and nothing else; a leaked backup pod
 # cannot read the corpus. It could overwrite a dump at a known key
-# (timestamped names prevent accidents, not malice) - bucket versioning is
-# the guard for existing dumps.
+# (timestamped names prevent accidents, not malice), and the bucket is
+# unversioned (aws/README.md), so an overwritten dump is simply gone - an
+# accepted cost, because the record is derived: S3 frames plus code rebuild
+# it, and a destroyed dump loses only the fast path.
 #
 # Ships suspended: the role ARN must exist in the imperative aws-roles Secret
-# (key: backup) first - see the migration runbook. Unsuspend by flipping the
-# field here, in git, once the role is in place.
+# (key: backup) first - the recipe is in deploy/poller/README.md. Unsuspend
+# by flipping the field here, in git, once the role is in place.
 ---
 apiVersion: v1
 kind: ServiceAccount
