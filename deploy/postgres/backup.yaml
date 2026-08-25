@@ -140,10 +140,10 @@ spec:
             summary: "Last night's record backup failed"
             description: "postgres-backup Job {{ $labels.job_name }} failed within the last 24h."
         # No successful dump in 26 hours, while the CronJob is meant to run.
-        # The suspend guard keeps this quiet until the IAM role exists and
-        # the job is unsuspended. If the job has never once succeeded there
-        # is no completion series and this cannot fire - the failure alert
-        # and the unsuspend test-fire cover that window.
+        # The suspend guard keeps this quiet whenever the job is suspended.
+        # If the job has never once succeeded there is no completion series
+        # and this cannot fire - the failure alert and the unsuspend
+        # test-fire cover that window.
         - alert: BlockadeBackupMissing
           expr: |
             (time() - max(kube_job_status_completion_time{namespace="blockade", job_name=~"postgres-backup-.*"}) > 93600)
