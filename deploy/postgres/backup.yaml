@@ -35,6 +35,10 @@ spec:
   jobTemplate:
     spec:
       backoffLimit: 1
+      # A hung dump or stalled upload must fail, not linger: with
+      # concurrencyPolicy Forbid, a wedged Job silently skips every
+      # following night until someone deletes it by hand.
+      activeDeadlineSeconds: 3600
       template:
         spec:
           serviceAccountName: postgres-backup
@@ -105,3 +109,39 @@ spec:
                       audience: sts.amazonaws.com
                       expirationSeconds: 3600
                       path: token
+---
+# A backup that fails unseen is theater. Both signals come from
+# kube-state-metrics, which the prometheus stack already scrapes.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: blockade-backup
+  namespace: blockade
+spec:
+  groups:
+    - name: blockade-backup
+      rules:
+        - alert: BlockadeBackupFailed
+          expr: kube_job_status_failed{namespace="blockade", job_name=~"postgres-backup-.*"} > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "The nightly record backup failed"
+            description: "postgres-backup Job {{ $labels.job_name }} failed; the record's fast restore path is a day staler than it should be."
+        # No successful dump in 26 hours, while the CronJob is meant to run.
+        # The suspend guard keeps this quiet until the IAM role exists and
+        # the job is unsuspended. If the job has never once succeeded there
+        # is no completion series and this cannot fire - the failure alert
+        # and the unsuspend test-fire cover that window.
+        - alert: BlockadeBackupMissing
+          expr: |
+            (time() - max(kube_job_status_completion_time{namespace="blockade", job_name=~"postgres-backup-.*"}) > 93600)
+            and on()
+            (kube_cronjob_spec_suspend{namespace="blockade", cronjob="postgres-backup"} == 0)
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "No successful record backup in 26 hours"
+            description: "The postgres-backup CronJob is unsuspended but has not completed successfully in over a day."
