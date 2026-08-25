@@ -12,8 +12,8 @@
 # accepted cost, because the record is derived: S3 frames plus code rebuild
 # it, and a destroyed dump loses only the fast path.
 #
-# Ships suspended: the role ARN must exist in the imperative aws-roles Secret
-# (key: backup) first - the recipe is in deploy/poller/README.md. Unsuspend
+# The role ARN lives in the imperative aws-roles Secret (key: backup);
+# the recipe is in deploy/poller/README.md. Suspend
 # by flipping the field here, in git, once the role is in place.
 ---
 apiVersion: v1
@@ -30,7 +30,7 @@ metadata:
 spec:
   # 10:17 UTC = 02:17/03:17 corridor time, after the day's sessions close.
   schedule: "17 10 * * *"
-  suspend: true
+  suspend: false
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
