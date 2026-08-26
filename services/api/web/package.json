@@ -4,11 +4,13 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
+    "predev": "npm run copy-maplibre",
     "build": "astro build",
+    "prebuild": "npm run copy-maplibre",
     "preview": "astro preview",
     "check": "astro check",
     "test": "vitest run",
-    "prebuild": "mkdir -p public/maplibre && cp node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs node_modules/maplibre-gl/dist/maplibre-gl-shared.mjs public/maplibre/"
+    "copy-maplibre": "mkdir -p public/maplibre && cp node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs node_modules/maplibre-gl/dist/maplibre-gl-shared.mjs public/maplibre/"
   },
   "dependencies": {
     "@astrojs/preact": "^4.0.0",
