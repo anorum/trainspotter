@@ -14,12 +14,18 @@
  */
 
 import "leaflet/dist/leaflet.css";
+import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef } from "preact/hooks";
 import type * as Leaflet from "leaflet";
 import { FEATURED, GEOMETRY, type State } from "../lib/crossings";
 
-const TILES = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
-const ATTRIBUTION = "&copy; OpenStreetMap contributors &copy; CARTO";
+// OpenFreeMap: keyless and unmetered, with self-hosting as the escape
+// hatch - chosen when CARTO put an API key (and a watermark) in front of
+// its raster tiles and marked them for retirement. Vector, so the layer
+// is MapLibre inside Leaflet; everything else about the map is untouched.
+// Attribution comes from the style itself (OpenFreeMap, OpenMapTiles, and
+// the OpenStreetMap data credit), so none is declared here.
+const STYLE = "https://tiles.openfreemap.org/styles/dark";
 
 export interface MapStates {
   /** crossing_id -> live aspect, stale collapsing to UNKNOWN upstream. */
@@ -51,6 +57,17 @@ export default function CrossingMap({
     let disposed = false;
     void (async () => {
       const L = await import("leaflet");
+      // Vite does not emit the worker maplibre's ESM build references from
+      // an island's dynamic import (and hashed asset names would break the
+      // worker's relative import of its shared chunk), leaving the map a
+      // black canvas. prebuild copies worker + shared chunk verbatim into
+      // public/maplibre/, and maplibre is pointed at that stable path.
+      const { setWorkerUrl } = await import("maplibre-gl");
+      setWorkerUrl("/maplibre/maplibre-gl-worker.mjs");
+      // The layer factory comes from the plugin's own export, not the
+      // `L.maplibreGL` it also patches on: that patch lands on Leaflet's
+      // CommonJS object, which the frozen ESM namespace above never sees.
+      const { maplibreGL } = await import("@maplibre/maplibre-gl-leaflet");
       if (disposed || !holder.current || map.current) return;
       leaflet.current = L;
       // The page scroll must survive crossing the card: no wheel zoom on
@@ -67,7 +84,7 @@ export default function CrossingMap({
       m.attributionControl.setPrefix(
         '<a href="https://leafletjs.com">Leaflet</a>',
       );
-      L.tileLayer(TILES, { attribution: ATTRIBUTION, maxZoom: 19 }).addTo(m);
+      maplibreGL({ style: STYLE }).addTo(m);
       const points = FEATURED.map((id) => {
         const g = GEOMETRY[id];
         return [g.lat, g.lon] as [number, number];
