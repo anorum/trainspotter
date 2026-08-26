@@ -78,6 +78,7 @@ export default function CrossingMap({
         scrollWheelZoom: false,
         dragging: !L.Browser.mobile,
         attributionControl: true,
+        maxZoom: 19,
       });
       // Text-only prefix: the default embeds a flag SVG that the site's
       // global `svg` reset inflates to the size of the card.
