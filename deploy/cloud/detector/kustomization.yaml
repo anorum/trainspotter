@@ -1,0 +1,40 @@
+# Detector on the cloud box: IRSA -> static keys, bus -> in-cluster
+# Redpanda, no Prometheus stack.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../detector
+patches:
+  - target:
+      kind: ServiceMonitor
+      name: detector
+    patch: |
+      apiVersion: monitoring.coreos.com/v1
+      kind: ServiceMonitor
+      metadata:
+        name: detector
+        namespace: blockade
+      $patch: delete
+  - target:
+      kind: Deployment
+      name: detector
+    patch: |
+      - op: remove
+        path: /spec/template/spec/containers/0/env/0
+      - op: remove
+        path: /spec/template/spec/containers/0/env/0
+      - op: add
+        path: /spec/template/spec/containers/0/envFrom
+        value:
+          - secretRef:
+              name: aws-credentials
+      - op: test
+        path: /spec/template/spec/containers/0/env/4/name
+        value: BLOCKADE_KAFKA_BOOTSTRAP
+      - op: replace
+        path: /spec/template/spec/containers/0/env/4/value
+        value: redpanda.blockade.svc.cluster.local:9092
+      - op: remove
+        path: /spec/template/spec/containers/0/volumeMounts/1
+      - op: remove
+        path: /spec/template/spec/volumes/1

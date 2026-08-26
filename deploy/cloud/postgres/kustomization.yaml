@@ -1,0 +1,55 @@
+# Postgres on the cloud box: the pinned homelab PV disappears, the claim
+# rides k3s local-path, and the backup CronJob stays home until cutover
+# re-points it (the record's writer of record is still the homelab).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../postgres
+patches:
+  - target:
+      kind: PersistentVolume
+      name: blockade-postgres-pv
+    patch: |
+      apiVersion: v1
+      kind: PersistentVolume
+      metadata:
+        name: blockade-postgres-pv
+
+      $patch: delete
+  - target:
+      kind: ServiceAccount
+      name: postgres-backup
+    patch: |
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: postgres-backup
+        namespace: blockade
+      $patch: delete
+  - target:
+      kind: CronJob
+      name: postgres-backup
+    patch: |
+      apiVersion: batch/v1
+      kind: CronJob
+      metadata:
+        name: postgres-backup
+        namespace: blockade
+      $patch: delete
+  - target:
+      kind: PrometheusRule
+      name: blockade-backup
+    patch: |
+      apiVersion: monitoring.coreos.com/v1
+      kind: PrometheusRule
+      metadata:
+        name: blockade-backup
+        namespace: blockade
+      $patch: delete
+  - target:
+      kind: StatefulSet
+      name: postgres
+    patch: |
+      - op: replace
+        path: /spec/volumeClaimTemplates/0/spec/storageClassName
+        value: local-path

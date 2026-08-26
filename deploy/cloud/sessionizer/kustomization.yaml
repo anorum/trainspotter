@@ -1,0 +1,27 @@
+# Sessionizer: no AWS at all; only the bus address changes, and the
+# Prometheus stack is absent.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../sessionizer
+patches:
+  - target:
+      kind: ServiceMonitor
+      name: sessionizer
+    patch: |
+      apiVersion: monitoring.coreos.com/v1
+      kind: ServiceMonitor
+      metadata:
+        name: sessionizer
+        namespace: blockade
+      $patch: delete
+  - target:
+      kind: Deployment
+      name: sessionizer
+    patch: |
+      - op: test
+        path: /spec/template/spec/containers/0/env/0/name
+        value: BLOCKADE_KAFKA_BOOTSTRAP
+      - op: replace
+        path: /spec/template/spec/containers/0/env/0/value
+        value: redpanda.blockade.svc.cluster.local:9092

@@ -1,0 +1,114 @@
+---
+# The bus, cloud edition: one Redpanda node in the blockade namespace.
+# Single node is a deliberate match for the workload - every consumer is a
+# single replica, the log's durability floor is S3 frames plus re-scoring
+# (docs/architecture.md), and the replay window is convenience. Managed
+# serverless was priced out; see the migration plan.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redpanda
+  namespace: blockade
+  labels:
+    app: redpanda
+spec:
+  serviceName: redpanda
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redpanda
+  template:
+    metadata:
+      labels:
+        app: redpanda
+    spec:
+      containers:
+        - name: redpanda
+          # Pinned: the bus must not change versions because a pod rescheduled.
+          image: redpandadata/redpanda:v24.2.4
+          args:
+            - redpanda
+            - start
+            - --mode=dev-container   # single node, no seed quorum
+            - --smp=1
+            - --memory=1G
+            - --reserve-memory=0M
+            - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+            - --advertise-kafka-addr=PLAINTEXT://redpanda.blockade.svc.cluster.local:9092
+          ports:
+            - name: kafka
+              containerPort: 9092
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/redpanda/data
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              memory: 1536Mi
+          readinessProbe:
+            exec:
+              command: ["rpk", "cluster", "health", "--exit-when-healthy"]
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 10
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: local-path
+        resources:
+          requests:
+            storage: 30Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redpanda
+  namespace: blockade
+  labels:
+    app: redpanda
+spec:
+  clusterIP: None
+  selector:
+    app: redpanda
+  ports:
+    - name: kafka
+      port: 9092
+---
+# Topic bootstrap, replacing the Strimzi KafkaTopic CRDs. Idempotent:
+# create tolerates already-exists, then the final list asserts all four
+# names so a connection failure cannot masquerade as success. Config values
+# mirror deploy/kafka/topics.yaml - keep the two in sync.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: redpanda-topics
+  namespace: blockade
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 6
+  activeDeadlineSeconds: 900
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: topics
+          image: redpandadata/redpanda:v24.2.4
+          command: ["/bin/bash", "-ec"]
+          args:
+            - |
+              B=redpanda.blockade.svc.cluster.local:9092
+              c() { rpk topic create "$@" -X brokers="$B" || true; }
+              c crossing.frames.v1 -p 3 -c retention.ms=604800000 -c segment.bytes=67108864
+              c crossing.observations.v1 -p 3 -c retention.ms=604800000 -c segment.bytes=67108864
+              c crossing.sessions.v1 -p 3 -c cleanup.policy=compact -c segment.bytes=33554432 -c min.cleanable.dirty.ratio=0.1
+              c crossing.alerts.v1 -p 3 -c retention.ms=86400000
+              for t in crossing.frames.v1 crossing.observations.v1 crossing.sessions.v1 crossing.alerts.v1; do
+                rpk topic list -X brokers="$B" | grep -q "^$t" || { echo "missing $t"; exit 1; }
+              done
+              echo "topics ready"

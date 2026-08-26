@@ -1,0 +1,73 @@
+# Poller on the cloud box: same deployment, minus everything that assumes
+# the house - the 12TB disk (PV pinned to swagman-2), the Prometheus stack,
+# and IRSA (the box is outside the homelab's OIDC trust).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../poller
+patches:
+  - target:
+      kind: PersistentVolume
+      name: blockade-poller-state-pv
+    patch: |
+      apiVersion: v1
+      kind: PersistentVolume
+      metadata:
+        name: blockade-poller-state-pv
+
+      $patch: delete
+  - target:
+      kind: ServiceMonitor
+      name: blockade-capture
+    patch: |
+      apiVersion: monitoring.coreos.com/v1
+      kind: ServiceMonitor
+      metadata:
+        name: blockade-capture
+        namespace: blockade
+      $patch: delete
+  - target:
+      kind: PrometheusRule
+      name: blockade-capture
+    patch: |
+      apiVersion: monitoring.coreos.com/v1
+      kind: PrometheusRule
+      metadata:
+        name: blockade-capture
+        namespace: blockade
+      $patch: delete
+  - target:
+      kind: PersistentVolumeClaim
+      name: poller-state
+    patch: |
+      - op: replace
+        path: /spec/storageClassName
+        value: local-path
+      - op: remove
+        path: /spec/volumeName
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: 20Gi
+  - target:
+      kind: Deployment
+      name: poller
+    patch: |
+      - op: remove
+        path: /spec/template/spec/containers/0/env/0
+      - op: remove
+        path: /spec/template/spec/containers/0/env/0
+      - op: add
+        path: /spec/template/spec/containers/0/envFrom/-
+        value:
+          secretRef:
+            name: aws-credentials
+      - op: test
+        path: /spec/template/spec/containers/0/env/3/name
+        value: BLOCKADE_KAFKA_BOOTSTRAP
+      - op: replace
+        path: /spec/template/spec/containers/0/env/3/value
+        value: redpanda.blockade.svc.cluster.local:9092
+      - op: remove
+        path: /spec/template/spec/containers/0/volumeMounts/2
+      - op: remove
+        path: /spec/template/spec/volumes/2
