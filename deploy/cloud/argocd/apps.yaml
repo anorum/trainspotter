@@ -1,0 +1,126 @@
+---
+# One Application per component, applied once by hand on the cloud box
+# (kubectl apply -f apps.yaml after seeding the repo credential); from then
+# on the repo is the only way anything changes - same GitOps rule as home.
+#
+# No prune, deliberately: same caution as the homelab, where removals
+# orphan rather than delete. selfHeal keeps drift from surviving.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: redpanda
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/anorum/trainspotter.git
+    targetRevision: main
+    path: deploy/cloud/redpanda
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: blockade
+  syncPolicy:
+    automated:
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: poller
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/anorum/trainspotter.git
+    targetRevision: main
+    path: deploy/cloud/poller
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: blockade
+  syncPolicy:
+    automated:
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: detector
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/anorum/trainspotter.git
+    targetRevision: main
+    path: deploy/cloud/detector
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: blockade
+  syncPolicy:
+    automated:
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sessionizer
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/anorum/trainspotter.git
+    targetRevision: main
+    path: deploy/cloud/sessionizer
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: blockade
+  syncPolicy:
+    automated:
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: api
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/anorum/trainspotter.git
+    targetRevision: main
+    path: deploy/cloud/api
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: blockade
+  syncPolicy:
+    automated:
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: postgres
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/anorum/trainspotter.git
+    targetRevision: main
+    path: deploy/cloud/postgres
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: blockade
+  syncPolicy:
+    automated:
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

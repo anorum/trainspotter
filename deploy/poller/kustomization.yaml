@@ -1,0 +1,10 @@
+# Base kustomization: every file in this directory, listed explicitly, so the
+# homelab render is identical to the old directory apply and the cloud
+# overlay can consume this as a base. A NEW FILE HERE MUST BE ADDED TO THIS
+# LIST - directory auto-discovery ended when this file appeared.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - deployment.yaml
+  - hdd-volume.yaml
+  - alerts.yaml
