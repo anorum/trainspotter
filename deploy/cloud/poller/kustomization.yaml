@@ -52,8 +52,14 @@ patches:
       kind: Deployment
       name: poller
     patch: |
+      - op: test
+        path: /spec/template/spec/containers/0/env/0/name
+        value: AWS_ROLE_ARN
       - op: remove
         path: /spec/template/spec/containers/0/env/0
+      - op: test
+        path: /spec/template/spec/containers/0/env/0/name
+        value: AWS_WEB_IDENTITY_TOKEN_FILE
       - op: remove
         path: /spec/template/spec/containers/0/env/0
       - op: add
@@ -67,7 +73,13 @@ patches:
       - op: replace
         path: /spec/template/spec/containers/0/env/3/value
         value: redpanda.blockade.svc.cluster.local:9092
+      - op: test
+        path: /spec/template/spec/containers/0/volumeMounts/2/name
+        value: aws-token
       - op: remove
         path: /spec/template/spec/containers/0/volumeMounts/2
+      - op: test
+        path: /spec/template/spec/volumes/2/name
+        value: aws-token
       - op: remove
         path: /spec/template/spec/volumes/2

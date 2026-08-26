@@ -30,8 +30,14 @@ patches:
       kind: Deployment
       name: api
     patch: |
+      - op: test
+        path: /spec/template/spec/containers/0/env/0/name
+        value: AWS_ROLE_ARN
       - op: remove
         path: /spec/template/spec/containers/0/env/0
+      - op: test
+        path: /spec/template/spec/containers/0/env/0/name
+        value: AWS_WEB_IDENTITY_TOKEN_FILE
       - op: remove
         path: /spec/template/spec/containers/0/env/0
       - op: add
@@ -45,8 +51,14 @@ patches:
       - op: replace
         path: /spec/template/spec/containers/0/env/3/value
         value: redpanda.blockade.svc.cluster.local:9092
+      - op: test
+        path: /spec/template/spec/containers/0/volumeMounts/1/name
+        value: aws-token
       - op: remove
         path: /spec/template/spec/containers/0/volumeMounts/1
+      - op: test
+        path: /spec/template/spec/volumes/1/name
+        value: aws-token
       - op: remove
         path: /spec/template/spec/volumes/1
   - target:
@@ -56,6 +68,14 @@ patches:
       - op: replace
         path: /spec/type
         value: NodePort
+      - op: test
+        path: /spec/ports/0/name
+        value: http
       - op: add
         path: /spec/ports/0/nodePort
         value: 30080
+      - op: test
+        path: /spec/ports/1/name
+        value: metrics
+      - op: remove
+        path: /spec/ports/1
