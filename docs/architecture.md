@@ -174,8 +174,9 @@ Model weights never live in git; they ship through this prefix.
 
 ## Deploy and operations
 
-ArgoCD tracks `main` and applies `deploy/` recursively - edit the repo, not the cluster.
+ArgoCD tracks `main` and applies the service directories under `deploy/` - edit the repo, not the cluster.
 Cluster-wide platform (Kafka/Strimzi, Prometheus, ArgoCD itself) lives in the homelab repo; everything specific to PDX Train lives here under `deploy/`, next to what it deploys.
+Each service directory carries a base kustomization that lists its files explicitly, and [deploy/cloud/](../deploy/cloud/README.md) overlays those bases for the single cloud box; that overlay is synced by the cloud box's own ArgoCD, never the homelab's, and its README owns the deltas.
 Images build per service on merge (QEMU arm64, GHCR, `:latest` + SHA tags); a new image reaches pods via rollout restart.
 All code changes go through the no-mistakes gate on a feature branch; nothing lands on main directly.
 
