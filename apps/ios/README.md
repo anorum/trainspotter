@@ -3,7 +3,8 @@
 One screen, a widget, and a watch face: red or green at 12th & Clinton, at a
 glance. The glanceable surfaces are the product - home screen, lock screen,
 and watch-face aspects that update on WidgetKit's budget (every 5-15 minutes,
-matching the cameras' own cadence).
+matching the cameras' own cadence); the home-screen widget's "as of" time is
+a button - tap it to ask again right now.
 The app is their home: the crossing on a map with its own flasher as the pin,
 the aspect on a plaque big enough to read across a room, the blocked ticker,
 and the same ODOT-vs-us honesty note the website shows.
@@ -66,8 +67,9 @@ whose id is not prefixed by its parent app's, which the simulator reports as
 - `Sources/App` - the SwiftUI app: the crossing on a muted dark map, its own
   flasher as the pin, and a Maps-style persistent sheet whose collapsed face
   is the aspect plaque - the glance stays primary. Pulled up, it shows the
-  exact camera frame the verdict came from and the train sheet (the
-  dispatcher's record of every blockage, from `/api/v1/sessions`). The camera
+  exact camera frame the verdict came from (tap it for full screen) and the
+  train sheet (the dispatcher's record of every blockage, from
+  `/api/v1/sessions`). The camera
   position is state and the pin is a plain `Annotation`, so adding "you are
   here" later is `UserAnnotation()` plus a location-usage string.
 - `Sources/Shared/TrainSheetRow.swift` - one line of the train sheet, phone

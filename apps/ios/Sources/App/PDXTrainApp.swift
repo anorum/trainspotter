@@ -40,6 +40,7 @@ struct BoardView: View {
     @State private var camera = Crossing.home
     @State private var sessions: [TrainSession] = []
     @State private var detent: PresentationDetent = .height(200)
+    @State private var photoObservation: CrossingNow.Observation?
 
     private let refresh = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
     private let flash = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
@@ -69,6 +70,9 @@ struct BoardView: View {
             .background(Theme.ink)
             .preferredColorScheme(.dark)
             .sheet(isPresented: .constant(true)) { boardSheet }
+            // A physical tick when the aspect actually changes - the pocket
+            // version of the lamps switching.
+            .sensoryFeedback(.impact(weight: .medium), trigger: crossing?.state)
             .task { await load() }
             .onReceive(refresh) { _ in
                 now = .now
@@ -196,10 +200,15 @@ struct BoardView: View {
                     }
                 }
                 .clipShape(frameShape)
+                .contentShape(frameShape)
+                .onTapGesture { photoObservation = observation }
+                // Item-bound, so the open photo is pinned to the frame that
+                // was tapped: a refresh must not swap or dismiss it mid-look.
+                .fullScreenCover(item: $photoObservation) { tapped in
+                    FramePhotoView(observation: tapped)
+                }
                 .overlay(frameShape.stroke(Theme.hairline, lineWidth: 1))
-                Text("\(observation.cameraId) - \(observation.capturedAt.formatted(date: .omitted, time: .shortened))")
-                    .font(.caption.monospaced())
-                    .foregroundStyle(Theme.muted)
+                FrameCaption(observation: observation)
             }
         }
     }
@@ -280,5 +289,46 @@ struct BoardView: View {
         }
         // A sheet that fails leaves the last one standing rather than blanking.
         if let lines = try? await sheet { sessions = lines }
+    }
+}
+
+/// A frame's provenance - which camera, and when - shown wherever the
+/// picture is.
+struct FrameCaption: View {
+    let observation: CrossingNow.Observation
+
+    var body: some View {
+        Text("\(observation.cameraId) - \(observation.capturedAt.formatted(date: .omitted, time: .shortened))")
+            .font(.caption.monospaced())
+            .foregroundStyle(Theme.muted)
+    }
+}
+
+/// The camera frame, full screen: what the squint at the small version was
+/// asking for. Tap anywhere to come back.
+struct FramePhotoView: View {
+    let observation: CrossingNow.Observation
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ZStack {
+            Theme.ink.ignoresSafeArea()
+            VStack(spacing: 12) {
+                AsyncImage(url: BoardAPI.frameURL(observation.objectKey)) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().aspectRatio(contentMode: .fit)
+                    case .failure:
+                        Text("The picture did not arrive.")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.muted)
+                    default:
+                        ProgressView().tint(Theme.muted)
+                    }
+                }
+                FrameCaption(observation: observation)
+            }
+        }
+        .onTapGesture { dismiss() }
     }
 }
