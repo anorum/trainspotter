@@ -51,7 +51,7 @@ struct CheckCrossingIntent: AppIntent {
             let minutes = max(1, Int(now.timeIntervalSince(started) / 60))
             return Answer(
                 dialog:
-                    "Yes - a train has been blocking 12th and Clinton for \(minutes) minute\(minutes == 1 ? "" : "s").",
+                    "Yes - a train has been blocking 12th and Clinton for \(spoken(minutes: minutes)).",
                 aspect: .blocked, line: "gates down \(minutes) min")
         case .clear:
             guard let since = crossing.since else {
@@ -65,13 +65,24 @@ struct CheckCrossingIntent: AppIntent {
                     aspect: .clear, line: "just cleared")
             }
             return Answer(
-                dialog: "No - the crossing is clear, and has been for \(minutes) minutes.",
+                dialog: "No - the crossing is clear, and has been for \(spoken(minutes: minutes)).",
                 aspect: .clear, line: "clear \(minutes) min")
         case .unknown:
             return Answer(
                 dialog: "The camera looked but couldn't decide - treat it as unknown.",
                 aspect: .unknown, line: "undecided")
         }
+    }
+
+    /// A duration the way a person would say it: minutes under an hour,
+    /// hours (with any leftover minutes) past it.
+    private func spoken(minutes: Int) -> String {
+        guard minutes >= 60 else { return "\(minutes) minute\(minutes == 1 ? "" : "s")" }
+        let hours = minutes / 60
+        let rest = minutes % 60
+        let hoursPart = "\(hours) hour\(hours == 1 ? "" : "s")"
+        guard rest > 0 else { return hoursPart }
+        return "\(hoursPart) and \(rest) minute\(rest == 1 ? "" : "s")"
     }
 }
 

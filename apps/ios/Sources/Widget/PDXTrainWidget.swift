@@ -12,6 +12,7 @@ import WidgetKit
 /// fetch happens in the provider, as always.
 struct RefreshCrossingIntent: AppIntent {
     static let title: LocalizedStringResource = "Refresh the crossing"
+    static let isDiscoverable = false
     func perform() async throws -> some IntentResult { .result() }
 }
 
