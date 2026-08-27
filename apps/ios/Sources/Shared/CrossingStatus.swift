@@ -99,7 +99,9 @@ struct BoardStatus: Decodable {
 }
 
 enum BoardAPI {
-    static let base = URL(string: "https://pdxtrain.alexnorum.com/api/v1")!
+    // Installed copies pin this host forever, so it has to be the product's
+    // own domain rather than wherever the API happens to be hosted today.
+    static let base = URL(string: "https://pdxtrain.com/api/v1")!
 
     static func fetch() async throws -> BoardStatus {
         try await get(BoardStatus.self, from: base.appending(path: "status"))
