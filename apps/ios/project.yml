@@ -25,6 +25,10 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.alexnorum.PDXTrain
+        # iPhone-only for the first release: the glance is a pocket product,
+        # and shipping an untested iPad layout helps no one. Revisit with a
+        # real iPad pass.
+        TARGETED_DEVICE_FAMILY: "1"
     sources:
       - Sources/App
       - Sources/Shared
@@ -32,6 +36,8 @@ targets:
       path: Sources/App/Info.plist
       properties:
         UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
         CFBundleDisplayName: PDX Train
         ITSAppUsesNonExemptEncryption: false
     dependencies:
@@ -54,6 +60,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.alexnorum.PDXTrain.Widget
+        TARGETED_DEVICE_FAMILY: "1"
     sources:
       - Sources/Widget
       - Sources/Shared
