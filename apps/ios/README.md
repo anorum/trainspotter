@@ -16,9 +16,13 @@ and the same ODOT-vs-us honesty note the website shows.
 2. `brew install xcodegen`
 3. From this directory: `xcodegen generate && open PDXTrain.xcodeproj`
    (The `.xcodeproj` is generated and gitignored; `project.yml` is the truth.)
-4. In Xcode, select the `PDXTrain` target -> Signing & Capabilities -> choose
-   your team for ALL FOUR targets - PDXTrain, PDXTrainWidget,
-   PDXTrainWatch, PDXTrainWatchWidget - or the install fails.
+4. Signing is preconfigured: `project.yml` pins `DEVELOPMENT_TEAM` so all
+   four targets - PDXTrain, PDXTrainWidget, PDXTrainWatch,
+   PDXTrainWatchWidget - sign against the same team (they must, or the
+   install fails). Building under a different Apple ID? Change
+   `DEVELOPMENT_TEAM` in `project.yml` and regenerate - a team picked in
+   Xcode's Signing & Capabilities pane does not survive the next
+   `xcodegen generate`.
    - A free Apple ID works but the install expires after 7 days and needs a
      re-run from Xcode.
    - The $99/year developer account removes that dance (and enables
