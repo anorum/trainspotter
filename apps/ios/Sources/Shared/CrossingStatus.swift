@@ -2,7 +2,9 @@
 // tolerant of extra fields so the API can grow without breaking the app.
 import Foundation
 
-enum Aspect: String, Decodable {
+// Encodable too, so a surface can write an aspect down and read it back
+// (the widget's last-known-good memory) without a raw-value round trip.
+enum Aspect: String, Codable {
     case blocked = "BLOCKED"
     case clear = "CLEAR"
     case unknown = "UNKNOWN"
@@ -26,7 +28,10 @@ struct CrossingNow: Decodable {
     }
 
     /// The frame the verdict came from - the picture behind the aspect.
-    struct Observation: Decodable {
+    /// Identifiable by its content-addressed key, so a sheet can pin to one
+    /// frame while newer ones arrive.
+    struct Observation: Decodable, Identifiable {
+        var id: String { objectKey }
         let cameraId: String
         let capturedAt: Date
         let objectKey: String

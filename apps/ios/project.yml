@@ -35,7 +35,10 @@ targets:
     info:
       path: Sources/App/Info.plist
       properties:
-        UILaunchScreen: {}
+        # Ink from the first frame - a white flash before a dark app reads
+        # as a glitch.
+        UILaunchScreen:
+          UIColorName: LaunchInk
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         CFBundleDisplayName: PDX Train

@@ -50,3 +50,15 @@ struct Flasher: View {
             .shadow(color: on ? color.opacity(0.8) : .clear, radius: lampSize * 0.35)
     }
 }
+
+extension Flasher {
+    /// The still housing for an aspect, as every non-animating surface draws
+    /// it: both lamps lit, except while a train is actually there - a real
+    /// flasher caught mid-blink has one lamp dark.
+    init(aspect: Aspect, stale: Bool, lampSize: CGFloat) {
+        self.init(
+            color: Theme.aspectColor(aspect, stale: stale),
+            lit: (true, aspect != .blocked || stale),
+            lampSize: lampSize)
+    }
+}

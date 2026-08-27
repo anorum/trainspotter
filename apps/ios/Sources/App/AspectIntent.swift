@@ -3,34 +3,101 @@
 // a personal Shortcut can wrap this intent under any phrase at all (the
 // README shows how), which is where the natural wording lives.
 import AppIntents
+import SwiftUI
 
 struct CheckCrossingIntent: AppIntent {
     static let title: LocalizedStringResource = "Check the crossing"
     static let description = IntentDescription(
         "Answers whether a train is blocking 12th & Clinton right now.")
 
-    func perform() async throws -> some IntentResult & ProvidesDialog {
+    /// What Siri says and what it shows, decided together - each branch below
+    /// is then just the words and the aspect, and the card is built once.
+    private struct Answer {
+        let dialog: IntentDialog
+        let aspect: Aspect
+        var stale = false
+        let line: String
+    }
+
+    func perform() async throws -> some IntentResult & ProvidesDialog & ShowsSnippetView {
+        let answer = await answer()
+        return .result(
+            dialog: answer.dialog,
+            view: AspectSnippet(aspect: answer.aspect, stale: answer.stale, line: answer.line))
+    }
+
+    private func answer() async -> Answer {
         guard let status = try? await BoardAPI.fetch(), let crossing = status.clinton else {
-            return .result(dialog: "The board is not answering right now.")
+            return Answer(
+                dialog: "The board is not answering right now.",
+                aspect: .unknown, stale: true, line: "board unreachable")
         }
-        if crossing.stale {
-            return .result(dialog:
-                "The cameras have gone quiet, so I can't say - the last word was more than fifteen minutes ago.")
+        // One clock reading for the whole answer, taken once the board has
+        // spoken, so the age it reports and the age it speaks agree.
+        let now = Date.now
+        if crossing.stale || status.agedOut(at: now) {
+            return Answer(
+                dialog:
+                    "The cameras have gone quiet, so I can't say - the last word was more than fifteen minutes ago.",
+                aspect: .unknown, stale: true, line: "cameras quiet")
         }
         switch crossing.state {
         case .blocked:
-            if let started = crossing.openSession?.startedAt ?? crossing.since {
-                let minutes = max(1, Int(Date.now.timeIntervalSince(started) / 60))
-                return .result(dialog:
-                    "Yes - a train has been blocking 12th and Clinton for \(minutes) minute\(minutes == 1 ? "" : "s").")
+            guard let started = crossing.openSession?.startedAt ?? crossing.since else {
+                return Answer(
+                    dialog: "Yes - a train is blocking 12th and Clinton.",
+                    aspect: .blocked, line: "gates down")
             }
-            return .result(dialog: "Yes - a train is blocking 12th and Clinton.")
+            let minutes = max(1, Int(now.timeIntervalSince(started) / 60))
+            return Answer(
+                dialog:
+                    "Yes - a train has been blocking 12th and Clinton for \(minutes) minute\(minutes == 1 ? "" : "s").",
+                aspect: .blocked, line: "gates down \(minutes) min")
         case .clear:
-            return .result(dialog: "No - the crossing is clear.")
+            guard let since = crossing.since else {
+                return Answer(
+                    dialog: "No - the crossing is clear.", aspect: .clear, line: "clear")
+            }
+            let minutes = Int(now.timeIntervalSince(since) / 60)
+            if minutes < 2 {
+                return Answer(
+                    dialog: "No - the crossing just cleared.",
+                    aspect: .clear, line: "just cleared")
+            }
+            return Answer(
+                dialog: "No - the crossing is clear, and has been for \(minutes) minutes.",
+                aspect: .clear, line: "clear \(minutes) min")
         case .unknown:
-            return .result(dialog:
-                "The camera looked but couldn't decide - treat it as unknown.")
+            return Answer(
+                dialog: "The camera looked but couldn't decide - treat it as unknown.",
+                aspect: .unknown, line: "undecided")
         }
+    }
+}
+
+/// The card Siri shows while speaking: the plaque, reduced to one line.
+struct AspectSnippet: View {
+    let aspect: Aspect
+    let stale: Bool
+    let line: String
+
+    private var color: Color { Theme.aspectColor(aspect, stale: stale) }
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Flasher(aspect: aspect, stale: stale, lampSize: 15)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(Theme.aspectWord(aspect, stale: stale))
+                    .font(.system(.title3, weight: .bold).width(.condensed))
+                    .foregroundStyle(color)
+                Text("12th & Clinton - \(line)")
+                    .font(.caption)
+                    .foregroundStyle(Theme.muted)
+            }
+            Spacer()
+        }
+        .padding(16)
+        .background(Theme.ink, in: RoundedRectangle(cornerRadius: 14))
     }
 }
 
@@ -40,6 +107,9 @@ struct PDXTrainShortcuts: AppShortcutsProvider {
             intent: CheckCrossingIntent(),
             phrases: [
                 "Is the train blocking in \(.applicationName)",
+                "Is a train blocking in \(.applicationName)",
+                "Is the crossing blocked in \(.applicationName)",
+                "Can I get across in \(.applicationName)",
                 "\(.applicationName) status",
                 "Check \(.applicationName)",
             ],
