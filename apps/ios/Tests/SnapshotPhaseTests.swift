@@ -25,7 +25,7 @@ final class BoardStubProtocol: URLProtocol {
     static var sawFrameRequest = false
 
     override class func canInit(with request: URLRequest) -> Bool {
-        request.url?.host == "pdxtrain.alexnorum.com"
+        request.url?.host() == BoardAPI.base.host()
     }
 
     override class func canonicalRequest(for request: URLRequest) -> URLRequest {

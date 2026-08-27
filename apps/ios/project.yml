@@ -12,6 +12,9 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     MARKETING_VERSION: "1.0"
     CODE_SIGN_STYLE: Automatic
+    # The paid team, by ID - the personal team was retired because its
+    # certificates carry an email address rather than a team name.
+    DEVELOPMENT_TEAM: NLBQK8HWCV
 targets:
   PDXTrain:
     type: application
