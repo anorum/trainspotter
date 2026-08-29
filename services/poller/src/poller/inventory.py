@@ -49,9 +49,9 @@ CAMERA_CONFIG_PATH = REPO_ROOT / "config" / "cameras.yaml"
 INVENTORY_ENVELOPE_KEY = "CCTVInventoryRequest"
 
 # Two cameras per crossing was the original design (docs/history/design.md
-# section 2.1). In practice two of the six views turned out not to include
-# their crossing at all (NON_SCORING_CAMERAS below), so today the second
-# camera is a picture on the board, not a second witness.
+# section 2.1). In practice half the roster no longer judges
+# (NON_SCORING_CAMERAS below), so today the second camera is a picture on the
+# board, not a second witness.
 #
 # Crossing IDs are provisional. Phase 3 loads the FRA National Highway-Rail
 # Crossing Inventory and these become aliases for official FRA crossing IDs.
@@ -64,13 +64,17 @@ TARGET_CAMERAS: dict[str, str] = {
     "Portland - 8th at Division Place": "SE_8TH_DIVISION",
 }
 
-# Verified by eye 2026-08-12: these two views do not include their crossing (677
-# watches the Gideon intersection, 679 the Division one), so they are captured and
-# shown but never judged. Kept here so `resolve` regenerates the roster with the
-# same policy instead of silently re-enfranchising them.
+# Captured and shown but never judged. 677 and 679 cannot see their crossing at
+# all (verified by eye 2026-08-12: 677 watches the Gideon intersection, 679 the
+# Division one). 682 sees its crossing but proved an untrustworthy witness: its
+# reference-detector verdicts minted phantom certified sessions (102
+# hand-labeled CLEAR frames inside "blockage" windows), so odot-681's
+# classifier carries the crossing alone. Kept here so `resolve` regenerates the
+# roster with the same policy instead of silently re-enfranchising them.
 NON_SCORING_CAMERAS: set[str] = {
     "Portland - 11th at Milwaukie S",
     "Portland - 12th at Division",
+    "Portland - 8th at Division Place",
 }
 
 # Documented field names first; the rest are tolerated in case the schema drifts.

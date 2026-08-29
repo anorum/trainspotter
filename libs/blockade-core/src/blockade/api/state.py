@@ -81,7 +81,7 @@ class LiveState:
         first frame arrives.
 
         ``scoring`` is the set of camera_ids whose judgements count. A
-        non-scoring camera (its view does not include the crossing) still
+        non-scoring camera (``scores: false`` in the roster) still
         renders and still supplies frames, but it must not join consensus:
         its permanent UNKNOWN heartbeat would otherwise read as a fresh
         witness and make ``stale`` unreachable - a dead real camera could

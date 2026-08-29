@@ -52,8 +52,8 @@ app = typer.Typer(help="Detection: frames to observations.", no_args_is_help=Tru
 DEFAULT_OUTPUT = Path("var/observations/observations.jsonl")
 
 UNSCORED_VERSION = "unscored/1"
-"""Stamped on the zero-inference UNKNOWNs from cameras that cannot see the
-crossing, so those rows are auditable as policy rather than a model's failure.
+"""Stamped on the zero-inference UNKNOWNs from cameras the roster bars from
+judging, so those rows are auditable as policy rather than a model's failure.
 
 The `unscored/` namespace is a wire contract, not just a label: these rows are
 persisted and served to the board, and the scrubbed view tells a policy UNKNOWN
@@ -62,14 +62,14 @@ from a camera that genuinely refused to judge by that prefix alone
 namespace; leaving it turns the blind cameras' heartbeats back into witnesses
 and lets a dead camera hide behind them on the board."""
 
-UNSCORED_REASON = "camera does not view the crossing; frame kept for context"
+UNSCORED_REASON = "camera does not judge this crossing (roster scores: false); frame kept for context"
 
 
 def unscored(camera: Camera, captured_at: datetime, object_key: str) -> ObservationRecord:
     """What a non-scoring camera's frame earns instead of a judgement.
 
-    No bytes read and no model consulted for a camera that cannot see the
-    crossing (see `Camera.scores` for why it must not vote). The frame still
+    No bytes read and no model consulted for a camera the roster bars from
+    judging (see `Camera.scores` for why it must not vote). The frame still
     earns an observation, so the board keeps showing it - an UNKNOWN, which
     neither consensus nor sessions act on. Every entrypoint that would
     otherwise score the frame mints it here, so what the pod publishes and what
@@ -220,8 +220,9 @@ def explain(
         )
     else:
         typer.secho(
-            f"{cam.camera_id} is non-scoring (its view does not include the "
-            "crossing), so the pod reads no bytes and consults no model for it.",
+            f"{cam.camera_id} is non-scoring (scores: false in the roster; "
+            "docs/camera-survey.md records why), so the pod reads no bytes "
+            "and consults no model for it.",
             fg=typer.colors.YELLOW,
             err=True,
         )
@@ -418,7 +419,7 @@ def spotcheck(
     )
 
     settings = get_settings()
-    # scoring() only: never spend API calls labeling a view with no crossing in it.
+    # scoring() only: never spend API calls labeling a camera the roster bars from judging.
     roster = [
         c
         for c in load_roster(settings.camera_config_path).scoring()
@@ -427,7 +428,7 @@ def spotcheck(
     if camera and not roster:
         typer.secho(
             f"{camera} is not in the roster, not enabled, or non-scoring "
-            "(its view does not include the crossing) - nothing to label.",
+            "(scores: false; its judgements must not count) - nothing to label.",
             fg=typer.colors.RED,
             err=True,
         )
