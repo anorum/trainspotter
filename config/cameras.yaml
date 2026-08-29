@@ -58,3 +58,10 @@ cameras:
   lon: -122.65796
   poll_interval_seconds: 30.0
   enabled: true
+  # Captures, but no longer judges: its view cannot resolve the tracks, and
+  # its reference-detector verdicts minted phantom certified sessions at
+  # this crossing (102 hand-labeled CLEAR frames sat inside "blockage"
+  # windows). odot-681's classifier is the crossing's witness now, the same
+  # lone-witness arrangement Clinton has. Frames keep accumulating for a
+  # future model that earns the job back.
+  scores: false
