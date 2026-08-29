@@ -32,10 +32,10 @@ export type CrossingId = keyof typeof GEOMETRY;
 
 /** The crossings the site presents, in corridor order. Every camera still
  *  captures and scores in the background, so the record keeps accumulating for
- *  the day the rest come back; the product's promise is just one crossing done
- *  properly. Featuring a crossing again is adding its id here - and the type
- *  makes featuring one the map cannot place a build error rather than a
- *  board that renders nothing. */
+ *  the day the rest come back; the product's promise is just the featured
+ *  crossings done properly. Featuring a crossing again is adding its id here -
+ *  and the type makes featuring one the map cannot place a build error rather
+ *  than a board that renders nothing. */
 export const FEATURED: CrossingId[] = ["SE_12TH_CLINTON", "SE_8TH_DIVISION"];
 
 /** Whether the site is presenting a single crossing, which changes what the
