@@ -62,7 +62,9 @@ from a camera that genuinely refused to judge by that prefix alone
 namespace; leaving it turns the blind cameras' heartbeats back into witnesses
 and lets a dead camera hide behind them on the board."""
 
-UNSCORED_REASON = "camera does not judge this crossing (roster scores: false); frame kept for context"
+UNSCORED_REASON = (
+    "camera does not judge this crossing (roster scores: false); frame kept for context"
+)
 
 
 def unscored(camera: Camera, captured_at: datetime, object_key: str) -> ObservationRecord:

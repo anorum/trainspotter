@@ -82,6 +82,7 @@ That is a stronger signal: a queue of stopped vehicles might be a train, a red l
 
 Four of the six do, anyway.
 The other two turned out to watch a neighbouring intersection with their crossing out of frame, so they carry `scores: false` in the roster: still captured, never judged, because a view with no crossing in it can only contribute traffic noise.
+A third camera, `odot-682`, sees its crossing but proved an untrustworthy witness - its verdicts were minting phantom blockage sessions - so it carries `scores: false` too, leaving every crossing judged by a single camera.
 They still show on the board beside their crossing's scoring camera - for whichever crossings the site presents, which is currently 12th & Clinton alone (`FEATURED` in `services/api/web/src/lib/crossings.ts`), so neither camera at 11th & Milwaukie is displayed while both keep capturing and `odot-676`, the one that can see the crossing, keeps being scored.
 [docs/camera-survey.md](docs/camera-survey.md) records which ones and why.
 

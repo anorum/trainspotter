@@ -20,7 +20,7 @@ When a detector gets better, its new word reaches Postgres through this loop, ne
    ```
 
    Cover every camera on the crossing, not just the one whose detector changed - drop `--camera` as above, or scan each and concatenate the JSONL.
-   A crossing's sessions are derived from all its witnesses at once, so a scan of one camera of two rebuilds the window from half the evidence, and a scan of a `scores: false` camera (677, 679) rebuilds it from none at all.
+   A crossing's sessions are derived from all its witnesses at once, so a scan of one camera of two rebuilds the window from half the evidence, and a scan of a `scores: false` camera (677, 679, 682) rebuilds it from none at all.
 
 2. Reach Postgres (from a workstation, port-forward: `kubectl -n blockade port-forward svc/postgres 5432`).
 
@@ -37,7 +37,7 @@ The load is one transaction and is safe to re-run.
 Observations join the store as a new versioned layer and the timeline resolves latest-ingest-wins per instant, so the old detector's word stays on record but stops being the answer.
 Sessions are a projection and get rebuilt: every session starting inside the re-scored window is replaced by what the new derivation found, which is how a phantom session disappears instead of surviving next to its correction.
 A partial scan is refused rather than loaded, because the delete would otherwise be silent and unrecoverable from the board.
-The plan checks the roster: every scoring camera on a crossing must appear in the observations before any window of that crossing is rewritten, so the 681-only scan of a crossing 682 also watches stops before it deletes what 682 saw.
+The plan checks the roster: every scoring camera on a crossing must appear in the observations before any window of that crossing is rewritten, so a scan that misses one of a crossing's scoring witnesses stops before it deletes what the absent camera saw.
 A crossing the roster does not describe at all - an unknown, retired, or renamed crossing id, or one whose every camera is `scores: false` - is refused outright instead of passing the check with zero required witnesses, and `--allow-empty-window` does not waive that one: it waives coverage for a crossing the roster describes, and here there is no coverage to reason about.
 Fix the roster, or the file the scan was pointed at.
 The load then refuses a second time, inside the transaction, if a window would be left with no sessions at all - the shape the roster check cannot see, such as a complete re-score that now reads every frame as CLEAR where the old detector found a train.

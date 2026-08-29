@@ -70,7 +70,7 @@ CLIs: `blockade-capture` (run/once), `blockade-inventory` (fetch/list/resolve - 
 
 Turns frames into `ObservationRecord`s: one judgement (BLOCKED / CLEAR / UNKNOWN, confidence, reason) per crossing per tick.
 UNKNOWN is a first-class honest answer; a detector must never raise and never guess.
-Cameras whose view does not include the crossing carry `scores: false` in the roster (today 677 and 679): they emit zero-inference UNKNOWNs stamped `unscored/1`, so the board keeps their pictures while consensus, sessions, alerts, and analytics all ignore them.
+Cameras the roster bars from judging carry `scores: false` (today 677 and 679, whose views do not include their crossing, and 682, whose verdicts proved untrustworthy): they emit zero-inference UNKNOWNs stamped `unscored/1`, so the board keeps their pictures while consensus, sessions, alerts, and analytics all ignore them.
 That covers new rows; their historical judgements stay authoritative for past instants until a re-score and backfill layers `unscored/1` over them - which has to re-score the crossing's other cameras in the same pass, because that is what rebuilds its sessions.
 Every record is stamped with the `detector_version` that produced it, so rows from different detectors are never silently mixed.
 
@@ -196,5 +196,5 @@ A deploy-manifest test asserts every ServiceMonitor actually selects a Service, 
   Scanning one camera of a two-camera crossing is the trap: the sessions are derived from all its witnesses at once, so a partial scan rebuilds the window from half the evidence, and a scan of a `scores: false` camera rebuilds it from none.
   The plan reads the roster and refuses any window whose crossing has a scoring camera missing from the scan, and the load refuses a second time if a window would end up with no sessions at all; `--allow-empty-window` is the deliberate override for windows that predate a camera or whose sessions really were phantoms.
   The step-by-step runbook, including reaching Postgres, is in [services/api/README.md](../services/api/README.md).
-- **Add a camera**: add it to `TARGET_CAMERAS` in `inventory.py` (and to `NON_SCORING_CAMERAS` there if its view does not include the crossing - otherwise the next `resolve` enfranchises it), run `blockade-inventory resolve`, recreate the ConfigMap; it scores UNKNOWN until it has a reference model (and earns its track band from its first hand-labeled blockages via `blockade-detect band`).
+- **Add a camera**: add it to `TARGET_CAMERAS` in `inventory.py` (and to `NON_SCORING_CAMERAS` there if its judgements must not count - otherwise the next `resolve` enfranchises it), run `blockade-inventory resolve`, recreate the ConfigMap; it scores UNKNOWN until it has a reference model (and earns its track band from its first hand-labeled blockages via `blockade-detect band`).
 - **Debug one frame**: `uv run blockade-detect explain path/to/frame.jpg`.

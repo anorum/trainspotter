@@ -6,7 +6,7 @@ It is a workstation workflow, not a service: nothing here runs in the cluster, a
 The architecture this feeds is described in [docs/architecture.md](architecture.md).
 
 Check the camera's `scores` flag in `config/cameras.yaml` before starting any of it.
-A camera whose view does not include the crossing carries `scores: false` - today `odot-677` and `odot-679` - and the detector never judges its frames, so a classifier trained for it would never be routed to.
+A camera whose judgements must not count carries `scores: false` - today `odot-677` and `odot-679`, whose views do not include their crossing, and `odot-682`, whose verdicts proved untrustworthy - and the detector never judges its frames, so a classifier trained for it would never be routed to.
 Those cameras are outside this runbook entirely; [docs/camera-survey.md](camera-survey.md) records which they are and why.
 
 ## 1. Labels, by trust
@@ -20,10 +20,11 @@ An unclosed session contributes no positives, because its real end is not known 
 
 Sessions are per crossing while training is per camera, and that gap is the sharpest label trap in this document.
 `build_manifest` selects its windows by `crossing_id`, then labels BLOCKED every frame of whichever camera you pointed it at that falls inside a core.
-Sessions open on a blocked-biased consensus across a crossing's scoring cameras, so the partner camera inherits positives its own view never justified: `odot-682` cannot resolve the tracks at night.
+Sessions open on a blocked-biased consensus across a crossing's scoring cameras, so a partner camera inherits positives its own view never justified.
+Today the trap is dormant - `odot-682`, the last weak partner, went `scores: false` after its verdicts minted phantom sessions, so every crossing runs a single scoring camera - but it returns the moment a second witness is enfranchised.
 Core positives are therefore trustworthy only for the camera whose view actually drove the session - `odot-678` at Clinton, `odot-681` at Division.
-For the weak partner, spot-check the core positives before training; a model taught that a clear-looking frame is BLOCKED is precisely the false-positive generator this section exists to prevent.
-The remedy that works for a camera with no hand-saved frames of its own - which is `odot-682` today - is to build `session_files` from that camera's own observations: `blockade-detect scan --camera odot-682` then `derive_sessions` over the result, so the windows come only from what that view actually produced.
+For a weak partner, spot-check the core positives before training; a model taught that a clear-looking frame is BLOCKED is precisely the false-positive generator this section exists to prevent.
+The remedy that works for a camera with no hand-saved frames of its own is to build `session_files` from that camera's own observations: `blockade-detect scan --camera <camera>` then `derive_sessions` over the result, so the windows come only from what that view actually produced.
 `scan` does not read the corpus section 2 assembles: it takes its frame list from the local manifests and reads image bytes from the local cache, and both want the poller's own layout rather than a convenient one.
 The easy way is to run it on the capture workstation, where the poller already writes both and `--local-only` keeps the sweeper off.
 
@@ -31,7 +32,7 @@ Reproducing what it needs by hand takes three steps, and each is easy to get sub
 Frames resolve as `local_cache_dir / object_key`, and the key already begins with `frames/`, so the corpus has to land at `var/frames/frames/{camera_id}/{Y}/{m}/{d}/{H}/` - one more `frames/` than the section 2 sync uses:
 
 ```bash
-cam=odot-682
+cam=odot-678
 aws s3 sync "s3://pdx-trainspotter/frames/$cam" "var/frames/frames/$cam"
 ```
 
@@ -153,7 +154,7 @@ A missing `sweep_file` is not an error - `build_manifest` skips the source when 
 
 **Fold in the hand-saved blocks**, where the camera has them.
 `build_manifest` does not read `data/blocks/`, but the manifest is plain `Example` JSONL, so appending them is a few lines - and this is how the production `odot-678` model was trained.
-This step presumes hand-saved frames already exist for that camera: `data/blocks/` holds `odot-676`, `odot-678`, and `odot-681` today, and for `odot-682` - the only other camera this runbook still covers - the session-file remedy in section 1 is the one that applies.
+This step presumes hand-saved frames already exist for that camera: `data/blocks/` holds `odot-676`, `odot-678`, and `odot-681` today - every camera this runbook still covers; for a camera without them, the session-file remedy in section 1 is the one that applies.
 
 Choose the exam before you append, because here the gold guarantee is yours to keep rather than the code's.
 `build_manifest` enforces gold-out-of-training by object key, and these rows carry `blocks/...` keys that check never sees, so nothing stops you training on the very frames you plan to be graded against.
@@ -226,10 +227,10 @@ Cameras with thin gold need a substitute exam.
 Hold out the hand-saved positives as the test set - the `held_out` set from section 2, which is why that set has to be chosen before the fold-in rather than after - and add a false-positive screen over quiet frames the model has never seen.
 A model that passes on held-out positives but lights up on quiet frames has not earned a rollout.
 
-That substitute needs hand-saved positives to exist, and for `odot-682` - the one weak partner still in the loop - they do not.
-It has no BLOCKED gold and no blocks in `data/blocks/`, so there is nothing to grade a model against and no gate it can pass.
+That substitute needs hand-saved positives to exist.
+`odot-682` is the cautionary case: non-scoring now, it keeps capturing so a future model can earn the job back, yet it has no BLOCKED gold and no blocks in `data/blocks/`, so there is nothing to grade such a model against and no gate it can pass.
 The false-positive screen alone does not close that: it cannot detect a missed train, which is the error class this whole gate exists to hold down.
-For that camera the workflow starts at section 1 rather than here - hand-save a handful of BLOCKED frames spanning night, dawn, and day first.
+For a camera in that position the workflow starts at section 1 rather than here - hand-save a handful of BLOCKED frames spanning night, dawn, and day first.
 No model ships without an exam it could have failed.
 
 ## 4. Ship
@@ -249,7 +250,7 @@ An untrained camera keeps its bare `reference/...` version.
 
 A better detector should improve the past too, not just the future.
 Re-score and load the improved history following the backfill task in [docs/architecture.md](architecture.md): `blockade-detect scan` over the window, then `blockade-api backfill`, dry run first.
-Scan every scoring camera on the crossing in the same pass - a single-camera scan is only right when the camera is its crossing's lone witness (true for `odot-678`; not for `odot-682`, whose crossing has two).
+Scan every scoring camera on the crossing in the same pass - a single-camera scan is only right when the camera is its crossing's lone scoring witness (true today for every trained camera: `odot-682` going non-scoring left `odot-681` alone at Division, like `odot-678` at Clinton).
 The observations table is layered by `detector_version`, so this adds a newer layer rather than rewriting anything.
 
 ## 6. Disagreements
