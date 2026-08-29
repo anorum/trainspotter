@@ -63,13 +63,14 @@ class Camera(BaseModel):
     scores: bool = Field(
         default=True,
         description=(
-            "Whether the detector judges this camera's frames. False for a view that "
-            "does not include the crossing: the frames are still captured and shown "
-            "on the board, but the camera emits zero-inference UNKNOWNs rather than "
-            "judgements. A camera that cannot see the tracks must not vote - its "
-            "BLOCKEDs are traffic noise the blocked-biased consensus would amplify, "
-            "and its CLEARs would reset alert streaks. docs/camera-survey.md records "
-            "which cameras carry it and why."
+            "Whether the detector judges this camera's frames. False for a camera "
+            "whose verdicts must not count - a view that does not include the "
+            "crossing, or one whose judgements proved untrustworthy: the frames are "
+            "still captured and shown on the board, but the camera emits "
+            "zero-inference UNKNOWNs rather than judgements. An untrusted witness "
+            "must not vote - its BLOCKEDs are traffic noise the blocked-biased "
+            "consensus would amplify, and its CLEARs would reset alert streaks. "
+            "docs/camera-survey.md records which cameras carry it and why."
         ),
     )
     poll_interval_seconds: float = Field(

@@ -2,13 +2,13 @@
 
 **Status: closed 2026-08-12.** Capture started 2026-08-08 21:24 PDT; all six cameras resolved and
 have been returning frames continuously since. The survey's job is done: usability now shows up
-empirically as per-camera detector performance (odot-682 cannot resolve the tracks at night, which
-the blocked-biased consensus absorbs), and the per-camera model workflow in
+empirically as per-camera detector performance (which is what later cost odot-682 its vote - see
+its entry below), and the per-camera model workflow in
 [docs/architecture.md](architecture.md) replaced the idea of a hand-maintained usability field.
 The exception is a question no detector metric could answer: odot-677 and odot-679 turned out not
 to show their crossing at all, which Alex established by eye on 2026-08-12 - they are `scores:
 false` now, captured and shown but never judged. The night-one findings below stand as the record,
-with those two verdicts revised in place.
+with verdicts revised in place as the operating record overturned them.
 
 ## Findings that already change the design
 
@@ -137,8 +137,10 @@ shown, never judged.
 Verdict: **usable**, on per-camera calibrated thresholds (`pixel_delta` 20).
 
 ### Portland - 8th at Division Place - `odot-682`, `SE_8TH_DIVISION`
-45.50476, -122.65796 · Verdict: **usable by day**; it cannot resolve the tracks at night, which the
-blocked-biased consensus absorbs - its partner 681 carries the crossing after dark.
+45.50476, -122.65796 · Night-one verdict was **usable by day**: it cannot resolve the tracks at night, which the blocked-biased consensus was assumed to absorb.
+Verdict revised 2026-08-29 on hand-labeled evidence: **non-scoring** - not blind like 677 and 679, but an untrustworthy witness.
+102 hand-labeled CLEAR frames sat inside certified session windows: its reference-detector verdicts were minting phantom sessions through the blocked-biased consensus.
+Now `scores: false` in the roster: captured and shown, never judged, while `odot-681`'s classifier (exam hard errors 9 -> 1, zero false alarms) carries the crossing alone - the same lone-witness arrangement as Clinton.
 
 ### Portland - Division at 12th - `odot-1250` (not enabled)
 45.50493, -122.65372 · A second angle on the 12th crossing, 53 m from `odot-679`. Held in reserve.
@@ -158,11 +160,9 @@ SE_12TH_CLINTON runs on `odot-678` alone: `odot-679` cannot see the Clinton cros
 is non-scoring and contributes nothing - which is precisely why `odot-678` was the first camera to
 get a trained classifier.
 SE_11TH_MILWAUKIE is in the same position on `odot-676` alone, since `odot-677` watches the Gideon
-intersection. The single-usable-camera caveat above therefore applies in full to two of the three
-crossings: neither has a second witness to outvote a glare-blind frame, and a detector outage at
-either shows up as UNKNOWN rather than as a wrong answer.
-SE_8TH_DIVISION is the half case, two usable cameras by day and one after dark, since `odot-682`
-cannot resolve the tracks at night.
+intersection.
+SE_8TH_DIVISION was the half case - two usable cameras by day and one after dark - until `odot-682`'s verdicts proved untrustworthy and it went non-scoring on 2026-08-29, leaving `odot-681` to carry the crossing alone.
+The single-usable-camera caveat above therefore applies in full to all three crossings: none has a second witness to outvote a glare-blind frame, and a detector outage shows up as UNKNOWN rather than as a wrong answer.
 
 ## Hand-timestamped blockages
 

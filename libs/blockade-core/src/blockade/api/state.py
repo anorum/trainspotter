@@ -81,7 +81,7 @@ class LiveState:
         first frame arrives.
 
         ``scoring`` is the set of camera_ids whose judgements count. A
-        non-scoring camera (its view does not include the crossing) still
+        non-scoring camera (``scores: false`` in the roster) still
         renders and still supplies frames, but it must not join consensus:
         its permanent UNKNOWN heartbeat would otherwise read as a fresh
         witness and make ``stale`` unreachable - a dead real camera could
@@ -221,8 +221,9 @@ class LiveState:
         """Blocked-biased vote over the crossing's fresh observations.
 
         Any fresh BLOCKED wins: a camera that sees a train outranks one that
-        sees nothing (682 cannot even resolve the tracks at night, and its
-        CLEAR must not veto 681's train). CLEAR needs at least one fresh CLEAR
+        sees nothing (682, back when it still voted, could not resolve the
+        tracks at night, and its CLEAR must not have vetoed 681's train).
+        CLEAR needs at least one fresh CLEAR
         and no fresh BLOCKED - a fresh UNKNOWN does not veto, because absence
         of evidence is not evidence of clearance either way. No fresh
         observations at all is UNKNOWN, and the caller marks it stale.
