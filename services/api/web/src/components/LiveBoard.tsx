@@ -79,6 +79,9 @@ export default function LiveBoard() {
   const [status, setStatus] = useState<Status | null>(null);
   // A solo board is detail-first: its one crossing starts open.
   const [selected, setSelected] = useState<string | null>(SOLO ? FEATURED[0] : null);
+  // Whether the arrival auto-open has already fired; the effect below the
+  // board memo, which is where it can first see data, explains the rule.
+  const autoOpened = useRef(false);
   const [scrubT, setScrubT] = useState<number | null>(null); // null = live
   const [windowHours, setWindowHours] = useState(24);
   const [timelines, setTimelines] = useState<Record<string, TimelineObs[]>>({});
@@ -265,6 +268,24 @@ export default function LiveBoard() {
       }),
     };
   }, [status, scrubT, timelines]);
+
+  // A corridor board still owes the reader an answer on arrival: the first
+  // paint that has crossings opens the one that most needs attention - a live
+  // blockage, else the first featured. Once only: a reader who closes
+  // the panel has chosen the overview, and data updates must not reopen it
+  // under them.
+  useEffect(() => {
+    if (SOLO || autoOpened.current || selected !== null || !board) return;
+    // In the board's declared order, not the reply's: the fallback must be
+    // the first row the reader sees.
+    const rows = FEATURED.flatMap((id) =>
+      featuredOnly(board.crossings).filter((c) => c.crossing_id === id),
+    );
+    if (!rows.length) return;
+    autoOpened.current = true;
+    const urgent = rows.find((c) => c.state === "BLOCKED" && !c.stale);
+    setSelected((urgent ?? rows[0]).crossing_id);
+  }, [board]);
 
   if (!board) return <p class="loading">Contacting the board...</p>;
 
@@ -611,7 +632,8 @@ const css = `
 
 .crossings-list { display: grid; gap: 1px; background: var(--hairline); border: 1px solid var(--hairline); border-radius: 6px; overflow: hidden; }
 .row { display: flex; align-items: center; gap: 0.75rem; padding: 0.65rem 1rem; background: var(--panel); border: 0; color: var(--crossbuck); cursor: pointer; text-align: left; font-size: 1rem; }
-.row.chosen { background: var(--ink); }
+.row:not(.chosen):hover { background: color-mix(in srgb, var(--panel) 60%, var(--ink)); }
+.row.chosen { background: var(--ink); box-shadow: inset 3px 0 0 var(--signal-amber); }
 .row .dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
 .row .name { flex: 1; font-size: 1.15rem; }
 .row .data { color: var(--muted); font-size: 0.85rem; }
