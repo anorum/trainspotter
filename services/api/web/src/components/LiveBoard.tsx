@@ -643,7 +643,6 @@ const css = `
 @media (max-width: 768px) {
   .scrub .track { flex-basis: 100%; order: 10; }
   .scrub .when { margin-left: auto; }
-  .row .name { white-space: nowrap; }
 }
 .scrub-note { margin: -0.5rem 0 1rem; font-size: 0.85rem; }
 .lanes { display: grid; gap: 2px; padding: 2px 8px 0; }
@@ -675,6 +674,7 @@ button.row:not(.chosen):hover { background: color-mix(in srgb, var(--panel) 60%,
      is a template literal.) */
   .detail h2 { white-space: nowrap; flex-basis: 100%; }
   .detail header { flex-wrap: wrap; row-gap: 0.15rem; }
+  .row .name { white-space: nowrap; }
 }
 .detail .close { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 1rem; }
 .detail .ticker { color: var(--signal-red); font-size: 1.1rem; margin: 0.5rem 0 0; }

@@ -155,7 +155,9 @@ function HourProfile({ a, nowHour }: { a: CrossingAnalytics; nowHour: number }) 
         aria-label={`Blockage by hour of day. Worst at ${hourLabel(peakHour, "prose")}, ${percent(
           shares[peakHour],
         )} of checks blocked.`}
-        onPointerLeave={() => setFocus(null)}
+        onPointerLeave={(e) => {
+          if (e.pointerType !== "touch") setFocus(null);
+        }}
       >
         {day.map((slot, h) => (
           <div
