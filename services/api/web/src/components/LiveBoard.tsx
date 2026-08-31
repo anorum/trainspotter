@@ -134,30 +134,44 @@ export default function LiveBoard() {
     // The lanes need the window's timeline before any scrub: blockages
     // findable by eye are what make the history worth a drag at all.
     void loadTimelines(24);
-    const source = new EventSource("/api/v1/events");
-    // Two triggers keep the loaded window live rather than a mount-time
-    // snapshot: a status event means consensus moved, so new observations
-    // exist to fetch; the timer catches span-ending CLEAR frames that
-    // change no crossing's state and so push no event - without it an
-    // ongoing span would freeze at blockedSpans' freshness cap while the
-    // SSE-fed board stayed red.
-    source.addEventListener("status", (e) => {
-      setStatus(JSON.parse((e as MessageEvent).data));
-      setUnreachable(false);
-      void refreshTimelines();
-    });
-    // EventSource reconnects on its own; the flag only decides what an empty
-    // page says while it tries.
-    source.addEventListener("error", () => {
-      if (source.readyState === EventSource.CLOSED) setUnreachable(true);
-    });
+    // In a `let` because the connection is rebuilt below: EventSource
+    // reconnects on its own only after network-level failures. An HTTP-level
+    // failure - a non-200 or non-event-stream reply, like an edge-served 502
+    // page while the origin is down - closes it permanently per the WHATWG
+    // spec, and a CLOSED source never retries.
+    let source: EventSource;
+    const connect = () => {
+      const es = new EventSource("/api/v1/events");
+      // Two triggers keep the loaded window live rather than a mount-time
+      // snapshot: a status event means consensus moved, so new observations
+      // exist to fetch; the timer catches span-ending CLEAR frames that
+      // change no crossing's state and so push no event - without it an
+      // ongoing span would freeze at blockedSpans' freshness cap while the
+      // SSE-fed board stayed red.
+      es.addEventListener("status", (e) => {
+        setStatus(JSON.parse((e as MessageEvent).data));
+        setUnreachable(false);
+        void refreshTimelines();
+      });
+      // The flag only decides what an empty page says while the source
+      // retries - or, when CLOSED, until the refresh timer rebuilds it.
+      es.addEventListener("error", () => {
+        if (es.readyState === EventSource.CLOSED) setUnreachable(true);
+      });
+      source = es;
+    };
+    connect();
     const timer = setInterval(() => setTick((t) => t + 1), 1000);
     // A tab whose initial load failed has nothing applied to refresh, so
     // the timer retries the full load instead - through the normal
     // retryAfter cooldown - and an untouched tab heals. Only the timer:
     // retrying on every status event would hammer a store that is already
-    // sick.
+    // sick. The same tick revives a permanently CLOSED EventSource; the
+    // events endpoint pushes a snapshot on connect, so one successful
+    // reconnect restores both the board and the live feed, and "this page
+    // keeps trying" stays true.
     const refresh = setInterval(() => {
+      if (source.readyState === EventSource.CLOSED) connect();
       if (appliedHours.current === 0) void loadTimelines(windowHoursRef.current);
       else void refreshTimelines();
     }, REFRESH_MS);
