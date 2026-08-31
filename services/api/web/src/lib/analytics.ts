@@ -54,23 +54,9 @@ export function hourOfDay(a: CrossingAnalytics): HourSlot[] {
 }
 
 /** Blocked share of the scoreable checks in a slot. Internal: callers want
- * heat() for the tint or worstHours() for the prose, not the raw ratio. */
+ * worstHours() or bestHours() for the prose, not the raw ratio. */
 function share(slot: HourSlot): number {
   return slot.scoreable ? slot.blocked / slot.scoreable : 0;
-}
-
-/** Cell background for an hour slot, or undefined for untinted.
- *
- * One scale for the board's hour strip and the patterns timetable - they must
- * read as the same instrument. The floor (18%) keeps a rare-but-real hour
- * visible; the x2 saturates at a 50% blocked share, which is as bad as these
- * crossings get.
- */
-export function heat(slot: HourSlot): string | undefined {
-  const s = share(slot);
-  if (s <= 0) return undefined;
-  const pct = Math.round(18 + 82 * Math.min(1, s * 2));
-  return `background: color-mix(in srgb, var(--signal-red) ${pct}%, var(--panel))`;
 }
 
 /** 12-hour clock label: compact "6A" for axes, "6 AM" for prose. Hours wrap,
@@ -95,6 +81,36 @@ export function worstHours(a: CrossingAnalytics): string | null {
   while (shares[(end + 1) % 24] >= peak * 0.6 && end - start < 5) end++;
   const fmt = (h: number) => hourLabel(h, "prose");
   return start === end ? `around ${fmt(start)}` : `${fmt(start)}-${fmt(end + 1)}`;
+}
+
+/** "4 PM-7 PM": the longest contiguous run of hours at or under a quarter of
+ * the peak - the window a driver can count on. Mirrors worstHours so the two
+ * halves of the sentence are derived the same way rather than by eye. */
+export function bestHours(a: CrossingAnalytics): string | null {
+  const day = hourOfDay(a);
+  const shares = day.map((s) => (s.scoreable >= 4 ? share(s) : Infinity));
+  const peak = Math.max(...shares.filter((x) => Number.isFinite(x)));
+  if (!Number.isFinite(peak) || peak <= 0) return null;
+  const quiet = shares.map((x) => x <= peak * 0.25);
+  // Scan twice round the clock so a run spanning midnight is found whole.
+  let best = { start: -1, len: 0 };
+  let run = 0;
+  for (let i = 0; i < 48; i++) {
+    run = quiet[i % 24] ? run + 1 : 0;
+    if (run > best.len && run <= 24) best = { start: i - run + 1, len: run };
+  }
+  // Too short to be a window, or so long that "nearly always clear" is the
+  // whole day and naming hours would mislead rather than inform. Either way
+  // the sentence is better off with only its first half.
+  if (best.len < 2 || best.len > 12) return null;
+  const fmt = (h: number) => hourLabel(h, "prose");
+  return `${fmt(best.start)}-${fmt(best.start + best.len)}`;
+}
+
+/** The share of checks in the worst hour, for the sentence that names it. */
+export function peakShare(a: CrossingAnalytics): number {
+  const day = hourOfDay(a);
+  return Math.max(...day.map((s) => (s.scoreable >= 4 ? share(s) : 0)));
 }
 
 export function percent(x: number | null): string {

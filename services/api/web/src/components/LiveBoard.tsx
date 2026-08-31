@@ -12,9 +12,6 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import {
   type AnalyticsResponse,
   fetchAnalytics,
-  heat,
-  hourLabel,
-  hourOfDay,
   percent,
   waitOutlook,
   worstHours,
@@ -34,7 +31,7 @@ import {
 import CrossingMap from "./CrossingMap";
 import { type FeedHealth, feedNote } from "../lib/feed";
 import { blockedSpans, stateAt, withTimes, type TimelineObs } from "../lib/scrub";
-import { corridorHour, formatMinute, formatTime } from "../lib/time";
+import { formatMinute, formatTime } from "../lib/time";
 
 interface CameraInfo {
   camera_id: string;
@@ -528,10 +525,16 @@ export default function LiveBoard() {
             </>
           )}
           {chosen.latest_observation && (
-            <p class="reason">
-              {chosen.latest_observation.reason} (confidence{" "}
-              {Math.round(chosen.latest_observation.confidence * 100)}%)
-            </p>
+            // Folded away by default: the model's own wording and confidence
+            // are how the answer was reached, not the answer, and a first
+            // visitor asking "can I get across" is not asking for a p-value.
+            <details class="judged">
+              <summary class="data">How this was judged</summary>
+              <p class="reason">
+                {chosen.latest_observation.reason} (confidence{" "}
+                {Math.round(chosen.latest_observation.confidence * 100)}%)
+              </p>
+            </details>
           )}
           <Habits crossingId={chosen.crossing_id} analytics={analytics} />
           <div class="cameras">
@@ -563,7 +566,8 @@ export default function LiveBoard() {
   );
 }
 
-/** The crossing's habit at a glance: the summary line and one day in 24 cells. */
+/** The crossing's habit at a glance: one summary line, and the way through to
+ *  the full record. */
 function Habits({
   crossingId,
   analytics,
@@ -572,17 +576,12 @@ function Habits({
   analytics: AnalyticsResponse | null;
 }) {
   const a = analytics?.available ? analytics.crossings[crossingId] : undefined;
-  // Derivations change once per analytics fetch; the panel re-renders every
-  // tick for the live durations, so they are memoized rather than re-walked.
-  // Above every early return: the hook must run on every render, whatever the
-  // props say.
-  const habits = useMemo(
-    () => (a && a.blocked_share !== null ? { worst: worstHours(a), day: hourOfDay(a) } : null),
-    [a],
-  );
-  if (!analytics?.available || !a || !habits) return null;
-  const { worst, day } = habits;
-  const localHour = corridorHour(analytics.local_tz);
+  // The worst-hours scan changes once per analytics fetch; the panel
+  // re-renders every tick for the live durations, so it is memoized rather
+  // than re-walked. Above the early return: the hook must run on every
+  // render, whatever the props say.
+  const worst = useMemo(() => (a && a.blocked_share !== null ? worstHours(a) : null), [a]);
+  if (!a || a.blocked_share === null) return null;
   return (
     <div class="habits">
       <p class="data habit-line">
@@ -592,24 +591,6 @@ function Habits({
         {" · "}
         <a href="/patterns/">patterns</a>
       </p>
-      <div class="hourstrip" aria-label="Typical blockage share by hour">
-        {day.map((slot, h) => (
-          <span
-            class={`hs-cell ${h === localHour ? "hs-now" : ""}`}
-            style={heat(slot)}
-            title={`${h}:00 - ${
-              slot.scoreable
-                ? `train in ${slot.blocked} of ${slot.scoreable} checks`
-                : "no checks yet"
-            }`}
-          />
-        ))}
-      </div>
-      <div class="hourticks data" aria-hidden="true">
-        {[0, 6, 12, 18, 24].map((h) => (
-          <span>{hourLabel(h)}</span>
-        ))}
-      </div>
     </div>
   );
 }
@@ -687,13 +668,13 @@ button.row:not(.chosen):hover { background: color-mix(in srgb, var(--panel) 60%,
 .detail .ticker { color: var(--signal-red); font-size: 1.1rem; margin: 0.5rem 0 0; }
 .detail .outlook { color: var(--muted); margin: 0.15rem 0 0; }
 .detail .reason { color: var(--muted); margin: 0.35rem 0 0; font-size: 0.9rem; }
+.detail .judged { margin: 0.45rem 0 0; }
+.detail .judged summary { color: var(--muted); font-size: 0.85rem; cursor: pointer; }
+.detail .judged summary::marker { color: var(--hairline); }
+.detail .judged .reason { margin: 0.3rem 0 0; }
 .habits { margin-top: 0.75rem; }
 .habit-line { color: var(--muted); font-size: 0.85rem; margin: 0 0 0.4rem; }
 .habit-line a { color: var(--signal-amber); }
-.hourstrip { display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; }
-.hs-cell { height: 10px; background: var(--panel); border-radius: 2px; }
-.hs-now { outline: 2px solid var(--signal-amber); outline-offset: -1px; }
-.hourticks { display: flex; justify-content: space-between; color: var(--muted); font-size: 0.65rem; margin-top: 2px; }
 .cameras { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-top: 1rem; }
 .cameras figure { margin: 0; }
 .cameras img { width: 100%; border-radius: 4px; border: 1px solid var(--hairline); }
