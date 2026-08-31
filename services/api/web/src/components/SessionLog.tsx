@@ -138,9 +138,15 @@ export default function SessionLog() {
                     class={!s.certified ? "aspect sighted" : s.is_open ? "aspect pulse" : "aspect"}
                     style={!s.certified ? undefined : `background:${COLORS.BLOCKED}`}
                   />
+                  {/* A solo site names its crossing in the page head; saying it
+                      again on every row is noise, and on a phone it wraps each
+                      row to two lines. With no name to follow, the sighting
+                      mark drops its separator too. */}
                   <span class="display name">
-                    {crossingLabel(s.crossing_id)}
-                    {!s.certified && <span class="data kind"> · sighting</span>}
+                    {!SOLO && crossingLabel(s.crossing_id)}
+                    {!s.certified && (
+                      <span class="data kind">{SOLO ? "sighting" : " · sighting"}</span>
+                    )}
                   </span>
                   <span class="data start">{formatShortTime(s.started_at)}</span>
                   <span class="bar-lane" aria-hidden="true">

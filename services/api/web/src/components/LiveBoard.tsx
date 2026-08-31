@@ -664,6 +664,18 @@ button.row:not(.chosen):hover { background: color-mix(in srgb, var(--panel) 60%,
 .detail header { display: flex; align-items: baseline; gap: 1rem; }
 .detail h2 { margin: 0; font-size: 1.5rem; flex: 1; }
 .detail .state-word { font-size: 1rem; }
+
+@media (max-width: 768px) {
+  /* A crossing name is one phrase; breaking it after the ampersand reads as
+     two places. It takes its own line and the verdict follows underneath.
+     This block sits after the .detail rules deliberately: the flex shorthand
+     there sets a zero basis at equal specificity, so an earlier override
+     would silently never win. (No backticks in here - the whole stylesheet
+     is a template literal.) */
+  .detail h2 { white-space: nowrap; flex-basis: 100%; }
+  .detail header { flex-wrap: wrap; row-gap: 0.15rem; }
+  .row .name { white-space: nowrap; }
+}
 .detail .close { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 1rem; }
 .detail .ticker { color: var(--signal-red); font-size: 1.1rem; margin: 0.5rem 0 0; }
 .detail .outlook { color: var(--muted); margin: 0.15rem 0 0; }

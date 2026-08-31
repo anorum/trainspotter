@@ -62,8 +62,11 @@ const { active } = Astro.props;
       row-gap: 0.35rem;
       padding-bottom: 0.65rem;
     }
+    /* The line that says what this is stays on phones, stacked under the
+       wordmark like the nav below rather than squeezed beside it. */
     .tagline {
-      display: none;
+      flex-basis: 100%;
+      font-size: 0.85rem;
     }
     /* The nav takes its own full line under the wordmark instead of
        squeezing beside it and wrapping a link mid-name. */
