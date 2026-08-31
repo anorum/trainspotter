@@ -1,0 +1,47 @@
+---
+import Page from "../layouts/Page.astro";
+---
+
+<Page
+  title="Privacy - PDX Train"
+  description="What PDX Train collects: nothing about you."
+  active="none"
+>
+  <article class="prose">
+    <h2>Privacy</h2>
+    <p class="lede">PDX Train collects nothing about you. There is no account to make, nothing to log in to, and nothing about you to sell or lose.</p>
+
+    <h3>What the app and the site do not collect</h3>
+    <ul>
+      <li><strong>No location.</strong> The app never asks for your location and could not use it - it watches one fixed crossing.</li>
+      <li><strong>No accounts, no email, no names.</strong> There is nothing to sign up for.</li>
+      <li><strong>No analytics or advertising.</strong> No trackers, no third-party scripts, no advertising identifiers, no cookies set by this site.</li>
+      <li><strong>No contacts, photos, microphone, or camera.</strong> The app requests no such permissions.</li>
+    </ul>
+
+    <h3>What is watched is a street, not a person</h3>
+    <p>Every picture on this site comes from public traffic cameras operated by ODOT and PBOT, aimed at a road and a railroad crossing and published by them for anyone to view. The cameras face the roadway. PDX Train reads those pictures to answer one question - is a train across the tracks - and keeps them so the answer can be checked and improved later.</p>
+
+    <h3>What does happen when you use it</h3>
+    <p>Asking for the crossing's status makes an ordinary web request, the same as visiting any website: a server receives it, and Cloudflare sits in front to serve pages quickly. Standard server and network logs exist for a short time as a side effect of running a service on the internet. They are not analysed, not linked to anyone, and not shared.</p>
+    <p>If you ask Siri, Apple handles the voice part under Apple's privacy policy; the app only receives the request and answers it.</p>
+
+    <h3>Children</h3>
+    <p>PDX Train is a picture of a railroad crossing. It collects nothing from anyone, of any age.</p>
+
+    <h3>Changes and contact</h3>
+    <p>If this ever stops being true, this page changes first. Questions: <a href="https://github.com/anorum/trainspotter">the project is on GitHub</a>.</p>
+    <p class="dim">Last updated 31 August 2026.</p>
+  </article>
+</Page>
+
+<style>
+  .prose { max-width: 62ch; padding: 1.5rem; }
+  .prose h2 { font-size: 1.8rem; margin: 0 0 0.5rem; }
+  .prose h3 { font-size: 1.1rem; margin: 1.75rem 0 0.4rem; }
+  .prose .lede { font-size: 1.1rem; margin: 0 0 0.5rem; }
+  .prose p { margin: 0 0 0.7rem; line-height: 1.6; }
+  .prose ul { margin: 0 0 0.7rem; padding-left: 1.2rem; }
+  .prose li { margin-bottom: 0.35rem; line-height: 1.55; }
+  .prose .dim { color: var(--muted); font-size: 0.85rem; margin-top: 1.5rem; }
+</style>

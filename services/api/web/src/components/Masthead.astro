@@ -2,7 +2,9 @@
 // The station sign: wordmark, tagline, and the site nav.
 // `active` is the current page so its link reads as location, not action.
 interface Props {
-  active: "board" | "log" | "patterns";
+  // "none" is a real page that is not a nav destination - the privacy
+  // policy - so no link reads as the current location.
+  active: "board" | "log" | "patterns" | "none";
 }
 const { active } = Astro.props;
 ---
