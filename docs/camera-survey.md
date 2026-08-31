@@ -134,7 +134,26 @@ shown, never judged.
 
 ### Portland - 8th at Division - `odot-681`, `SE_8TH_DIVISION`
 45.50573, -122.65745 · ~300 m from the crossings, the furthest of the set.
-Verdict: **usable**, on per-camera calibrated thresholds (`pixel_delta` 20).
+Night-one verdict was **usable**, on per-camera calibrated thresholds (`pixel_delta` 20), and a
+trained classifier shipped 2026-08-29 on an exam it passed.
+Verdict revised 2026-08-31: **usable for capture, not yet for presentation**.
+The crossing was featured on the board on 2026-08-29 and unfeatured on 2026-08-31 for false
+BLOCKED verdicts, reported from use and then corroborated: at 12:15 and 12:22 PM on 2026-08-29
+this camera read BLOCKED across an eight-minute span while `odot-682`, sharing this crossing id,
+showed an empty roadway at 12:11 and 12:19.
+The exam could not have caught it. This camera's gold set holds nine BLOCKED frames and **two**
+CLEAR, so almost nothing in it could reveal a false alarm, and the hand-labeled holdout was drawn
+from the same ledger as the training data, inheriting whatever the labels assume. A gate a model
+cannot fail measures nothing; "zero false alarms" against two CLEAR frames was a hollow number.
+Three things stand between this camera and a second attempt, in order.
+First the geometry: this camera is "8th at **Division**" and `odot-682` is "8th at **Division
+Place**", two street names 120 m apart carrying one `crossing_id`, and until it is settled whether
+that is one grade crossing or two, the question the detector is asked is itself ill-posed.
+Then a real exam - CLEAR gold adjudicated on whether the *roadway* is blocked rather than whether a
+train is visible anywhere in frame, and hand-saved blocks nearer the 36 that made `odot-678` sound
+than the 11 held today.
+Labels last: three rounds and 2,019 of them did not move this camera, because the loop they fed
+could not see the error being made.
 
 ### Portland - 8th at Division Place - `odot-682`, `SE_8TH_DIVISION`
 45.50476, -122.65796 · Night-one verdict was **usable by day**: it cannot resolve the tracks at night, which the blocked-biased consensus was assumed to absorb.
@@ -161,7 +180,7 @@ is non-scoring and contributes nothing - which is precisely why `odot-678` was t
 get a trained classifier.
 SE_11TH_MILWAUKIE is in the same position on `odot-676` alone, since `odot-677` watches the Gideon
 intersection.
-SE_8TH_DIVISION was the half case - two usable cameras by day and one after dark - until `odot-682`'s verdicts proved untrustworthy and it went non-scoring on 2026-08-29, leaving `odot-681` to carry the crossing alone.
+SE_8TH_DIVISION was the half case - two usable cameras by day and one after dark - until `odot-682`'s verdicts proved untrustworthy and it went non-scoring on 2026-08-29, leaving `odot-681` to carry the crossing alone; on 2026-08-31 that crossing left the board too, capturing and scoring but no longer presented.
 The single-usable-camera caveat above therefore applies in full to all three crossings: none has a second witness to outvote a glare-blind frame, and a detector outage shows up as UNKNOWN rather than as a wrong answer.
 
 ## Hand-timestamped blockages

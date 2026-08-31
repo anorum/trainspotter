@@ -36,7 +36,7 @@ export type CrossingId = keyof typeof GEOMETRY;
  *  crossings done properly. Featuring a crossing again is adding its id here -
  *  and the type makes featuring one the map cannot place a build error rather
  *  than a board that renders nothing. */
-export const FEATURED: CrossingId[] = ["SE_12TH_CLINTON", "SE_8TH_DIVISION"];
+export const FEATURED: CrossingId[] = ["SE_12TH_CLINTON"];
 
 /** Whether the site is presenting a single crossing, which changes what the
  *  views owe the reader: the board is detail-first rather than a corridor
