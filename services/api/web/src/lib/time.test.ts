@@ -17,7 +17,6 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  corridorDayHour,
   corridorHour,
   corridorHourOf,
   formatCorridorDayTime,
@@ -98,29 +97,6 @@ describe("formatCorridorDayTime", () => {
   });
 });
 
-describe("corridorDayHour", () => {
-  it("indexes the timetable the way Postgres bucketed it: Sunday = 0, corridor local", () => {
-    at("2026-08-18T02:41:00Z"); // Monday evening in Portland, Tuesday in UTC
-    expect(corridorDayHour(PORTLAND)).toEqual({ dow: 1, hour: 19 });
-  });
-
-  it("rolls the day over on the corridor's midnight, not UTC's", () => {
-    at("2026-08-18T06:59:00Z"); // 11:59 PM Monday PDT
-    expect(corridorDayHour(PORTLAND)).toEqual({ dow: 1, hour: 23 });
-    vi.setSystemTime(new Date("2026-08-18T07:01:00Z")); // 12:01 AM Tuesday PDT
-    expect(corridorDayHour(PORTLAND)).toEqual({ dow: 2, hour: 0 });
-  });
-
-  it("puts Sunday at 0, matching the grid's dow numbering", () => {
-    at("2026-08-16T19:00:00Z"); // Sunday noon PDT
-    expect(corridorDayHour(PORTLAND)).toEqual({ dow: 0, hour: 12 });
-  });
-
-  it("falls back to the corridor when the server ships no zone", () => {
-    at("2026-08-18T02:41:00Z");
-    expect(corridorDayHour(null)).toEqual(corridorDayHour(PORTLAND));
-  });
-});
 
 describe("the pinned locale", () => {
   const T = "2026-08-17T19:15:00Z";

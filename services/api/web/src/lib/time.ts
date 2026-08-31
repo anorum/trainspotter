@@ -98,20 +98,3 @@ export function corridorHourOf(iso: string, localTz: string | null | undefined):
   return Number(cachedHourFormat(localTz).format(new Date(iso))) % 24;
 }
 
-/** Current day-of-week (0=Sunday) and hour on the corridor's clock. */
-export function corridorDayHour(localTz: string | null | undefined): {
-  dow: number;
-  hour: number;
-} {
-  const tz = localTz ?? DEFAULT_LOCAL_TZ;
-  const parts = new Intl.DateTimeFormat(LOCALE, {
-    timeZone: tz,
-    weekday: "short",
-    hour: "numeric",
-    hour12: false,
-  }).formatToParts(new Date());
-  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const weekday = parts.find((p) => p.type === "weekday")?.value ?? "Sun";
-  const hour = Number(parts.find((p) => p.type === "hour")?.value ?? "0") % 24;
-  return { dow: days.indexOf(weekday), hour };
-}

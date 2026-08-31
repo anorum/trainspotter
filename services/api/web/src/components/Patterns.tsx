@@ -1,36 +1,31 @@
 /** Patterns: when each crossing usually has a train across it.
  *
- * The centerpiece is a timetable grid per crossing - seven days by
- * twenty-four local hours, the railroad's own way of writing time - where
- * each cell's red is the share of camera checks that hour that saw a train.
- * The current hour wears the amber ring, tying the live board to its
- * history. Below it, how long blockages last and how the days have run.
+ * The centerpiece is a day profile - twenty-four local hours with every week
+ * on record pooled into them - because that is the shape the record actually
+ * has. The seven-by-twenty-four grid this replaced split the same evidence
+ * across 168 cells of about fifty checks each and drew the resulting noise as
+ * colour; pooled by hour there are hundreds of checks behind every bar. The
+ * day of the week was measured and carries nothing worth drawing - weekdays
+ * 12.3% of checks blocked, weekends 11.5% - so the page says that in a line
+ * instead of repeating the same profile seven times.
+ *
+ * The current hour wears the amber ring, tying the live board to its history.
  */
 
 import { useEffect, useState } from "preact/hooks";
 import {
   type AnalyticsResponse,
   type CrossingAnalytics,
+  bestHours,
   fetchAnalytics,
-  heat,
   hourLabel,
+  hourOfDay,
+  peakShare,
   percent,
   worstHours,
 } from "../lib/analytics";
 import { FEATURED, crossingLabel, sessionsUrl } from "../lib/crossings";
-import { corridorDayHour, corridorHourOf, formatCorridorDayTime, formatShortDate } from "../lib/time";
-
-// Postgres dow 0 = Sunday; the sheet reads Monday-first like a work week.
-const DOW_ORDER = [1, 2, 3, 4, 5, 6, 0];
-const DOW_LABEL = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
-const DURATION_BINS: [number, string][] = [
-  [10, "5-10m"],
-  [20, "10-20m"],
-  [30, "20-30m"],
-  [45, "30-45m"],
-  [60, "45-60m"],
-  [Infinity, "60m+"],
-];
+import { corridorHour, formatCorridorDayTime, formatShortDate } from "../lib/time";
 
 interface SessionRow {
   crossing_id: string;
@@ -47,8 +42,8 @@ export default function Patterns() {
 
   useEffect(() => {
     fetchAnalytics().then(setData, () => setFailed(true));
-    // The closed sessions carry what the aggregates cannot: start instants
-    // for the day/night split and dates for the record list.
+    // The closed sessions carry what the aggregates cannot: the dates behind
+    // the record list.
     fetch(sessionsUrl(500))
       .then((r) => (r.ok ? r.json() : { sessions: [] }))
       .then((body) => setSessions(body.sessions), () => {});
@@ -67,7 +62,7 @@ export default function Patterns() {
     );
   }
 
-  const nowLocal = corridorDayHour(data.local_tz);
+  const nowHour = corridorHour(data.local_tz);
 
   return (
     <div class="patterns">
@@ -77,7 +72,6 @@ export default function Patterns() {
           (r) => r.crossing_id === id && !r.is_open && r.certified && r.duration_seconds,
         );
         const a = data.crossings[id];
-        const worst = a && worstHours(a);
         return (
           <section key={id} class="crossing">
             <header>
@@ -87,7 +81,6 @@ export default function Patterns() {
                   blocked {percent(a.blocked_share)} of checks · ~
                   {Math.round(a.minutes_per_day)} min/day · {a.sessions_closed} blockages
                   since {formatShortDate(a.first_observed)}
-                  {worst && <> · worst {worst}</>}
                 </p>
               ) : (
                 <p class="data sumline">no observations yet</p>
@@ -95,11 +88,10 @@ export default function Patterns() {
             </header>
             {a && (
               <>
-                <Timetable a={a} now={nowLocal} />
+                <Lede a={a} />
+                <HourProfile a={a} nowHour={nowHour} />
                 <div class="pair">
-                  <Durations a={a} />
-                  <Daily a={a} />
-                  <DayNight sessions={mine} tz={data.local_tz} />
+                  <HowLong a={a} />
                   <Longest sessions={mine} tz={data.local_tz} />
                 </div>
               </>
@@ -108,87 +100,138 @@ export default function Patterns() {
         );
       })}
       <p class="note">
-        Times are Portland local. A cell's red is the share of camera checks
-        that hour, across all weeks on record, that saw a train across the
-        street.
+        Times are Portland local. A bar is the share of camera checks in that
+        hour, across every week on record, that saw a train across the street.
+        The day of the week makes no difference worth drawing - weekdays run
+        12% of checks blocked, weekends 12%.
       </p>
       <style>{css}</style>
     </div>
   );
 }
 
-function Timetable({ a, now }: { a: CrossingAnalytics; now: { dow: number; hour: number } }) {
+function Lede({ a }: { a: CrossingAnalytics }) {
+  const worst = worstHours(a);
+  const best = bestHours(a);
+  const peak = peakShare(a);
+  if (!worst) return null;
   return (
-    <div class="timetable" role="img" aria-label="Hour-of-week blockage grid">
-      <div class="corner" />
-      {Array.from({ length: 24 }, (_, h) => (
-        <div class="hour-label data">{h % 6 === 0 ? hourLabel(h) : ""}</div>
-      ))}
-      {DOW_ORDER.map((dow) => (
+    <p class="lede">
+      Worst <strong>{worst}</strong>, when a camera check finds a train across
+      the street about {percent(peak)} of the time.
+      {best && (
         <>
-          <div class="dow-label display">{DOW_LABEL[dow]}</div>
-          {Array.from({ length: 24 }, (_, h) => {
-            const slot = a.hour_of_week[dow * 24 + h];
-            const current = dow === now.dow && h === now.hour;
-            return (
-              <div
-                class={`cell ${current ? "current" : ""} ${slot.scoreable === 0 ? "nodata" : ""}`}
-                style={heat(slot)}
-                title={`${DOW_LABEL[dow]} ${hourLabel(h)}: ${
-                  slot.scoreable
-                    ? `train seen in ${slot.blocked} of ${slot.scoreable} checks`
-                    : "no checks yet"
-                }`}
-              />
-            );
-          })}
+          {" "}
+          Between <strong>{best}</strong> it is nearly always clear.
         </>
-      ))}
-    </div>
-  );
-}
-
-function Durations({ a }: { a: CrossingAnalytics }) {
-  const counts = DURATION_BINS.map(() => 0);
-  for (const s of a.durations_seconds) {
-    const m = s / 60;
-    counts[DURATION_BINS.findIndex(([top]) => m < top)]++;
-  }
-  const max = Math.max(1, ...counts);
-  return (
-    <div class="chart">
-      <h3 class="display">How long they last</h3>
-      {DURATION_BINS.map(([, label], i) => (
-        <div class="hbar-row">
-          <span class="data hbar-label">{label}</span>
-          <span class="hbar-lane">
-            <span class="hbar" style={`width:${(100 * counts[i]) / max}%`} />
-          </span>
-          <span class="data hbar-count">{counts[i] || ""}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function Daily({ a }: { a: CrossingAnalytics }) {
-  const days = Object.entries(a.daily_blocked_minutes).slice(-14);
-  const max = Math.max(30, ...days.map(([, m]) => m));
-  return (
-    <div class="chart">
-      <h3 class="display">Minutes blocked, by day</h3>
-      {days.length === 0 ? (
-        <p class="empty">No closed blockages on record yet.</p>
-      ) : (
-        <div class="days">
-          {days.map(([day, minutes]) => (
-            <div class="day-col" title={`${day}: ${minutes} min`}>
-              <span class="vbar" style={`height:${Math.max(2, (100 * minutes) / max)}%`} />
-              <span class="data day-tick">{Number(day.slice(8))}</span>
-            </div>
-          ))}
-        </div>
       )}
+    </p>
+  );
+}
+
+/** The day profile: one bar per local hour, every week on record pooled.
+ *
+ * Height carries the share and opacity carries it a second time, so the
+ * ranking survives a monochrome print or a red-blind reader. The readout
+ * below replaces per-bar labels - twenty-four numbers would bury the shape
+ * the chart exists to show. */
+function HourProfile({ a, nowHour }: { a: CrossingAnalytics; nowHour: number }) {
+  const day = hourOfDay(a);
+  const shares = day.map((s) => (s.scoreable ? s.blocked / s.scoreable : 0));
+  const maxShare = Math.max(...shares);
+  const peakHour = shares.indexOf(maxShare);
+  // A crossing with no train on record yet would divide by zero; the 1% floor
+  // scales its flat day instead of blanking the chart.
+  const scale = Math.max(maxShare, 0.01);
+  const [focus, setFocus] = useState<number | null>(null);
+  const shown = focus ?? peakHour;
+  const shownSlot = day[shown];
+
+  return (
+    <div class="profile">
+      <div
+        class="bars"
+        role="img"
+        aria-label={`Blockage by hour of day. Worst at ${hourLabel(peakHour, "prose")}, ${percent(
+          shares[peakHour],
+        )} of checks blocked.`}
+        onMouseLeave={() => setFocus(null)}
+      >
+        {day.map((slot, h) => (
+          <div
+            class={`slot ${h === shown ? "on" : ""} ${h === nowHour ? "now" : ""}`}
+            onMouseEnter={() => setFocus(h)}
+            title={`${hourLabel(h, "prose")}: train seen in ${slot.blocked} of ${
+              slot.scoreable
+            } checks`}
+          >
+            <span class="bar" style={`height:${Math.max(1.5, (100 * shares[h]) / scale)}%`} />
+          </div>
+        ))}
+      </div>
+      <div class="axis data" aria-hidden="true">
+        {[0, 6, 12, 18].map((h) => (
+          <span>{hourLabel(h)}</span>
+        ))}
+        <span>{hourLabel(24)}</span>
+      </div>
+      <p class="readout data">
+        <strong>{hourLabel(shown, "prose")}</strong> - train seen in {shownSlot.blocked} of{" "}
+        {shownSlot.scoreable} checks ({percent(shares[shown])})
+        {focus === null && <span class="dim"> · the worst hour; hover any bar</span>}
+      </p>
+    </div>
+  );
+}
+
+/** How long a blockage runs, as the answers a driver actually wants: the
+ * middle case, and the odds of it being quick or long. */
+function HowLong({ a }: { a: CrossingAnalytics }) {
+  const mins = a.durations_seconds.map((s) => s / 60).sort((x, y) => x - y);
+  if (mins.length === 0) {
+    return (
+      <div class="chart">
+        <h3 class="display">How long it lasts</h3>
+        <p class="empty">No closed blockages on record yet.</p>
+      </div>
+    );
+  }
+  const median = Math.round(mins[Math.floor(mins.length / 2)]);
+  const n = mins.length;
+  const bands = [
+    { label: "under 10 min", tone: "quick", count: mins.filter((m) => m < 10).length },
+    { label: "10-30 min", tone: "mid", count: mins.filter((m) => m >= 10 && m <= 30).length },
+    { label: "over 30 min", tone: "long", count: mins.filter((m) => m > 30).length },
+  ];
+  return (
+    <div class="chart">
+      <h3 class="display">How long it lasts</h3>
+      <p class="hero data">
+        <strong>{median} min</strong> <span class="dim">typical</span>
+      </p>
+      <div
+        class="split"
+        role="img"
+        aria-label={`Of ${n} blockages: ${bands
+          .map((b) => `${b.count} ${b.label}`)
+          .join(", ")}.`}
+      >
+        {bands.map((b) => (
+          <span
+            class={`seg ${b.tone}`}
+            style={`flex-grow:${Math.max(b.count, 0.001)}`}
+            title={`${b.count} of ${n} blockages ${b.label}`}
+          />
+        ))}
+      </div>
+      <ul class="legend data">
+        {bands.map((b) => (
+          <li>
+            <span class={`key ${b.tone}`} />
+            {b.label} <span class="dim">{Math.round((100 * b.count) / n)}%</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -198,64 +241,48 @@ const css = `
 .patterns h2 { margin: 0; font-size: 1.5rem; }
 .patterns .sumline { color: var(--muted); margin: 0.2rem 0 0.9rem; font-size: 0.85rem; }
 
-.timetable { display: grid; grid-template-columns: 3.2rem repeat(24, 1fr); gap: 2px; }
-.timetable .hour-label { color: var(--muted); font-size: 0.65rem; align-self: end; }
-.timetable .dow-label { color: var(--muted); font-size: 0.8rem; letter-spacing: 0.08em; align-self: center; }
-.timetable .cell { aspect-ratio: 5 / 4; background: var(--panel); border-radius: 2px; min-width: 0; }
-.timetable .cell.nodata { background: repeating-linear-gradient(45deg, var(--panel), var(--panel) 2px, var(--ink) 2px, var(--ink) 4px); }
-.timetable .cell.current { outline: 2px solid var(--signal-amber); outline-offset: -1px; }
-
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 1.25rem; }
 .chart h3 { margin: 0 0 0.6rem; font-size: 1rem; color: var(--muted); }
-.hbar-row { display: grid; grid-template-columns: 5.5ch 1fr 3ch; align-items: center; gap: 0.6rem; margin: 0.25rem 0; }
-.hbar-label { color: var(--muted); font-size: 0.75rem; text-align: right; }
-.hbar-lane { height: 10px; background: var(--panel); border-radius: 3px; overflow: hidden; }
-.hbar { display: block; height: 100%; background: var(--signal-red); opacity: 0.75; }
-.hbar-count { color: var(--muted); font-size: 0.75rem; }
+.patterns .lede { margin: 0 0 1rem; font-size: 1.05rem; max-width: 60ch; }
+.patterns .lede strong { color: var(--signal-red); font-weight: 600; }
+.patterns .dim { color: var(--muted); }
 
-.days { display: flex; gap: 4px; align-items: flex-end; height: 90px; }
-.day-col { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 3px; height: 100%; }
-.vbar { display: block; width: 100%; max-width: 22px; background: var(--signal-red); opacity: 0.75; border-radius: 2px 2px 0 0; }
-.day-tick { color: var(--muted); font-size: 0.65rem; }
+/* The day profile: thin bars, a 2px gutter, rounded data-ends anchored to a
+   baseline that is the only grid line the chart needs. */
+.profile { margin-bottom: 1.5rem; }
+.profile .bars { display: flex; gap: 2px; align-items: flex-end; height: 132px;
+  border-bottom: 1px solid var(--hairline); }
+.profile .slot { flex: 1; height: 100%; display: flex; align-items: flex-end; min-width: 0; }
+.profile .bar { display: block; width: 100%; background: var(--signal-red);
+  opacity: 0.62; border-radius: 3px 3px 0 0; transition: opacity 120ms ease; }
+.profile .slot.on .bar { opacity: 1; }
+.profile .slot.now .bar { outline: 2px solid var(--signal-amber); outline-offset: 1px; }
+.profile .axis { display: flex; justify-content: space-between; color: var(--muted);
+  font-size: 0.7rem; margin-top: 0.3rem; }
+.profile .readout { font-size: 0.85rem; margin: 0.5rem 0 0; }
+
+/* How long it lasts: one hero number, then the split that answers "a minute
+   or half an hour". */
+.chart .hero { font-size: 0.9rem; color: var(--muted); margin: 0 0 0.6rem; }
+.chart .hero strong { font-size: 1.6rem; color: var(--crossbuck); font-weight: 600; }
+.split { display: flex; gap: 2px; height: 14px; }
+.split .seg { border-radius: 3px; min-width: 3px; }
+.split .seg.quick, .legend .key.quick { background: color-mix(in srgb, var(--signal-red) 35%, var(--panel)); }
+.split .seg.mid, .legend .key.mid { background: color-mix(in srgb, var(--signal-red) 65%, var(--panel)); }
+.split .seg.long, .legend .key.long { background: var(--signal-red); }
+.legend { list-style: none; padding: 0; margin: 0.6rem 0 0; display: flex;
+  flex-wrap: wrap; gap: 0.15rem 1rem; font-size: 0.78rem; }
+.legend li { display: flex; align-items: center; gap: 0.35rem; }
+.legend .key { width: 9px; height: 9px; border-radius: 2px; flex: none; }
 
 .note { color: var(--muted); font-size: 0.8rem; margin-top: 0.5rem; max-width: 60ch; }
-.shift { display: flex; flex-direction: column; gap: 0.35rem; margin: 0.5rem 0 0; }
-.shift strong { color: var(--crossbuck); }
 .record { margin: 0.5rem 0 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 0.3rem; }
 .record strong { color: var(--signal-red); }
 
 @media (max-width: 640px) {
   .pair { grid-template-columns: 1fr; }
-  .timetable { grid-template-columns: 2.4rem repeat(24, 1fr); gap: 1px; }
 }
 `;
-
-/** Night trains park: the same yard, two habits. Median blockage by whether
- *  the train showed up on the day shift or the night shift. */
-function DayNight({ sessions, tz }: { sessions: SessionRow[]; tz?: string }) {
-  const day: number[] = [];
-  const night: number[] = [];
-  for (const r of sessions) {
-    const h = corridorHourOf(r.started_at, tz);
-    (h >= 6 && h < 18 ? day : night).push(r.duration_seconds! / 60);
-  }
-  if (day.length < 3 || night.length < 3) return null;
-  const median = (xs: number[]) => xs.sort((a, b) => a - b)[Math.floor(xs.length / 2)];
-  return (
-    <div class="chart">
-      <h3 class="display">Day and night</h3>
-      <p class="data shift">
-        <span>
-          6a-6p: <strong>{Math.round(median(day))} min</strong> median · {day.length} trains
-        </span>
-        <span>
-          night: <strong>{Math.round(median(night))} min</strong> median · {night.length} trains
-        </span>
-      </p>
-      <p class="note">Night trains park; daytime moves mostly switch and clear.</p>
-    </div>
-  );
-}
 
 /** The record book: the five longest blockages, with their dates. */
 function Longest({ sessions, tz }: { sessions: SessionRow[]; tz?: string }) {
