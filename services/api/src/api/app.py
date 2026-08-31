@@ -145,12 +145,34 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             return JSONResponse({"ok": False, "reason": "replaying the log"}, status_code=503)
         return JSONResponse({"ok": True})
 
+    def cache_for(browser: int, edge: int) -> str:
+        """How long each cache may hold a read answer.
+
+        The record moves slowly - a camera speaks every three to ten minutes -
+        so a few seconds at the edge costs no freshness a viewer could
+        perceive while taking the read path off the origin almost entirely.
+        The two numbers protect different things: `max-age` stops one phone
+        re-asking during a single glance, `s-maxage` stops ten thousand
+        phones becoming ten thousand requests.
+
+        Cloudflare will not cache these extensionless paths on the header
+        alone - a cache rule over /api/v1/* has to make them eligible first -
+        but every URLSession and browser honours it today.
+        """
+        return f"public, max-age={browser}, s-maxage={edge}"
+
     @app.get("/api/v1/status")
     async def status() -> Response:
-        return Response(state.snapshot().model_dump_json(), media_type="application/json")
+        return Response(
+            state.snapshot().model_dump_json(),
+            media_type="application/json",
+            headers={"Cache-Control": cache_for(browser=15, edge=20)},
+        )
 
     @app.get("/api/v1/crossings")
-    async def crossings() -> dict:
+    async def crossings(response: Response) -> dict:
+        # The roster only changes when a camera is added, which is a deploy.
+        response.headers["Cache-Control"] = cache_for(browser=300, edge=3600)
         return {
             "crossings": [
                 {
@@ -177,12 +199,14 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/v1/timeline")
     async def timeline(
+        response: Response,
         crossing_id: str,
         hours: int = 24,
         from_: str | None = Query(default=None, alias="from"),
         to: str | None = Query(default=None, alias="to"),
     ) -> dict:
         """Latest detector version wins per instant, over all history."""
+        response.headers["Cache-Control"] = cache_for(browser=30, edge=60)
         start, end = resolve_range(from_, to, hours)
         observations = await db.timeline(history_pool(), crossing_id, start, end)
         return {
@@ -193,16 +217,21 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         }
 
     @app.get("/api/v1/sessions")
-    async def sessions(crossing_id: str | None = None, limit: int = 50) -> dict:
+    async def sessions(response: Response, crossing_id: str | None = None, limit: int = 50) -> dict:
         """Session history, latest ingest wins per session_id."""
+        response.headers["Cache-Control"] = cache_for(browser=60, edge=120)
         return {"sessions": await db.session_list(history_pool(), crossing_id, limit)}
 
     @app.get("/api/v1/analytics")
-    async def analytics() -> dict:
+    async def analytics(response: Response) -> dict:
         """Temporal patterns per crossing. The `available` flag lets the UI
         hide the stats surface entirely when there is no history store."""
         if pool is None:
+            # Deliberately uncached: the store being down is a condition that
+            # can end at any moment, and a cached outage outlives the outage.
             return {"available": False, "crossings": {}}
+        # Weeks of aggregate - one new hour cannot move it perceptibly.
+        response.headers["Cache-Control"] = cache_for(browser=300, edge=600)
         return {
             "available": True,
             "local_tz": db.LOCAL_TZ,
