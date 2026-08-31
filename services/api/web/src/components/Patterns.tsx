@@ -155,12 +155,12 @@ function HourProfile({ a, nowHour }: { a: CrossingAnalytics; nowHour: number }) 
         aria-label={`Blockage by hour of day. Worst at ${hourLabel(peakHour, "prose")}, ${percent(
           shares[peakHour],
         )} of checks blocked.`}
-        onMouseLeave={() => setFocus(null)}
+        onPointerLeave={() => setFocus(null)}
       >
         {day.map((slot, h) => (
           <div
             class={`slot ${h === shown ? "on" : ""} ${h === nowHour ? "now" : ""}`}
-            onMouseEnter={() => setFocus(h)}
+            onPointerEnter={() => setFocus(h)}
             title={`${hourLabel(h, "prose")}: train seen in ${slot.blocked} of ${
               slot.scoreable
             } checks`}
@@ -178,7 +178,7 @@ function HourProfile({ a, nowHour }: { a: CrossingAnalytics; nowHour: number }) 
       <p class="readout data">
         <strong>{hourLabel(shown, "prose")}</strong> - train seen in {shownSlot.blocked} of{" "}
         {shownSlot.scoreable} checks ({percent(shares[shown])})
-        {focus === null && <span class="dim"> · the worst hour; hover any bar</span>}
+        {focus === null && <span class="dim"> · the worst hour</span>}
       </p>
     </div>
   );
