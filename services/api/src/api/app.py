@@ -217,9 +217,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         }
 
     @app.get("/api/v1/sessions")
-    async def sessions(
-        response: Response, crossing_id: str | None = None, limit: int = 50
-    ) -> dict:
+    async def sessions(response: Response, crossing_id: str | None = None, limit: int = 50) -> dict:
         """Session history, latest ingest wins per session_id."""
         response.headers["Cache-Control"] = cache_for(browser=60, edge=120)
         return {"sessions": await db.session_list(history_pool(), crossing_id, limit)}

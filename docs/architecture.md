@@ -99,6 +99,7 @@ Session closes fire on wall clock past the gap deadline plus a two-minute drift 
 ### api (`services/api`, deploy/api, deploy/postgres)
 
 One pod serving both the JSON API and the static site, plus the Postgres materializer.
+Every JSON read endpoint sets `Cache-Control` with per-endpoint browser and edge lifetimes - `cache_for` in `src/api/app.py` owns the numbers and the Cloudflare eligibility caveat - except the no-history-store `/analytics` answer, deliberately uncached so an outage is never cached past its end.
 
 - **Board** (`/api/v1/status`, `/api/v1/events` SSE, frames): `LiveState` in `blockade-core/api/state.py` is a pure reducer rebuilt on every boot by groupless Kafka tailers; readiness gates traffic until the replay passes boot-time end offsets.
   Consensus is blocked-biased (any fresh BLOCKED wins; a glare-blind camera's CLEAR cannot veto its partner's train) and anything older than fifteen minutes is stale, so a dead detector can never leave BLOCKED frozen on screen.
@@ -111,7 +112,7 @@ One pod serving both the JSON API and the static site, plus the Postgres materia
   `/sessions` applies it server-side per row (`certified`), analytics restates it in SQL (the two are pinned against each other in tests), and nothing deletes a run for being brief anymore.
 - **Backfill** (`blockade-api backfill obs.jsonl`): loads a re-scored window; see the data contract below.
 - **Frames** (`/api/v1/frames/...`): S3 reads behind a content-addressed disk LRU, with a path-pattern guard.
-- **Web** (`web/`): static Astro build baked into the image; three pages, one Preact island each - the board (Leaflet map with a flasher per featured crossing, SSE, time scrubber), the train sheet, and patterns.
+- **Web** (`web/`): static Astro build baked into the image; three board pages, one Preact island each - the board (Leaflet map with a flasher per featured crossing, SSE, time scrubber), the train sheet, and patterns - plus a static, footer-linked privacy page (`/privacy/`, the URL App Store review requires).
   The UI presents only the crossings in `FEATURED` (web/src/lib/crossings.ts) - currently 12th & Clinton alone; [camera-survey.md](camera-survey.md) records why 8th & Division was unfeatured - while every camera keeps capturing in the background - and every scoring one keeps scoring - so the record accumulates for the rest.
   `/analytics` also ships `local_tz`, the corridor's clock, which every corridor-clock rendering reads - the board's habit line and, on the patterns page, the current-hour marker, the day/night split, and the record list's dates - the timezone is a wire contract, not a client constant.
   The board's blocked ticker carries a wait-outlook line - the median of the recorded durations the blockage has not yet outlasted, from `/analytics` (`waitOutlook` in `web/src/lib/analytics.ts`) - and the patterns page derives its day/night split and longest-on-record list client-side from `/sessions`, not from a new aggregate.
@@ -120,6 +121,7 @@ One pod serving both the JSON API and the static site, plus the Postgres materia
   That copy is pinned against the reducer's own scenarios in `scrub.test.ts`, so the two cannot drift silently.
   The train sheet tiers rows by that flag: certified sessions as solid signals, uncertified runs as hollow-signal sightings with their evidence in the footer - so a train the lanes show is never missing from the sheet.
   The site ships a web-app manifest and icons (`web/public/manifest.webmanifest`), so a phone can install the board standalone on its home screen.
+  `web/public/offline.html` is a self-contained outage page (no stylesheet, script, font, or content image to fail alongside the origin) for Cloudflare to serve when the origin is unreachable.
   `npm run check` typechecks under Astro strict and `npm test` runs those scenarios plus the other `web/src/lib` suites - among them `crossings.test.ts`, which pins the FEATURED presentation contract, and `analytics.test.ts`, which pins the outlook line; CI runs both for web changes.
 
 ### iPhone and Apple Watch apps (`apps/ios`)
