@@ -632,7 +632,7 @@ const css = `
 
 .crossings-list { display: grid; gap: 1px; background: var(--hairline); border: 1px solid var(--hairline); border-radius: 6px; overflow: hidden; }
 .row { display: flex; align-items: center; gap: 0.75rem; padding: 0.65rem 1rem; background: var(--panel); border: 0; color: var(--crossbuck); cursor: pointer; text-align: left; font-size: 1rem; }
-.row:not(.chosen):hover { background: color-mix(in srgb, var(--panel) 60%, var(--ink)); }
+button.row:not(.chosen):hover { background: color-mix(in srgb, var(--panel) 60%, var(--ink)); }
 .row.chosen { background: var(--ink); box-shadow: inset 3px 0 0 var(--signal-amber); }
 .row .dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
 .row .name { flex: 1; font-size: 1.15rem; }
