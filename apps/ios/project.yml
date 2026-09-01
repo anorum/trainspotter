@@ -22,6 +22,7 @@ targets:
     scheme:
       testTargets:
         - PDXTrainTests
+        - PDXTrainUITests
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.alexnorum.PDXTrain
@@ -55,6 +56,18 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
     sources:
       - Tests
+    dependencies:
+      - target: PDXTrain
+  # What VoiceOver hears, read from the running app the way VoiceOver reads
+  # it. The board is fetched live, so the assertions hold for any answer.
+  PDXTrainUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+    sources:
+      - UITests
     dependencies:
       - target: PDXTrain
   PDXTrainWidget:

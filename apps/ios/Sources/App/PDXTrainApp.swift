@@ -294,9 +294,13 @@ struct CameraFrame: View {
     let image: Image
 
     var body: some View {
+        // AsyncImage's Image is decorative to VoiceOver, so a label alone is
+        // never spoken; make the frame its own element and call it a picture.
         image.resizable()
             .aspectRatio(contentMode: .fit)
+            .accessibilityElement(children: .ignore)
             .accessibilityLabel("Camera picture of the crossing")
+            .accessibilityAddTraits(.isImage)
     }
 }
 
