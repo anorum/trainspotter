@@ -674,7 +674,12 @@ button.row:not(.chosen):hover { background: color-mix(in srgb, var(--panel) 60%,
      is a template literal.) */
   .detail h2 { white-space: nowrap; flex-basis: 100%; }
   .detail header { flex-wrap: wrap; row-gap: 0.15rem; }
+  .row { flex-wrap: wrap; row-gap: 0.1rem; }
   .row .name { white-space: nowrap; }
+  /* The status line takes its own row under the name, indented by the dot's
+     width plus the row's gap - one entry on two lines, never a timestamp
+     broken mid-phrase. */
+  .row .data { flex-basis: 100%; padding-left: calc(12px + 0.75rem); white-space: nowrap; }
 }
 .detail .close { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 1rem; }
 .detail .ticker { color: var(--signal-red); font-size: 1.1rem; margin: 0.5rem 0 0; }

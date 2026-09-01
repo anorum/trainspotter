@@ -5,6 +5,9 @@ import preact from "@astrojs/preact";
 // /api proxies to localhost:8000; run scripts/dev-web.sh to port-forward the
 // cluster's api Service there and start this dev server on top of it.
 export default defineConfig({
+  // The product's own address. Social scrapers only follow absolute URLs, so
+  // the share card and canonical link are built from this.
+  site: "https://pdxtrain.com",
   output: "static",
   integrations: [preact()],
   vite: {

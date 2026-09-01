@@ -132,6 +132,7 @@ struct BoardView: View {
                 plaque
                 snapshot
                 trainSheet
+                AskSiriSection()
             }
             .padding(.horizontal, 24)
             .padding(.top, 18)
@@ -176,7 +177,7 @@ struct BoardView: View {
     private var snapshot: some View {
         if let observation = crossing?.latestObservation {
             VStack(alignment: .leading, spacing: 8) {
-                sectionLabel("FROM THE CAMERA")
+                SectionLabel("FROM THE CAMERA")
                 AsyncImage(url: BoardAPI.frameURL(observation.objectKey)) { phase in
                     switch phase {
                     case .success(let image):
@@ -218,18 +219,11 @@ struct BoardView: View {
     private var trainSheet: some View {
         if !sessions.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
-                sectionLabel("TRAIN SHEET")
+                SectionLabel("TRAIN SHEET")
                     .padding(.bottom, 4)
                 TrainSheetList(sessions: sessions)
             }
         }
-    }
-
-    private func sectionLabel(_ title: String) -> some View {
-        Text(title)
-            .font(.system(.footnote).width(.condensed))
-            .kerning(2)
-            .foregroundStyle(Theme.muted)
     }
 
     private var aspectWord: String {
@@ -330,5 +324,43 @@ struct FramePhotoView: View {
             }
         }
         .onTapGesture { dismiss() }
+    }
+}
+
+
+/// The one thing about this app nobody finds on their own.
+///
+/// Apple requires the app's name inside a built-in phrase, which is why the
+/// spoken form is stiff; a Shortcut the reader names themselves carries no
+/// such rule. This is the only place a person would learn that, and it sits
+/// at the foot of the sheet because it answers a question asked after the
+/// crossing's, never instead of it.
+struct AskSiriSection: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            SectionLabel("ASK SIRI")
+            Text("\u{201C}Hey Siri, PDX Train status\u{201D}")
+                .font(.callout)
+            Text(
+                "For a phrase of your own, add the \u{201C}Check the crossing\u{201D} "
+                    + "action in Shortcuts and name it anything."
+            )
+            .font(.caption)
+            .foregroundStyle(Theme.muted)
+        }
+    }
+}
+
+/// The sheet's section eyebrow - condensed, spaced, muted - shared so every
+/// section is labelled the same way.
+struct SectionLabel: View {
+    let title: String
+    init(_ title: String) { self.title = title }
+
+    var body: some View {
+        Text(title)
+            .font(.system(.footnote).width(.condensed))
+            .kerning(2)
+            .foregroundStyle(Theme.muted)
     }
 }

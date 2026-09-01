@@ -100,7 +100,7 @@ export default function SessionLog() {
   }
 
   return (
-    <div class="sheet">
+    <div class={SOLO ? "sheet solo" : "sheet"}>
       {!SOLO && (
         <div class="filters" role="group" aria-label="Filter by crossing">
           {FILTERS.map((f) => (
@@ -141,9 +141,13 @@ export default function SessionLog() {
                   {/* A solo site names its crossing in the page head; saying it
                       again on every row is noise, and on a phone it wraps each
                       row to two lines. With no name to follow, the sighting
-                      mark drops its separator too. */}
+                      mark drops its separator too. Certified solo rows carry
+                      the mark invisibly: each row is its own grid, so only
+                      identical content keeps the max-content track - and the
+                      columns after it - the same width on every row. */}
                   <span class="display name">
                     {!SOLO && crossingLabel(s.crossing_id)}
+                    {SOLO && s.certified && <span class="data kind ghost">sighting</span>}
                     {!s.certified && (
                       <span class="data kind">{SOLO ? "sighting" : " · sighting"}</span>
                     )}
@@ -264,9 +268,14 @@ const css = `
 
 .entry { border-bottom: 1px solid var(--hairline); }
 .row { display: grid; grid-template-columns: 14px minmax(9rem, max-content) 9ch 1fr 11ch; align-items: center; gap: 0.9rem; width: 100%; padding: 0.6rem 0.25rem; background: none; border: 0; color: var(--crossbuck); cursor: pointer; text-align: left; font-size: 1rem; }
+/* A solo site names its crossing in the head, so the name column holds only
+   the "sighting" mark - every solo row carries one, hidden on certified rows
+   (see the row markup) - and sizes to it instead of to a name; the min-height
+   on .name below backstops a row whose span ever renders empty. */
+.sheet.solo .row { grid-template-columns: 14px max-content 9ch 1fr 11ch; }
 .entry.open .row { background: var(--panel); }
 .aspect { width: 12px; height: 12px; border-radius: 50%; }
-.name { font-size: 1.15rem; }
+.name { font-size: 1.15rem; min-height: 1.4em; }
 .start, .dur { color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
 .dur { text-align: right; }
 .bar-lane { height: 6px; background: none; border-radius: 3px; overflow: hidden; }
@@ -283,6 +292,7 @@ const css = `
    book declined to certify it. */
 .aspect.sighted { background: none; border: 2px solid var(--signal-red); }
 .kind { color: var(--muted); font-size: 0.8rem; letter-spacing: 0.05em; }
+.kind.ghost { visibility: hidden; }
 /* On phones the stills ARE the viewer: near-full-width frames that snap one
    per swipe, momentum kept. Desktop keeps the thumbnail row + feature. */
 @media (max-width: 640px) {
@@ -295,6 +305,7 @@ const css = `
 
 @media (max-width: 640px) {
   .row { grid-template-columns: 12px 1fr 9ch 11ch; gap: 0.6rem; }
+  .sheet.solo .row { grid-template-columns: 12px max-content 9ch 1fr; }
   .bar-lane { display: none; }
 }
 `;
