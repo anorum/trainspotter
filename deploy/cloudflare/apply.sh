@@ -75,7 +75,7 @@ ours = {
   "enabled": True,
 }
 # Keep every other rule exactly as it is; replace ours by description.
-kept = [{k: r[k] for k in ("description","expression","action","action_parameters","enabled") if k in r}
+kept = [{k: v for k, v in r.items() if k not in ("id","version","last_updated")}
         for r in rules if r.get("description") != ours["description"]]
 print(json.dumps({"rules": kept + [ours]}))
 PY
