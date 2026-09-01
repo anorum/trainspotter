@@ -129,8 +129,18 @@ enum BoardAPI {
         base.appending(path: "frames/\(objectKey)")
     }
 
+    /// Live answers bypass the local HTTP cache entirely.
+    ///
+    /// The app's own cadence - thirty seconds in the foreground, five minutes
+    /// for a widget - is the freshness policy; a Cache-Control header is not.
+    /// This exists because of a night when an edge rule briefly stamped
+    /// /status with max-age=14400 and every widget that fetched in that
+    /// window held a four-hour-old answer, honestly reporting it as NO
+    /// SIGNAL once it aged out. Frames keep the default policy: they are
+    /// content-addressed and immutable, and caching them is the point.
     private static func get<T: Decodable>(_ type: T.Type, from url: URL) async throws -> T {
-        let (data, _) = try await URLSession.shared.data(from: url)
+        let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
+        let (data, _) = try await URLSession.shared.data(for: request)
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .custom { d in
             let s = try d.singleValueContainer().decode(String.self)

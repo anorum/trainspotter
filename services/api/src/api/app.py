@@ -157,8 +157,11 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
         Cloudflare will not cache these extensionless paths on the header
         alone - the cache rule deploy/cloudflare/apply.sh applies over
-        /api/v1/* makes them eligible - and every URLSession and browser
-        honours the header directly.
+        /api/v1/* makes them eligible - and browsers honour it today. The
+        iOS app does not: its live fetches ignore the local HTTP cache on
+        principle (`BoardAPI.get` in
+        apps/ios/Sources/Shared/CrossingStatus.swift), so `max-age` here only
+        paces the web board.
         """
         return f"public, max-age={browser}, s-maxage={edge}"
 
