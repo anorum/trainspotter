@@ -22,6 +22,7 @@ import {
   hourOfDay,
   peakShare,
   percent,
+  share,
   worstHours,
 } from "../lib/analytics";
 import { FEATURED, crossingLabel, sessionsUrl } from "../lib/crossings";
@@ -137,7 +138,7 @@ function Lede({ a }: { a: CrossingAnalytics }) {
  * the chart exists to show. */
 function HourProfile({ a, nowHour }: { a: CrossingAnalytics; nowHour: number }) {
   const day = hourOfDay(a);
-  const shares = day.map((s) => (s.scoreable ? s.blocked / s.scoreable : 0));
+  const shares = day.map(share);
   const maxShare = Math.max(...shares);
   const peakHour = shares.indexOf(maxShare);
   // A crossing with no train on record yet would divide by zero; the 1% floor
@@ -238,6 +239,28 @@ function HowLong({ a }: { a: CrossingAnalytics }) {
   );
 }
 
+/** The record book: the five longest blockages, with their dates. */
+function Longest({ sessions, tz }: { sessions: SessionRow[]; tz?: string }) {
+  const top = [...sessions]
+    .sort((a, b) => b.duration_seconds! - a.duration_seconds!)
+    .slice(0, 5);
+  if (top.length < 3) return null;
+  return (
+    <div class="chart">
+      <h3 class="display">Longest on record</h3>
+      <ol class="data record">
+        {top.map((r) => (
+          <li>
+            <strong>{Math.round(r.duration_seconds! / 60)} min</strong>
+            {" · "}
+            {formatCorridorDayTime(r.started_at, tz)}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
 const css = `
 .patterns .crossing { margin: 1.5rem 0 2.5rem; }
 .patterns h2 { margin: 0; font-size: 1.5rem; }
@@ -285,25 +308,3 @@ const css = `
   .pair { grid-template-columns: 1fr; }
 }
 `;
-
-/** The record book: the five longest blockages, with their dates. */
-function Longest({ sessions, tz }: { sessions: SessionRow[]; tz?: string }) {
-  const top = [...sessions]
-    .sort((a, b) => b.duration_seconds! - a.duration_seconds!)
-    .slice(0, 5);
-  if (top.length < 3) return null;
-  return (
-    <div class="chart">
-      <h3 class="display">Longest on record</h3>
-      <ol class="data record">
-        {top.map((r) => (
-          <li>
-            <strong>{Math.round(r.duration_seconds! / 60)} min</strong>
-            {" · "}
-            {formatCorridorDayTime(r.started_at, tz)}
-          </li>
-        ))}
-      </ol>
-    </div>
-  );
-}

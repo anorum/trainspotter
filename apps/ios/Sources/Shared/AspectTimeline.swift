@@ -108,10 +108,8 @@ struct AspectProvider: TimelineProvider {
         // The server can hand over a status that is already past the
         // horizon (a wedged generator behind a live server, a cached
         // response); age it here like every other surface does.
-        let stale = crossing.stale || status.agedOut(at: .now)
-        let blockedSince = crossing.state == .blocked && !stale
-            ? (crossing.openSession?.startedAt ?? crossing.since)
-            : nil
+        let stale = status.isStale(crossing, at: .now)
+        let blockedSince = stale ? nil : crossing.blockedSince
         if !stale {
             AspectMemory.remember(
                 asOf: status.generatedAt, aspect: crossing.state, blockedSince: blockedSince)

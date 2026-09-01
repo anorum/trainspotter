@@ -24,6 +24,13 @@ enum Theme {
     }
 }
 
+/// A timeline entry's own clothes, so the phone widget, the medium widget
+/// and the watch complication all dress the same entry the same way.
+extension AspectEntry {
+    var color: Color { Theme.aspectColor(aspect, stale: stale) }
+    var word: String { Theme.aspectWord(aspect, stale: stale) }
+}
+
 /// The twin-lamp signal housing, the form of the flashers at the real
 /// crossing. Static in widgets (WidgetKit does not animate); the app version
 /// alternates the lamps when blocked.
@@ -41,6 +48,10 @@ struct Flasher: View {
         .padding(.vertical, lampSize * 0.35)
         .background(Theme.ink, in: Capsule())
         .overlay(Capsule().stroke(Theme.hairline, lineWidth: 1))
+        // Color is the whole message here, and color is exactly what a
+        // screen reader cannot pass on. Every surface that shows a flasher
+        // also carries the state as text, so the lamps stay decorative.
+        .accessibilityHidden(true)
     }
 
     private func lamp(on: Bool) -> some View {

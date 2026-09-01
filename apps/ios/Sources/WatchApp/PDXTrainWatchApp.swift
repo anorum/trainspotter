@@ -81,11 +81,11 @@ struct WatchBoardView: View {
     @ViewBuilder
     private var content: some View {
         if let status, let crossing = status.clinton {
-            let stale = crossing.stale || status.agedOut(at: now)
+            let stale = status.isStale(crossing, at: now)
             let color = Theme.aspectColor(crossing.state, stale: stale)
             let blocked = crossing.state == .blocked && !stale
             VStack(spacing: 6) {
-                Flasher(color: color, lit: (true, !blocked), lampSize: 12)
+                Flasher(aspect: crossing.state, stale: stale, lampSize: 12)
                 Text(Theme.aspectWord(crossing.state, stale: stale))
                     .font(.system(.title3, weight: .bold))
                     .foregroundStyle(color)
@@ -94,7 +94,7 @@ struct WatchBoardView: View {
                 Text("12th & Clinton")
                     .font(.caption2)
                     .foregroundStyle(Theme.muted)
-                if blocked, let started = crossing.openSession?.startedAt ?? crossing.since {
+                if blocked, let started = crossing.blockedSince {
                     Text(started, style: .relative)
                         .font(.caption.monospaced())
                         .foregroundStyle(Theme.red)

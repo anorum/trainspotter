@@ -129,14 +129,10 @@ export default function SessionLog() {
               featured[s.session_id] ?? strip?.[Math.floor((strip.length - 1) / 2)]?.object_key;
             return (
               <article key={s.session_id} class={open ? "entry open" : "entry"}>
-                <button
-                  class="row"
-                  aria-expanded={open}
-                  onClick={() => toggle(s)}
-                >
+                <button class="row" aria-expanded={open} onClick={() => toggle(s)}>
                   <span
-                    class={!s.certified ? "aspect sighted" : s.is_open ? "aspect pulse" : "aspect"}
-                    style={!s.certified ? undefined : `background:${COLORS.BLOCKED}`}
+                    class={aspectClass(s)}
+                    style={s.certified ? `background:${COLORS.BLOCKED}` : undefined}
                   />
                   {/* A solo site names its crossing in the page head; saying it
                       again on every row is noise, and on a phone it wraps each
@@ -159,13 +155,7 @@ export default function SessionLog() {
                       style={`width:${(100 * (s.duration_seconds ?? 0)) / longest}%`}
                     />
                   </span>
-                  <span class="data dur">
-                    {s.is_open
-                      ? "in progress"
-                      : !s.certified && s.observation_count === 1
-                        ? "single frame"
-                        : human(s.duration_seconds)}
-                  </span>
+                  <span class="data dur">{durationLabel(s)}</span>
                 </button>
 
                 {open && (
@@ -213,11 +203,7 @@ export default function SessionLog() {
                             </figure>
                           ))}
                         </div>
-                        <p class="scored data">
-                          {!s.certified
-                            ? `${s.observation_count === 1 ? "single frame" : `${s.observation_count} frames`} · peak confidence ${Math.round((s.peak_queue_occupancy ?? 0) * 100)}%`
-                            : `scored by ${s.detector_version}`}
-                        </p>
+                        <p class="scored data">{scoredLine(s)}</p>
                       </>
                     )}
                   </div>
@@ -253,7 +239,32 @@ function tape(observations: TimelineObs[]): TimelineObs[] {
   return [...new Set(picked)];
 }
 
-function human(seconds: number | null): string {
+/** The row's aspect lamp: a hollow signal for an uncertified sighting, a
+ *  pulsing one while the blockage is still running, steady once it closed. */
+function aspectClass(s: Session): string {
+  if (!s.certified) return "aspect sighted";
+  if (s.is_open) return "aspect pulse";
+  return "aspect";
+}
+
+/** The duration cell. A run still open has no duration to state, and a
+ *  single-frame sighting's "1m" would dress one picture as a measurement. */
+function durationLabel(s: Session): string {
+  if (s.is_open) return "in progress";
+  if (!s.certified && s.observation_count === 1) return "single frame";
+  return humanDuration(s.duration_seconds);
+}
+
+/** The tape's footer: what scored a certified session, or what evidence an
+ *  uncertified sighting rests on. */
+function scoredLine(s: Session): string {
+  if (s.certified) return `scored by ${s.detector_version}`;
+  const frames =
+    s.observation_count === 1 ? "single frame" : `${s.observation_count} frames`;
+  return `${frames} · peak confidence ${Math.round((s.peak_queue_occupancy ?? 0) * 100)}%`;
+}
+
+function humanDuration(seconds: number | null): string {
   if (seconds == null) return "-";
   const m = Math.round(seconds / 60);
   return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;

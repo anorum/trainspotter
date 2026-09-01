@@ -43,6 +43,15 @@ struct CrossingNow: Decodable {
         }
     }
 
+    /// When the blockage began: the open session's start if the sessionizer
+    /// has opened one, else the state's own timestamp. Nil unless a train is
+    /// actually there, so no surface can draw a running duration for a
+    /// crossing that is clear.
+    var blockedSince: Date? {
+        guard state == .blocked else { return nil }
+        return openSession?.startedAt ?? since
+    }
+
     enum CodingKeys: String, CodingKey {
         case crossingId = "crossing_id"
         case state, stale, since
@@ -72,7 +81,6 @@ struct TrainSession: Decodable, Identifiable {
 
 struct FeedHealth: Decodable {
     let status: String
-    let since: Date?
 }
 
 struct BoardStatus: Decodable {
@@ -94,12 +102,13 @@ struct BoardStatus: Decodable {
     /// surface may outlive it on its own.
     static let stalenessHorizon: TimeInterval = 15 * 60
 
-    /// Whether this status has outlived the board's own staleness horizon
-    /// as of `now`. Callers pass a clock they refresh, so a status held
-    /// through silent fetch failures degrades on screen instead of
-    /// counting on as if current.
-    func agedOut(at now: Date) -> Bool {
-        now.timeIntervalSince(generatedAt) > Self.stalenessHorizon
+    /// Whether `crossing`'s verdict may still be spoken as current. Two ways
+    /// to fail: the board calls the crossing stale itself, or the status has
+    /// outlived the horizon above. Callers pass a clock they refresh, so a
+    /// status held through silent fetch failures degrades on screen instead
+    /// of counting on as if current. Every surface asks exactly this.
+    func isStale(_ crossing: CrossingNow, at now: Date) -> Bool {
+        crossing.stale || now.timeIntervalSince(generatedAt) > Self.stalenessHorizon
     }
 }
 

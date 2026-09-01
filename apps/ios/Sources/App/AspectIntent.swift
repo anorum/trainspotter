@@ -35,7 +35,7 @@ struct CheckCrossingIntent: AppIntent {
         // One clock reading for the whole answer, taken once the board has
         // spoken, so the age it reports and the age it speaks agree.
         let now = Date.now
-        if crossing.stale || status.agedOut(at: now) {
+        if status.isStale(crossing, at: now) {
             return Answer(
                 dialog:
                     "The cameras have gone quiet, so I can't say - the last word was more than fifteen minutes ago.",
@@ -43,7 +43,7 @@ struct CheckCrossingIntent: AppIntent {
         }
         switch crossing.state {
         case .blocked:
-            guard let started = crossing.openSession?.startedAt ?? crossing.since else {
+            guard let started = crossing.blockedSince else {
                 return Answer(
                     dialog: "Yes - a train is blocking 12th and Clinton.",
                     aspect: .blocked, line: "gates down")
