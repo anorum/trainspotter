@@ -141,9 +141,13 @@ export default function SessionLog() {
                   {/* A solo site names its crossing in the page head; saying it
                       again on every row is noise, and on a phone it wraps each
                       row to two lines. With no name to follow, the sighting
-                      mark drops its separator too. */}
+                      mark drops its separator too. Certified solo rows carry
+                      the mark invisibly: each row is its own grid, so only
+                      identical content keeps the max-content track - and the
+                      columns after it - the same width on every row. */}
                   <span class="display name">
                     {!SOLO && crossingLabel(s.crossing_id)}
+                    {SOLO && s.certified && <span class="data kind ghost">sighting</span>}
                     {!s.certified && (
                       <span class="data kind">{SOLO ? "sighting" : " · sighting"}</span>
                     )}
@@ -287,6 +291,7 @@ const css = `
    book declined to certify it. */
 .aspect.sighted { background: none; border: 2px solid var(--signal-red); }
 .kind { color: var(--muted); font-size: 0.8rem; letter-spacing: 0.05em; }
+.kind.ghost { visibility: hidden; }
 /* On phones the stills ARE the viewer: near-full-width frames that snap one
    per swipe, momentum kept. Desktop keeps the thumbnail row + feature. */
 @media (max-width: 640px) {
