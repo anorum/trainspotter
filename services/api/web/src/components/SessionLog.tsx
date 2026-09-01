@@ -269,8 +269,9 @@ const css = `
 .entry { border-bottom: 1px solid var(--hairline); }
 .row { display: grid; grid-template-columns: 14px minmax(9rem, max-content) 9ch 1fr 11ch; align-items: center; gap: 0.9rem; width: 100%; padding: 0.6rem 0.25rem; background: none; border: 0; color: var(--crossbuck); cursor: pointer; text-align: left; font-size: 1rem; }
 /* A solo site names its crossing in the head, so the name column holds only
-   the occasional "sighting" mark and sizes to it instead of to a name; the
-   min-height on .name below holds a row's height when it carries no mark. */
+   the "sighting" mark - every solo row carries one, hidden on certified rows
+   (see the row markup) - and sizes to it instead of to a name; the min-height
+   on .name below backstops a row whose span ever renders empty. */
 .sheet.solo .row { grid-template-columns: 14px max-content 9ch 1fr 11ch; }
 .entry.open .row { background: var(--panel); }
 .aspect { width: 12px; height: 12px; border-radius: 50%; }
