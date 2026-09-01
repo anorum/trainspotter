@@ -122,7 +122,7 @@ Every JSON read endpoint sets `Cache-Control` with per-endpoint browser and edge
   The train sheet tiers rows by that flag: certified sessions as solid signals, uncertified runs as hollow-signal sightings with their evidence in the footer - so a train the lanes show is never missing from the sheet.
   The site ships a web-app manifest and icons (`web/public/manifest.webmanifest`), so a phone can install the board standalone on its home screen.
   Every page's head carries og/twitter meta and a canonical link over the 1200x630 share card (`web/public/icons/social-card.png`), built absolute from `site` in `web/astro.config.mjs` because social scrapers resolve no relative URLs - a pasted link unfurls as the crossing's own signal instead of a bare URL.
-  `web/public/offline.html` is a self-contained outage page (no stylesheet, script, font, or content image to fail alongside the origin) for Cloudflare to serve when the origin is unreachable.
+  `web/public/offline.html` is a self-contained outage page (no stylesheet, script, font, or content image to fail alongside the origin) for Cloudflare to serve when the origin is unreachable, wired in as the zone's custom 5xx page by `deploy/cloudflare/apply.sh`.
   `npm run check` typechecks under Astro strict and `npm test` runs those scenarios plus the other `web/src/lib` suites - among them `crossings.test.ts`, which pins the FEATURED presentation contract, and `analytics.test.ts`, which pins the outlook line and the day profile's prose; CI runs both for web changes.
 
 ### iPhone and Apple Watch apps (`apps/ios`)
@@ -180,6 +180,7 @@ Model weights never live in git; they ship through this prefix.
 ArgoCD tracks `main` and applies the service directories under `deploy/` - edit the repo, not the cluster.
 Cluster-wide platform (Kafka/Strimzi, Prometheus, ArgoCD itself) lives in the homelab repo; everything specific to PDX Train lives here under `deploy/`, next to what it deploys.
 Each service directory carries a base kustomization that lists its files explicitly, and [deploy/cloud/](../deploy/cloud/README.md) overlays those bases for the single cloud box; that overlay is synced by the cloud box's own ArgoCD, never the homelab's, and its README owns the deltas.
+The one `deploy/` directory outside ArgoCD is `deploy/cloudflare/`: `apply.sh` idempotently applies the zone's edge config through the Cloudflare API - the `/api/v1/*` cache rule that makes `cache_for`'s `s-maxage` matter, and `offline.html` as the custom 5xx page - run by hand with a scoped API token (never in git) and a `--dry-run` mode; its header owns the token scopes and the Always Online invariant.
 Images build per service on merge (QEMU arm64, GHCR, `:latest` + SHA tags); a new image reaches pods via rollout restart.
 All code changes go through the no-mistakes gate on a feature branch; nothing lands on main directly.
 

@@ -156,8 +156,9 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         phones becoming ten thousand requests.
 
         Cloudflare will not cache these extensionless paths on the header
-        alone - a cache rule over /api/v1/* has to make them eligible first -
-        but every URLSession and browser honours it today.
+        alone - the cache rule deploy/cloudflare/apply.sh applies over
+        /api/v1/* makes them eligible - and every URLSession and browser
+        honours the header directly.
         """
         return f"public, max-age={browser}, s-maxage={edge}"
 
