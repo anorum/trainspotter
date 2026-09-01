@@ -32,7 +32,7 @@ flowchart LR
     kafka -->|frames + observations<br/>+ sessions, tailed| api
     api --> pg
     s3 -->|frame images| api
-    api -->|pdxtrain.alexnorum.com<br/>blockade.home.alexnorum.com| browser[Browser<br/>board / sheet / patterns]
+    api -->|pdxtrain.com<br/>blockade.home.alexnorum.com| browser[Browser<br/>board / sheet / patterns]
     api -->|/api/v1/status| iphone[iPhone + Watch apps + widgets<br/>apps/ios]
 ```
 
@@ -121,6 +121,7 @@ Every JSON read endpoint sets `Cache-Control` with per-endpoint browser and edge
   That copy is pinned against the reducer's own scenarios in `scrub.test.ts`, so the two cannot drift silently.
   The train sheet tiers rows by that flag: certified sessions as solid signals, uncertified runs as hollow-signal sightings with their evidence in the footer - so a train the lanes show is never missing from the sheet.
   The site ships a web-app manifest and icons (`web/public/manifest.webmanifest`), so a phone can install the board standalone on its home screen.
+  Every page's head carries og/twitter meta and a canonical link over the 1200x630 share card (`web/public/icons/social-card.png`), built absolute from `site` in `web/astro.config.mjs` because social scrapers resolve no relative URLs - a pasted link unfurls as the crossing's own signal instead of a bare URL.
   `web/public/offline.html` is a self-contained outage page (no stylesheet, script, font, or content image to fail alongside the origin) for Cloudflare to serve when the origin is unreachable.
   `npm run check` typechecks under Astro strict and `npm test` runs those scenarios plus the other `web/src/lib` suites - among them `crossings.test.ts`, which pins the FEATURED presentation contract, and `analytics.test.ts`, which pins the outlook line and the day profile's prose; CI runs both for web changes.
 

@@ -67,9 +67,10 @@ whose id is not prefixed by its parent app's, which the simulator reports as
 - `Sources/App` - the SwiftUI app: the crossing on a muted dark map, its own
   flasher as the pin, and a Maps-style persistent sheet whose collapsed face
   is the aspect plaque - the glance stays primary. Pulled up, it shows the
-  exact camera frame the verdict came from (tap it for full screen) and the
+  exact camera frame the verdict came from (tap it for full screen), the
   train sheet (the dispatcher's record of every blockage, from
-  `/api/v1/sessions`). The camera
+  `/api/v1/sessions`), and at its foot the Siri phrase with its Shortcuts
+  escape hatch (step 7 above, otherwise undiscoverable). The camera
   position is state and the pin is a plain `Annotation`, so adding "you are
   here" later is `UserAnnotation()` plus a location-usage string.
 - `Sources/Shared/TrainSheetRow.swift` - one line of the train sheet, phone

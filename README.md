@@ -17,7 +17,7 @@ Decisions: [docs/adr/](docs/adr/).
 Original proposals, kept as history: [docs/history/](docs/history/).
 
 **Status: live.**
-Capturing six cameras continuously since 2026-08-08; the full pipeline - detection, sessions, the alert stream (published, no notifier yet), the web board, and the Postgres history store - runs on the k3s cluster and serves [pdxtrain.alexnorum.com](https://pdxtrain.alexnorum.com) publicly and blockade.home.alexnorum.com on the LAN.
+Capturing six cameras continuously since 2026-08-08; the full pipeline - detection, sessions, the alert stream (published, no notifier yet), the web board, and the Postgres history store - runs on k3s and serves [pdxtrain.com](https://pdxtrain.com) publicly and blockade.home.alexnorum.com on the LAN.
 The first per-camera trained classifier (12th & Clinton) is in production behind the auto router, and its improved history has been backfilled.
 
 **Built with AI - read accordingly.**
