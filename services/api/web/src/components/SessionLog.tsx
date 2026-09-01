@@ -100,7 +100,7 @@ export default function SessionLog() {
   }
 
   return (
-    <div class="sheet">
+    <div class={SOLO ? "sheet solo" : "sheet"}>
       {!SOLO && (
         <div class="filters" role="group" aria-label="Filter by crossing">
           {FILTERS.map((f) => (
@@ -264,9 +264,13 @@ const css = `
 
 .entry { border-bottom: 1px solid var(--hairline); }
 .row { display: grid; grid-template-columns: 14px minmax(9rem, max-content) 9ch 1fr 11ch; align-items: center; gap: 0.9rem; width: 100%; padding: 0.6rem 0.25rem; background: none; border: 0; color: var(--crossbuck); cursor: pointer; text-align: left; font-size: 1rem; }
+/* A solo site names its crossing in the head, so the name column holds only
+   the occasional "sighting" mark and sizes to it instead of to a name; the
+   min-height on .name below holds a row's height when it carries no mark. */
+.sheet.solo .row { grid-template-columns: 14px max-content 9ch 1fr 11ch; }
 .entry.open .row { background: var(--panel); }
 .aspect { width: 12px; height: 12px; border-radius: 50%; }
-.name { font-size: 1.15rem; }
+.name { font-size: 1.15rem; min-height: 1.4em; }
 .start, .dur { color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
 .dur { text-align: right; }
 .bar-lane { height: 6px; background: none; border-radius: 3px; overflow: hidden; }
@@ -295,6 +299,7 @@ const css = `
 
 @media (max-width: 640px) {
   .row { grid-template-columns: 12px 1fr 9ch 11ch; gap: 0.6rem; }
+  .sheet.solo .row { grid-template-columns: 12px max-content 9ch 1fr; }
   .bar-lane { display: none; }
 }
 `;

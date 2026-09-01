@@ -177,7 +177,7 @@ struct BoardView: View {
     private var snapshot: some View {
         if let observation = crossing?.latestObservation {
             VStack(alignment: .leading, spacing: 8) {
-                sectionLabel("FROM THE CAMERA")
+                SectionLabel("FROM THE CAMERA")
                 AsyncImage(url: BoardAPI.frameURL(observation.objectKey)) { phase in
                     switch phase {
                     case .success(let image):
@@ -219,18 +219,11 @@ struct BoardView: View {
     private var trainSheet: some View {
         if !sessions.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
-                sectionLabel("TRAIN SHEET")
+                SectionLabel("TRAIN SHEET")
                     .padding(.bottom, 4)
                 TrainSheetList(sessions: sessions)
             }
         }
-    }
-
-    private func sectionLabel(_ title: String) -> some View {
-        Text(title)
-            .font(.system(.footnote).width(.condensed))
-            .kerning(2)
-            .foregroundStyle(Theme.muted)
     }
 
     private var aspectWord: String {
@@ -345,10 +338,7 @@ struct FramePhotoView: View {
 struct AskSiriSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("ASK SIRI")
-                .font(.system(.footnote).width(.condensed))
-                .kerning(2)
-                .foregroundStyle(Theme.muted)
+            SectionLabel("ASK SIRI")
             Text("\u{201C}Hey Siri, PDX Train status\u{201D}")
                 .font(.callout)
             Text(
@@ -358,5 +348,19 @@ struct AskSiriSection: View {
             .font(.caption)
             .foregroundStyle(Theme.muted)
         }
+    }
+}
+
+/// The sheet's section eyebrow - condensed, spaced, muted - shared so every
+/// section is labelled the same way.
+struct SectionLabel: View {
+    let title: String
+    init(_ title: String) { self.title = title }
+
+    var body: some View {
+        Text(title)
+            .font(.system(.footnote).width(.condensed))
+            .kerning(2)
+            .foregroundStyle(Theme.muted)
     }
 }
