@@ -12,6 +12,10 @@ interface Props {
 }
 
 const { title, description, active } = Astro.props;
+// Absolute, because a link pasted into a message is read by a scraper that
+// has no page to resolve a relative path against.
+const canonical = new URL(Astro.url.pathname, Astro.site);
+const card = new URL("/icons/social-card.png", Astro.site);
 ---
 
 <!doctype html>
@@ -24,6 +28,22 @@ const { title, description, active } = Astro.props;
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" type="image/png" sizes="48x48" href="/icons/favicon-48.png" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="canonical" href={canonical} />
+    {/* The link is the distribution: pasted into a message it should arrive
+        as the crossing's own signal, not a bare URL. */}
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="PDX Train" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={card} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="PDX Train - a grade-crossing flasher, one lamp burning red" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={card} />
     <meta name="theme-color" content="#0e141c" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />

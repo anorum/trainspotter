@@ -132,6 +132,7 @@ struct BoardView: View {
                 plaque
                 snapshot
                 trainSheet
+                AskSiriSection()
             }
             .padding(.horizontal, 24)
             .padding(.top, 18)
@@ -330,5 +331,32 @@ struct FramePhotoView: View {
             }
         }
         .onTapGesture { dismiss() }
+    }
+}
+
+
+/// The one thing about this app nobody finds on their own.
+///
+/// Apple requires the app's name inside a built-in phrase, which is why the
+/// spoken form is stiff; a Shortcut the reader names themselves carries no
+/// such rule. This is the only place a person would learn that, and it sits
+/// at the foot of the sheet because it answers a question asked after the
+/// crossing's, never instead of it.
+struct AskSiriSection: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("ASK SIRI")
+                .font(.system(.footnote).width(.condensed))
+                .kerning(2)
+                .foregroundStyle(Theme.muted)
+            Text("\u{201C}Hey Siri, PDX Train status\u{201D}")
+                .font(.callout)
+            Text(
+                "For a phrase of your own, add the \u{201C}Check the crossing\u{201D} "
+                    + "action in Shortcuts and name it anything."
+            )
+            .font(.caption)
+            .foregroundStyle(Theme.muted)
+        }
     }
 }
