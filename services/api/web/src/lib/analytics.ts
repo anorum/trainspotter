@@ -53,9 +53,10 @@ export function hourOfDay(a: CrossingAnalytics): HourSlot[] {
   return day;
 }
 
-/** Blocked share of the scoreable checks in a slot. Internal: callers want
- * worstHours() or bestHours() for the prose, not the raw ratio. */
-function share(slot: HourSlot): number {
+/** Blocked share of the scoreable checks in a slot. The prose callers here
+ * reach for worstHours() or bestHours() instead; the day profile draws the
+ * raw ratio, and must draw the same one this file reasons about. */
+export function share(slot: HourSlot): number {
   return slot.scoreable ? slot.blocked / slot.scoreable : 0;
 }
 

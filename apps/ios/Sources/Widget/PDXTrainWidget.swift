@@ -37,9 +37,6 @@ struct WidgetView: View {
     let entry: AspectEntry
     @Environment(\.widgetFamily) private var family
 
-    private var color: Color { Theme.aspectColor(entry.aspect, stale: entry.stale) }
-    private var word: String { Theme.aspectWord(entry.aspect, stale: entry.stale) }
-
     var body: some View {
         switch family {
         case .accessoryCircular:
@@ -55,7 +52,7 @@ struct WidgetView: View {
         case .accessoryRectangular:
             VStack(alignment: .leading, spacing: 2) {
                 Text("12TH & CLINTON").font(.caption2.weight(.semibold))
-                Text(word).font(.headline)
+                Text(entry.word).font(.headline)
                 if let since = entry.blockedSince {
                     Text(since, style: .relative).font(.caption2)
                 }
@@ -66,9 +63,9 @@ struct WidgetView: View {
         default:
             VStack(spacing: 10) {
                 Flasher(aspect: entry.aspect, stale: entry.stale, lampSize: 16)
-                Text(word)
+                Text(entry.word)
                     .font(.system(.title2, weight: .bold).width(.condensed))
-                    .foregroundStyle(color)
+                    .foregroundStyle(entry.color)
                     .minimumScaleFactor(0.6)
                     .lineLimit(1)
                 if let since = entry.blockedSince {
@@ -92,16 +89,13 @@ struct WidgetView: View {
 struct MediumWidgetView: View {
     let entry: AspectEntry
 
-    private var color: Color { Theme.aspectColor(entry.aspect, stale: entry.stale) }
-    private var word: String { Theme.aspectWord(entry.aspect, stale: entry.stale) }
-
     var body: some View {
         HStack(spacing: 18) {
             VStack(spacing: 8) {
                 Flasher(aspect: entry.aspect, stale: entry.stale, lampSize: 18)
-                Text(word)
+                Text(entry.word)
                     .font(.system(.title2, weight: .bold).width(.condensed))
-                    .foregroundStyle(color)
+                    .foregroundStyle(entry.color)
                     .minimumScaleFactor(0.6)
                     .lineLimit(1)
             }

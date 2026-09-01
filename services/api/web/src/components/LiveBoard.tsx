@@ -20,6 +20,7 @@ import {
   COLORS,
   crossingLabel,
   type CrossingId,
+  CROSSING_NOUN,
   FEATURED,
   featuredOnly,
   GEOMETRY,
@@ -28,10 +29,10 @@ import {
   SOLO,
   type State,
 } from "../lib/crossings";
-import CrossingMap from "./CrossingMap";
 import { type FeedHealth, feedNote } from "../lib/feed";
 import { blockedSpans, stateAt, withTimes, type TimelineObs } from "../lib/scrub";
 import { formatMinute, formatTime } from "../lib/time";
+import CrossingMap from "./CrossingMap";
 
 interface CameraInfo {
   camera_id: string;
@@ -341,6 +342,7 @@ export default function LiveBoard() {
   const note = feedNote(status?.feed);
   const now = Date.now();
   const windowStart = now - windowHours * 3600 * 1000;
+  const windowSpan = now - windowStart;
   const lanes = FEATURED.map((id) =>
     laneSpans[id]
       .map(([a, b]) => [a, Math.min(b, now)] as [number, number])
@@ -355,7 +357,7 @@ export default function LiveBoard() {
       <div
         class="board-map"
         role="region"
-        aria-label={SOLO ? "Map of the crossing" : "Map of the crossings"}
+        aria-label={`Map of the ${CROSSING_NOUN}`}
       >
         <CrossingMap
           states={Object.fromEntries(
@@ -401,12 +403,15 @@ export default function LiveBoard() {
           <div class="lanes" aria-hidden="true">
             {lanes.map((intervals) => (
               <div class="lane">
-                {intervals.map(([a, b]) => (
-                  <span
-                    class="blocked-seg"
-                    style={`left:${(100 * (Math.max(a, windowStart) - windowStart)) / (now - windowStart)}%;width:${Math.max(0.4, (100 * (Math.min(b, now) - Math.max(a, windowStart))) / (now - windowStart))}%`}
-                  />
-                ))}
+                {/* The end was clamped to now when the lanes were built; the
+                    start clamps to the window here. The 0.4% floor keeps a
+                    one-frame train from drawing as nothing at all. */}
+                {intervals.map(([a, b]) => {
+                  const from = Math.max(a, windowStart);
+                  const left = (100 * (from - windowStart)) / windowSpan;
+                  const width = Math.max(0.4, (100 * (b - from)) / windowSpan);
+                  return <span class="blocked-seg" style={`left:${left}%;width:${width}%`} />;
+                })}
               </div>
             ))}
           </div>
@@ -455,7 +460,7 @@ export default function LiveBoard() {
           const Row = SOLO ? "div" : "button";
           return (
             <Row
-              class={`row ${!SOLO && selected === c.crossing_id ? "chosen" : ""}`}
+              class={!SOLO && selected === c.crossing_id ? "row chosen" : "row"}
               style={SOLO ? "cursor: default" : undefined}
               onClick={SOLO ? undefined : () => setSelected(c.crossing_id)}
             >
@@ -511,17 +516,11 @@ export default function LiveBoard() {
               <p class="data ticker">
                 Blocked for {duration(chosen.open_session.started_at)}
               </p>
-              {(() => {
-                // The record answers the question the ticker raises.
-                const a = analytics?.crossings[chosen.crossing_id];
-                const line =
-                  a &&
-                  waitOutlook(
-                    a.durations_seconds,
-                    (Date.now() - new Date(chosen.open_session.started_at).getTime()) / 1000,
-                  );
-                return line ? <p class="data outlook">{line}</p> : null;
-              })()}
+              <Outlook
+                crossingId={chosen.crossing_id}
+                startedAt={chosen.open_session.started_at}
+                analytics={analytics}
+              />
             </>
           )}
           {chosen.latest_observation && (
@@ -564,6 +563,22 @@ export default function LiveBoard() {
       <style>{css}</style>
     </div>
   );
+}
+
+/** The record answers the question the ticker raises: how much longer. */
+function Outlook({
+  crossingId,
+  startedAt,
+  analytics,
+}: {
+  crossingId: string;
+  startedAt: string;
+  analytics: AnalyticsResponse | null;
+}) {
+  const a = analytics?.crossings[crossingId];
+  const line =
+    a && waitOutlook(a.durations_seconds, (Date.now() - new Date(startedAt).getTime()) / 1000);
+  return line ? <p class="data outlook">{line}</p> : null;
 }
 
 /** The crossing's habit at a glance: one summary line, and the way through to
@@ -614,8 +629,6 @@ function duration(startIso: string): string {
 }
 
 const css = `
-
-
 .scrub { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; padding: 0.5rem 0 1rem; }
 .scrub .track { flex: 1; min-width: 0; }
 .scrub input { width: 100%; display: block; accent-color: var(--signal-amber); }
@@ -684,11 +697,10 @@ button.row:not(.chosen):hover { background: color-mix(in srgb, var(--panel) 60%,
 .detail .close { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 1rem; }
 .detail .ticker { color: var(--signal-red); font-size: 1.1rem; margin: 0.5rem 0 0; }
 .detail .outlook { color: var(--muted); margin: 0.15rem 0 0; }
-.detail .reason { color: var(--muted); margin: 0.35rem 0 0; font-size: 0.9rem; }
 .detail .judged { margin: 0.45rem 0 0; }
 .detail .judged summary { color: var(--muted); font-size: 0.85rem; cursor: pointer; }
 .detail .judged summary::marker { color: var(--hairline); }
-.detail .judged .reason { margin: 0.3rem 0 0; }
+.detail .judged .reason { color: var(--muted); margin: 0.3rem 0 0; font-size: 0.9rem; }
 .habits { margin-top: 0.75rem; }
 .habit-line { color: var(--muted); font-size: 0.85rem; margin: 0 0 0.4rem; }
 .habit-line a { color: var(--signal-amber); }

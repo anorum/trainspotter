@@ -11,10 +11,10 @@
  * surfaces that must agree about which cell is the current one.
  */
 
-export const LOCALE = "en-US";
+const LOCALE = "en-US";
 
 /** Server-shipped corridor timezone, with the same fallback everywhere. */
-export const DEFAULT_LOCAL_TZ = "America/Los_Angeles";
+const DEFAULT_LOCAL_TZ = "America/Los_Angeles";
 
 export const formatTime = (iso: string): string =>
   new Date(iso).toLocaleTimeString(LOCALE);

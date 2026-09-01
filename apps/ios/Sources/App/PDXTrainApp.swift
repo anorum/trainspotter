@@ -52,7 +52,7 @@ struct BoardView: View {
 
     private var stale: Bool {
         guard let status, let crossing else { return false }
-        return crossing.stale || status.agedOut(at: now)
+        return status.isStale(crossing, at: now)
     }
 
     private var blocked: Bool {
@@ -87,6 +87,8 @@ struct BoardView: View {
         Map(position: $camera) {
             Annotation("12th & Clinton", coordinate: Crossing.clinton, anchor: .center) {
                 crossingPin
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("12th and Clinton, \(aspectWord.lowercased())")
             }
             .annotationTitles(.hidden)
         }
@@ -133,6 +135,7 @@ struct BoardView: View {
                 snapshot
                 trainSheet
                 AskSiriSection()
+                Credits()
             }
             .padding(.horizontal, 24)
             .padding(.top, 18)
@@ -181,23 +184,13 @@ struct BoardView: View {
                 AsyncImage(url: BoardAPI.frameURL(observation.objectKey)) { phase in
                     switch phase {
                     case .success(let image):
-                        image.resizable().aspectRatio(contentMode: .fit)
+                        CameraFrame(image: image)
                     case .failure:
                         // Honest failure beats an eternal spinner; the next
                         // observation brings a new URL and a fresh attempt.
-                        frameShape
-                            .fill(Theme.panel)
-                            .aspectRatio(4 / 3, contentMode: .fit)
-                            .overlay {
-                                Text("The picture did not arrive.")
-                                    .font(.footnote)
-                                    .foregroundStyle(Theme.muted)
-                            }
+                        framePlaceholder { FrameUnavailable() }
                     default:
-                        frameShape
-                            .fill(Theme.panel)
-                            .aspectRatio(4 / 3, contentMode: .fit)
-                            .overlay(ProgressView().tint(Theme.muted))
+                        framePlaceholder { ProgressView().tint(Theme.muted) }
                     }
                 }
                 .clipShape(frameShape)
@@ -212,6 +205,15 @@ struct BoardView: View {
                 FrameCaption(observation: observation)
             }
         }
+    }
+
+    /// A stand-in the exact shape and size of the frame it stands in for, so
+    /// the sheet does not reflow when the picture finally lands.
+    private func framePlaceholder(@ViewBuilder _ content: () -> some View) -> some View {
+        frameShape
+            .fill(Theme.panel)
+            .aspectRatio(4 / 3, contentMode: .fit)
+            .overlay(content())
     }
 
     /// The dispatcher's record: every blockage, newest first.
@@ -234,7 +236,7 @@ struct BoardView: View {
     @ViewBuilder
     private var ticker: some View {
         if let crossing {
-            if blocked, let started = crossing.openSession?.startedAt ?? crossing.since {
+            if blocked, let started = crossing.blockedSince {
                 Text("Blocked for \(started, style: .relative)")
                     .font(tickerFont)
                     .foregroundStyle(Theme.red)
@@ -286,6 +288,32 @@ struct BoardView: View {
     }
 }
 
+/// The picture itself, shown the same way in the sheet and full screen -
+/// down to the words a screen reader hears in place of it.
+struct CameraFrame: View {
+    let image: Image
+
+    var body: some View {
+        // AsyncImage's Image is decorative to VoiceOver, so a label alone is
+        // never spoken; make the frame its own element and call it a picture.
+        image.resizable()
+            .aspectRatio(contentMode: .fit)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Camera picture of the crossing")
+            .accessibilityAddTraits(.isImage)
+    }
+}
+
+/// The words for a picture that did not arrive, shared so the small frame
+/// and the full-screen one say the same thing.
+struct FrameUnavailable: View {
+    var body: some View {
+        Text("The picture did not arrive.")
+            .font(.footnote)
+            .foregroundStyle(Theme.muted)
+    }
+}
+
 /// A frame's provenance - which camera, and when - shown wherever the
 /// picture is.
 struct FrameCaption: View {
@@ -311,11 +339,9 @@ struct FramePhotoView: View {
                 AsyncImage(url: BoardAPI.frameURL(observation.objectKey)) { phase in
                     switch phase {
                     case .success(let image):
-                        image.resizable().aspectRatio(contentMode: .fit)
+                        CameraFrame(image: image)
                     case .failure:
-                        Text("The picture did not arrive.")
-                            .font(.footnote)
-                            .foregroundStyle(Theme.muted)
+                        FrameUnavailable()
                     default:
                         ProgressView().tint(Theme.muted)
                     }
@@ -326,7 +352,6 @@ struct FramePhotoView: View {
         .onTapGesture { dismiss() }
     }
 }
-
 
 /// The one thing about this app nobody finds on their own.
 ///
@@ -362,5 +387,18 @@ struct SectionLabel: View {
             .font(.system(.footnote).width(.condensed))
             .kerning(2)
             .foregroundStyle(Theme.muted)
+    }
+}
+
+/// The site's footer, carried into the app: whose cameras these are, and
+/// what the answer is and is not.
+struct Credits: View {
+    var body: some View {
+        Text(
+            "Pictures are public traffic cameras run by ODOT and PBOT. "
+                + "States are automated estimates, not official information."
+        )
+        .font(.caption2)
+        .foregroundStyle(Theme.muted)
     }
 }
