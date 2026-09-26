@@ -27,9 +27,14 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 import yaml
-from blockade.alerts import Alert
+from blockade.alerts import ALERT_ID_NAMESPACE, Alert
 from blockade.config import REPO_ROOT, Settings
-from blockade.schemas import BlockageSession, CrossingState, ObservationRecord
+from blockade.schemas import (
+    BlockageSession,
+    CrossingState,
+    ObservationRecord,
+    make_deterministic_id,
+)
 from blockade.sessions import derive_sessions
 from sessionizer.runner import ALERT_FRESHNESS, OUT_OF_ORDERNESS, Processor, app, run_loop
 from typer.testing import CliRunner
@@ -342,8 +347,10 @@ class DyingTailer(FakeTailer):
     handed back rather than going round again to find the head.
     """
 
-    def __init__(self, batches: list[list[FakeMessage]], stop: asyncio.Event) -> None:
-        super().__init__(batches, caught_up=False)
+    def __init__(
+        self, batches: list[list[FakeMessage]], stop: asyncio.Event, caught_up: bool = False
+    ) -> None:
+        super().__init__(batches, caught_up=caught_up)
         self._stop = stop
 
     async def get_batch(self, timeout_ms: int = 1000):
@@ -432,6 +439,23 @@ async def test_loop_produces_sessions_keyed_by_session_id_and_skips_poison() -> 
 
 
 @pytest.mark.asyncio
+async def test_alert_payload_round_trips_a_stable_alert_id() -> None:
+    """The wire payload carries alert_id, derived the same deterministic way
+    session_id is, so a replayed rising edge for the same blockage carries an
+    id a future notifier can dedupe on."""
+    batch = messages([obs(m, CrossingState.BLOCKED) for m in range(0, 9, 3)])
+    producer = FakeProducer()
+    settings = Settings(kafka_bootstrap="test:9092")
+    await drain(FakeTailer([batch, []]), producer, FakeProgress(), settings)
+
+    alerts = produced(producer, settings.kafka_alerts_topic)
+    assert len(alerts) == 1
+    started_at = datetime.fromisoformat(alerts[0]["started_at"])
+    expected_id = make_deterministic_id(ALERT_ID_NAMESPACE, alerts[0]["crossing_id"], started_at)
+    assert alerts[0]["alert_id"] == expected_id
+
+
+@pytest.mark.asyncio
 async def test_the_batch_that_crosses_the_head_is_still_replay() -> None:
     """The last replayed batch must not page. Both crossings below carry an
     equally ancient rising edge; the only difference is that one arrived in the
@@ -499,6 +523,20 @@ async def test_a_fresh_group_republishes_no_history() -> None:
     assert [(s["crossing_id"], s["is_open"]) for s in sessions] == [("SE_8TH_DIVISION", False)]
 
 
+async def _die_mid_drain(backlog, settings, caught_up=False):
+    """Run one life over the backlog and kill it before it reaches the head."""
+    life, producer, killed = FakeProgress(), FakeProducer(), asyncio.Event()
+    await run_loop(
+        DyingTailer([backlog[:4], backlog[4:]], killed, caught_up=caught_up),  # type: ignore[arg-type]
+        producer,  # type: ignore[arg-type]
+        Processor(),
+        life,  # type: ignore[arg-type]
+        settings,
+        killed,
+    )
+    return life, producer
+
+
 @pytest.mark.asyncio
 async def test_a_life_that_dies_mid_drain_leaves_its_work_to_be_redone() -> None:
     """What the committed offset has to mean, and why it moves only at the head.
@@ -519,17 +557,7 @@ async def test_a_life_that_dies_mid_drain_leaves_its_work_to_be_redone() -> None
     backlog = messages(train + afterwards)
     settings = Settings(kafka_bootstrap="test:9092")
 
-    life1 = FakeProgress()
-    doomed = FakeProducer()
-    killed = asyncio.Event()
-    await run_loop(
-        DyingTailer([backlog[:4], backlog[4:]], killed),  # type: ignore[arg-type]
-        doomed,  # type: ignore[arg-type]
-        Processor(),
-        life1,  # type: ignore[arg-type]
-        settings,
-        killed,
-    )
+    life1, doomed = await _die_mid_drain(backlog, settings)
     opens = produced(doomed, settings.kafka_sessions_topic)
     assert opens and all(s["is_open"] for s in opens), "life 1 announced only opens"
 
@@ -542,3 +570,38 @@ async def test_a_life_that_dies_mid_drain_leaves_its_work_to_be_redone() -> None
     assert all(s["is_open"] for s in sessions[:-1])
     assert life1.committed is None, "a drain that never reached the head finished nothing"
     assert life2.committed == len(backlog)
+
+
+@pytest.mark.asyncio
+async def test_a_life_that_dies_mid_drain_redoes_its_alert_too() -> None:
+    """The same crash as above, on a backlog fresh enough that the rising edge
+    is not held back by ALERT_FRESHNESS -- unlike T0 above, which real wall
+    clock has long since aged past that window.
+
+    Life 1 fires the alert and dies before it can commit; life 2's boundary
+    is therefore 0, so it replays the whole backlog as live and re-fires the
+    same rising edge. Whoever holds a pager must see the same alert_id twice,
+    not two different ones for one train."""
+    now = datetime.now(UTC)
+
+    def fresh(minute: float, state: CrossingState) -> ObservationRecord:
+        captured_at = now + timedelta(minutes=minute)
+        return obs(minute, state).model_copy(update={"captured_at": captured_at})
+
+    train = [fresh(m, CrossingState.BLOCKED) for m in range(0, 9, 3)]
+    afterwards = [fresh(m, CrossingState.CLEAR) for m in range(9, 93, 3)]
+    backlog = messages(train + afterwards)
+    settings = Settings(kafka_bootstrap="test:9092")
+
+    life1, doomed = await _die_mid_drain(backlog, settings, caught_up=True)
+    alerts1 = produced(doomed, settings.kafka_alerts_topic)
+    assert len(alerts1) == 1, "the second BLOCKED confirmation (m=3) fires the rising edge"
+    assert life1.committed is None, "a drain that never reached the head finished nothing"
+
+    life2 = FakeProgress(boundary=life1.committed or 0)
+    reborn = FakeProducer()
+    await drain(FakeTailer([backlog, []]), reborn, life2, settings)
+
+    alerts2 = produced(reborn, settings.kafka_alerts_topic)
+    assert len(alerts2) == 1, "life 2 redoes the alert life 1 already fired"
+    assert alerts2[0]["alert_id"] == alerts1[0]["alert_id"]

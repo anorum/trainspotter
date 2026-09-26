@@ -146,6 +146,30 @@ class ObservationRecord(BaseRecord):
         return self.state is not CrossingState.UNKNOWN
 
 
+def make_deterministic_id(namespace: str, crossing_id: str, started_at: datetime) -> str:
+    """The shared hash behind every deterministic id in the pipeline.
+
+    ``namespace`` is a discriminator baked into the seed ahead of
+    ``crossing_id`` -- empty for ``session_id``, so every session id already
+    minted stays byte-identical, and something like ``"alert|"`` for the
+    alert branch, so an alert and a session for the same crossing and instant
+    hash to different ids by construction rather than by accident of policy
+    (e.g. a confirmation count that happens to move the timestamp).
+
+    Normalised to UTC before hashing: a naive or local-time input would make
+    the id depend on the machine that computed it, so a replay on a
+    differently configured host would mint new ids for records that already
+    exist.
+    """
+    if started_at.tzinfo is None:
+        raise ValueError(
+            "started_at must be timezone-aware; a naive datetime yields an "
+            "unstable id that depends on the host's local timezone"
+        )
+    seed = f"{namespace}{crossing_id}|{started_at.astimezone(UTC).isoformat()}"
+    return hashlib.sha256(seed.encode()).hexdigest()[:32]
+
+
 class BlockageSession(BaseRecord):
     """``blockage_sessions`` -- the analytical core. Phase 2 SessionJob output."""
 
@@ -171,15 +195,5 @@ class BlockageSession(BaseRecord):
         closes. Every downstream consumer -- API, MQTT, future notifier -- uses it
         for idempotency, so an unstable ID means duplicate alerts and broken
         upserts on replay. The original design flagged this as expensive to retrofit.
-
-        Normalised to UTC before hashing: a naive or local-time input would make the
-        ID depend on the machine that computed it, so a replay on a differently
-        configured host would mint new IDs for sessions that already exist.
         """
-        if started_at.tzinfo is None:
-            raise ValueError(
-                "started_at must be timezone-aware; a naive datetime yields an "
-                "unstable session_id that depends on the host's local timezone"
-            )
-        seed = f"{crossing_id}|{started_at.astimezone(UTC).isoformat()}"
-        return hashlib.sha256(seed.encode()).hexdigest()[:32]
+        return make_deterministic_id("", crossing_id, started_at)

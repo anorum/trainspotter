@@ -151,10 +151,15 @@ Schema is `CREATE TABLE IF NOT EXISTS` on API start - at this scale a migration 
 | `crossing.frames.v1` | camera_id | poller outbox | detector, api tailer | at-least-once; payload is the manifest line, byte for byte |
 | `crossing.observations.v1` | crossing_id | detector | sessionizer, api tailer | at-least-once; 7-day retention; the dataset's live edge |
 | `crossing.sessions.v1` | session_id | sessionizer | api tailer, api materializer | compacted; one row per session survives, the latest emission |
-| `crossing.alerts.v1` | crossing_id | sessionizer | none yet | rising edges only; the future notifier's feed |
+| `crossing.alerts.v1` | crossing_id | sessionizer | none yet | rising edges only, not compacted; the future notifier's feed |
 
 Keys are an ordering contract: all records for one key land on one partition, which is the only reason a consumer may assume per-camera or per-crossing order.
 Producers use acks=all and idempotence; consumers commit offsets only after their output is durable.
+
+Unlike sessions, alerts have no upsert to absorb a replay, so a crash-then-replay past the last committed boundary re-emits every alert since as a new record.
+Each `Alert` carries a deterministic `alert_id`, namespaced apart from `session_id`, so a replayed alert keeps its id.
+It is the idempotency key the planned notifier must dedupe on before paging.
+The topic stays keyed by `crossing_id` deliberately, because keying by `alert_id` would give up the per-crossing ordering guarantee above for a notifier that has not shipped yet.
 
 ### Postgres tables
 

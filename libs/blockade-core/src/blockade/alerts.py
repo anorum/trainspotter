@@ -14,7 +14,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
-from blockade.schemas import CrossingState, ObservationRecord
+from blockade.schemas import CrossingState, ObservationRecord, make_deterministic_id
+
+ALERT_ID_NAMESPACE = "alert|"
+"""Separates alert ids from session ids; see `make_deterministic_id`."""
 
 
 @dataclass(frozen=True)
@@ -71,6 +74,8 @@ class Alert:
     started_at: datetime
     confidence: float
     reason: str
+    alert_id: str
+    """Stable across a replay, so the future notifier can dedupe on it."""
 
 
 @dataclass
@@ -115,6 +120,9 @@ class RisingEdgeAlerter:
                 started_at=obs.captured_at,
                 confidence=obs.confidence,
                 reason=obs.reason,
+                alert_id=make_deterministic_id(
+                    ALERT_ID_NAMESPACE, obs.crossing_id, obs.captured_at
+                ),
             )
 
         state.clear_streak += 1
