@@ -244,6 +244,7 @@ def _alert_payload(alert: Alert) -> bytes:
             "started_at": alert.started_at.isoformat(),
             "confidence": alert.confidence,
             "reason": alert.reason,
+            "alert_id": alert.alert_id,
         }
     ).encode()
 

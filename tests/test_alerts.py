@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from blockade.alerts import AlertPolicy, RisingEdgeAlerter
-from blockade.schemas import CrossingState, ObservationRecord
+from blockade.schemas import BlockageSession, CrossingState, ObservationRecord
 
 START = datetime(2026, 8, 9, 18, 56, tzinfo=UTC)
 
@@ -112,6 +112,42 @@ def test_clearing_needs_more_confirmation_than_alerting():
     policy = AlertPolicy()
 
     assert policy.clear_confirmations > policy.confirmations
+
+
+def test_replayed_alert_carries_the_same_id():
+    """A crash-then-replay re-emits the same rising edge: the alert_id must
+    match so a consumer downstream (the future notifier) can dedupe it, exactly
+    the guarantee session_id gives sessions."""
+    first = run(RisingEdgeAlerter(), [obs(0), obs(2)])
+    replayed = run(RisingEdgeAlerter(), [obs(0), obs(2)])
+
+    assert len(first) == len(replayed) == 1
+    assert first[0].alert_id == replayed[0].alert_id
+
+
+def test_alert_id_differs_by_crossing_and_start():
+    """Different blockages -- different crossing, or the same crossing at a
+    different time -- must not collide."""
+    base = run(RisingEdgeAlerter(), [obs(0), obs(2)])
+    same_crossing_later = run(RisingEdgeAlerter(), [obs(60), obs(62)])
+    other_crossing = [obs(0, crossing="SE_11TH_MILWAUKIE"), obs(2, crossing="SE_11TH_MILWAUKIE")]
+    same_start_other_crossing = run(RisingEdgeAlerter(), other_crossing)
+
+    ids = {base[0].alert_id, same_crossing_later[0].alert_id, same_start_other_crossing[0].alert_id}
+    assert len(ids) == 3
+
+
+def test_alert_id_never_collides_with_a_session_id():
+    """alert_id and session_id hash the same crossing_id and timestamp; only a
+    namespace discriminator keeps them apart, not an accident of policy. With
+    confirmations=1 the alert's started_at is the session's started_at too --
+    exactly the case that used to hide behind the default confirmations=2 --
+    so this is the case that would collide were the discriminator dropped."""
+    alerts = run(RisingEdgeAlerter(AlertPolicy(confirmations=1)), [obs(0)])
+
+    assert len(alerts) == 1
+    would_be_session_id = BlockageSession.make_session_id("SE_12TH_CLINTON", alerts[0].started_at)
+    assert alerts[0].alert_id != would_be_session_id
 
 
 def test_a_stream_of_unknowns_is_silence_not_hearing():
