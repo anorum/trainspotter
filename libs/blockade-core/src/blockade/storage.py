@@ -16,6 +16,7 @@ import gzip
 import hashlib
 import logging
 import time
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
@@ -72,6 +73,12 @@ def frame_time(name: str | Path) -> datetime:
     in one."""
     stem = str(name).rsplit("/", 1)[-1].split(".", 1)[0]
     return datetime.fromtimestamp(int(stem.split("-")[0]) / 1000, tz=UTC)
+
+
+def frame_key_camera(key: str) -> str:
+    """Camera id parsed back out of a frame key (the inverse of the camera
+    segment ``frame_key_prefix`` writes)."""
+    return key.split("/")[1]
 
 
 def manifest_key(camera_id: str, captured_at: datetime) -> str:
@@ -148,17 +155,31 @@ class LocalFrameCache:
         tmp.replace(path)
         return path
 
-    def sweep(self) -> int:
-        """Delete cached frames past the TTL. Returns the number removed."""
+    def expired_keys(self) -> list[str]:
+        """Keys of cached frames past the TTL, without deleting anything.
+
+        Lets a caller confirm just these against S3 before ``remove``, so that
+        check scales with what is expiring rather than with the whole corpus.
+        """
         if not self._root.exists():
-            return 0
+            return []
         cutoff = time.time() - self._ttl_seconds
-        removed = 0
+        keys = []
         for path in self._root.rglob("*.jpg"):
             try:
                 if path.stat().st_mtime < cutoff:
-                    path.unlink()
-                    removed += 1
+                    keys.append(str(path.relative_to(self._root)))
+            except FileNotFoundError:
+                continue
+        return keys
+
+    def remove(self, keys: Iterable[str]) -> int:
+        """Delete these cached frames. Returns the number removed."""
+        removed = 0
+        for key in keys:
+            try:
+                self.path_for(key).unlink()
+                removed += 1
             except FileNotFoundError:
                 continue
         return removed

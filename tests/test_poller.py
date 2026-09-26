@@ -23,6 +23,7 @@ from poller.poller import FramePoller
 from prometheus_client import REGISTRY
 
 from tests.conftest import JPEG_A, JPEG_B
+from tests.test_sync import FakeStore
 
 IMAGE_URL = "https://tripcheck.example/cams/1234.jpg"
 
@@ -233,6 +234,187 @@ async def test_cache_is_never_swept_without_a_durable_copy(
     await asyncio.wait_for(poller._sweep_cache_periodically(), timeout=1.0)
 
     assert path.exists(), "a frame with no second copy must never be deleted"
+
+
+@respx.mock
+async def test_frame_with_failed_upload_survives_the_ttl_sweep(
+    settings, camera, client, cache, manifest
+):
+    """A failed S3 put leaves a frame local-only. Sweeping it by age alone
+    would destroy the only copy once an outage outlives the TTL."""
+    store = FakeStore()
+    poller, record, path = await _stranded_frame(settings, camera, client, cache, manifest, store)
+
+    await poller._repair_and_sweep()
+
+    assert path.exists(), "a frame never confirmed in S3 must survive the sweep"
+    labels = {"camera_id": camera.camera_id}
+    assert REGISTRY.get_sample_value("blockade_frames_pending_upload", labels) == 1.0
+
+
+@respx.mock
+async def test_frame_is_reuploaded_automatically_then_swept_once_confirmed(
+    settings, camera, client, cache, manifest
+):
+    """Once S3 recovers, the sweep re-uploads the stranded frame itself and
+    only then reclaims the local copy, with no manual `blockade-sync`."""
+    store = FakeStore()
+    poller, record, path = await _stranded_frame(settings, camera, client, cache, manifest, store)
+
+    _recover(store)  # S3 recovers
+    await poller._repair_and_sweep()
+
+    assert record.object_key in store.objects, "the stranded frame must be retried automatically"
+    assert not path.exists(), "now confirmed in S3, the expired local copy can go"
+    labels = {"camera_id": camera.camera_id}
+    assert REGISTRY.get_sample_value("blockade_frames_pending_upload", labels) == 0.0
+
+
+@respx.mock
+async def test_pending_upload_gauge_clears_on_the_next_cycle(
+    settings, camera, client, cache, manifest
+):
+    """The gauge reflects this cycle's count, so a resolved stuck frame stops
+    alerting."""
+    store = FakeStore()
+    poller, record, path = await _stranded_frame(settings, camera, client, cache, manifest, store)
+
+    await poller._repair_and_sweep()
+    labels = {"camera_id": camera.camera_id}
+    assert REGISTRY.get_sample_value("blockade_frames_pending_upload", labels) == 1.0
+
+    _recover(store)  # S3 recovers
+    await poller._repair_and_sweep()
+
+    assert REGISTRY.get_sample_value("blockade_frames_pending_upload", labels) == 0.0
+    assert not path.exists()
+
+
+@respx.mock
+async def test_pending_upload_gauge_clears_with_no_candidates_at_all(
+    settings, camera, client, cache, manifest
+):
+    """A cycle with nothing expired still resets the gauge, so a stuck frame
+    resolved out-of-band does not leave a stale alert."""
+    store = FakeStore()
+    poller, record, path = await _stranded_frame(settings, camera, client, cache, manifest, store)
+    await poller._repair_and_sweep()
+    labels = {"camera_id": camera.camera_id}
+    assert REGISTRY.get_sample_value("blockade_frames_pending_upload", labels) == 1.0
+
+    path.unlink()  # resolved out-of-band; no longer a candidate at all
+    await poller._repair_and_sweep()
+
+    assert REGISTRY.get_sample_value("blockade_frames_pending_upload", labels) == 0.0
+
+
+@respx.mock
+async def test_pending_upload_gauge_survives_a_listing_failure(
+    settings, camera, client, cache, manifest
+):
+    """A candidate counts as pending from the moment it is found expired, not
+    only once a failed put is caught -- so a cycle where list_keys itself
+    raises (S3 unreachable, not merely rejecting the upload) must not reset
+    the gauge to all-clear while the frame is still stuck on disk."""
+
+    class FlakyListStore(FakeStore):
+        list_should_fail = False
+
+        def list_keys(self, prefix):
+            if self.list_should_fail:
+                raise RuntimeError("S3 list unavailable")
+            return super().list_keys(prefix)
+
+    store = FlakyListStore()
+    poller, record, path = await _stranded_frame(settings, camera, client, cache, manifest, store)
+    labels = {"camera_id": camera.camera_id}
+
+    await poller._repair_and_sweep()  # cycle N: put fails
+    assert REGISTRY.get_sample_value("blockade_frames_pending_upload", labels) == 1.0
+
+    store.list_should_fail = True  # cycle N+1: S3 unreachable, not just rejecting
+    await poller._repair_and_sweep()
+    assert REGISTRY.get_sample_value("blockade_frames_pending_upload", labels) == 1.0
+    assert path.exists(), "still unconfirmed, the frame must not be swept"
+
+    store.list_should_fail = False  # cycle N+2: S3 healthy again
+    _recover(store)
+    await poller._repair_and_sweep()
+    assert REGISTRY.get_sample_value("blockade_frames_pending_upload", labels) == 0.0
+    assert not path.exists()
+
+
+@respx.mock
+async def test_pending_upload_gauge_keeps_its_reading_when_a_cycle_fails(
+    settings, camera, client, cache, manifest, monkeypatch
+):
+    """A cycle that cannot finish its accounting (here the cache walk itself
+    fails) must leave the last reading, not report all-clear."""
+    store = FakeStore()
+    poller, _, path = await _stranded_frame(settings, camera, client, cache, manifest, store)
+    await poller._repair_and_sweep()
+    labels = {"camera_id": camera.camera_id}
+    assert REGISTRY.get_sample_value("blockade_frames_pending_upload", labels) == 1.0
+
+    def disk_hiccup():
+        raise OSError("cache unavailable")
+
+    monkeypatch.setattr(cache, "expired_keys", disk_hiccup)
+    await poller._repair_and_sweep()
+
+    assert REGISTRY.get_sample_value("blockade_frames_pending_upload", labels) == 1.0
+    assert path.exists()
+
+
+@respx.mock
+async def test_sweep_cost_scales_with_expiring_frames_not_the_corpus(
+    settings, camera, client, cache, manifest
+):
+    """The bucket only grows, and listing all of it hourly would hold a set of
+    every key in a 256Mi pod. The sweep lists only its candidates' prefixes
+    and never re-uploads manifests."""
+
+    class BoundedStore(FakeStore):
+        def list_keys(self, prefix):
+            assert prefix != "frames/", "sweep must not list the whole frames/ prefix"
+            return super().list_keys(prefix)
+
+    store = BoundedStore()
+    respx.get(IMAGE_URL).mock(return_value=httpx.Response(200, content=JPEG_A))
+    poller = FramePoller(settings, [camera], client, cache, manifest, store=store)
+
+    record = await poller.poll_once(camera)
+    path = cache.path_for(record.object_key)
+    old = time.time() - (settings.local_cache_ttl_days + 1) * 86_400
+    os.utime(path, (old, old))
+
+    await poller._repair_and_sweep()
+
+    assert not path.exists(), "confirmed via a bounded listing, the expired copy can go"
+    assert not any(k.startswith("manifests/") for k in store.objects), (
+        "the sweep must not re-upload manifests"
+    )
+
+
+async def _stranded_frame(settings, camera, client, cache, manifest, store):
+    """Capture one frame whose S3 upload fails, then age it past the TTL."""
+    store.put = _always_fail
+    respx.get(IMAGE_URL).mock(return_value=httpx.Response(200, content=JPEG_A))
+    poller = FramePoller(settings, [camera], client, cache, manifest, store=store)
+    record = await poller.poll_once(camera)
+    path = cache.path_for(record.object_key)
+    old = time.time() - (settings.local_cache_ttl_days + 1) * 86_400
+    os.utime(path, (old, old))
+    return poller, record, path
+
+
+def _recover(store):
+    """S3 starts accepting uploads again."""
+    store.put = FakeStore.put.__get__(store)
+
+
+def _always_fail(key, data, content_type):
+    raise RuntimeError("S3 unavailable")
 
 
 @respx.mock
