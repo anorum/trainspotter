@@ -7,7 +7,14 @@ import time
 from datetime import UTC, datetime, timedelta, timezone
 
 from blockade.schemas import CapturedAtSource, FetchStatus, FrameRecord
-from blockade.storage import LocalFrameCache, ManifestWriter, content_hash, frame_key, manifest_key
+from blockade.storage import (
+    LocalFrameCache,
+    ManifestWriter,
+    content_hash,
+    frame_key,
+    frame_key_camera,
+    manifest_key,
+)
 
 CAPTURED = datetime(2026, 8, 8, 14, 32, 7, tzinfo=UTC)
 
@@ -66,18 +73,36 @@ def test_cache_write_is_atomic(tmp_path):
     assert not list(tmp_path.rglob("*.tmp")), "no temp files left behind"
 
 
-def test_cache_sweep_removes_only_expired_frames(tmp_path):
+def test_cache_remove_deletes_only_the_given_keys(tmp_path):
+    """Deletion is by explicit key, so only frames a caller confirmed go."""
+    cache = LocalFrameCache(tmp_path, ttl_days=7)
+    kept = cache.write(frame_key("odot-1234", CAPTURED, DIGEST_A), b"kept")
+    gone_key = frame_key("odot-5678", CAPTURED, DIGEST_B)
+    gone = cache.write(gone_key, b"gone")
+
+    removed = cache.remove([gone_key, frame_key("odot-9999", CAPTURED, DIGEST_A)])
+
+    assert removed == 1, "a key already missing from disk is skipped, not counted"
+    assert kept.exists()
+    assert not gone.exists()
+
+
+def test_frame_key_camera_inverts_frame_key():
+    assert frame_key_camera(frame_key("odot-1234", CAPTURED, DIGEST_A)) == "odot-1234"
+
+
+def test_expired_keys_lists_candidates_without_deleting(tmp_path):
+    """Candidates are listed read-only so the caller can check S3 first."""
     cache = LocalFrameCache(tmp_path, ttl_days=7)
     fresh = cache.write(frame_key("odot-1234", CAPTURED, DIGEST_A), b"fresh")
-    stale = cache.write(frame_key("odot-5678", CAPTURED, DIGEST_B), b"stale")
+    stale_key = frame_key("odot-5678", CAPTURED, DIGEST_B)
+    stale = cache.write(stale_key, b"stale")
     old = time.time() - 8 * 86_400
     os.utime(stale, (old, old))
 
-    removed = cache.sweep()
-
-    assert removed == 1
+    assert cache.expired_keys() == [stale_key]
     assert fresh.exists()
-    assert not stale.exists()
+    assert stale.exists(), "listing candidates must not delete them"
 
 
 def _record(captured_at: datetime, camera_id: str = "odot-1234") -> FrameRecord:

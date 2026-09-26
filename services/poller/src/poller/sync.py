@@ -1,12 +1,11 @@
 """Push locally-captured frames and manifests to S3.
 
-Two jobs, both of which the poller deliberately does not do inline:
+Two jobs the poller's capture loop does not do inline:
 
 1. **Backfill.** Capture runs before S3 exists (or while credentials are expired)
    so the corpus starts on time. This uploads what accumulated locally.
-2. **Repair.** The poller treats an S3 upload failure as recoverable and keeps
-   the bytes locally rather than dropping the frame. This is the sweep that
-   makes good on that promise.
+2. **Repair.** The poller retries failed uploads of expiring frames on its own
+   hourly sweep; this is the manual, whole-bucket version for anything else.
 
 Both are safe to re-run. Frame keys are content-addressed, so uploading the same
 frame twice is a no-op rather than a duplicate.

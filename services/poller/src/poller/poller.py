@@ -28,6 +28,9 @@ from blockade.storage import (
     S3ObjectStore,
     content_hash,
     frame_key,
+    frame_key_camera,
+    frame_key_prefix,
+    frame_time,
 )
 from prometheus_client import Counter, Gauge, Histogram, start_http_server
 
@@ -42,6 +45,11 @@ LAST_NEW_FRAME = Gauge(
     ["camera_id"],
 )
 CONSECUTIVE_ERRORS = Gauge("blockade_consecutive_errors", "Consecutive failed polls", ["camera_id"])
+FRAMES_PENDING_UPLOAD = Gauge(
+    "blockade_frames_pending_upload",
+    "Expired cached frames still lacking a confirmed S3 copy after a repair attempt",
+    ["camera_id"],
+)
 
 
 @dataclass
@@ -130,6 +138,7 @@ class FramePoller:
         for camera in cameras:
             LAST_NEW_FRAME.labels(camera.camera_id).set(started)
             CONSECUTIVE_ERRORS.labels(camera.camera_id).set(0)
+            FRAMES_PENDING_UPLOAD.labels(camera.camera_id).set(0)
             for status in FetchStatus:
                 FRAMES.labels(camera.camera_id, status.value)
 
@@ -221,8 +230,9 @@ class FramePoller:
                 self._store.put(key, data, "image/jpeg")
             except Exception:
                 # The local cache already holds the bytes and the manifest will
-                # reference this key, so a later sweep can re-upload. Dropping the
-                # frame entirely would be the worse outcome.
+                # reference this key, so _repair_and_sweep can retry the upload
+                # before the frame expires. Dropping the frame entirely would be
+                # the worse outcome.
                 log.exception("S3 upload failed for %s; frame retained locally", key)
 
         cursor.remember(digest, key)
@@ -329,11 +339,60 @@ class FramePoller:
 
         while True:
             await asyncio.sleep(3600)
-            try:
-                removed = self._cache.sweep()
-                log.info("cache sweep removed %d expired frames", removed)
-            except Exception:
-                log.exception("cache sweep failed")
+            await self._repair_and_sweep()
+
+    async def _repair_and_sweep(self) -> None:
+        """Sweep expired frames only once S3 confirms them, retrying any it lacks.
+
+        Lists S3 only under the candidates' own hour-prefixes, never the whole
+        bucket, which only grows. A candidate counts as pending in
+        FRAMES_PENDING_UPLOAD until confirmed, and the gauge is written only
+        once a cycle's accounting completes -- a cycle that fails part-way
+        leaves the last reading in place rather than reporting all-clear
+        during the outage the gauge exists to surface.
+        """
+        assert self._store is not None, "caller checks this before entering the loop"
+        store = self._store
+        try:
+            # Seeded at 0 for every camera so a resolved stuck frame clears its gauge.
+            pending_by_camera: dict[str, int] = {c.camera_id: 0 for c in self._cameras}
+            candidates = await asyncio.to_thread(self._cache.expired_keys)
+            camera_of = {key: frame_key_camera(key) for key in candidates}
+            for camera_id in camera_of.values():
+                pending_by_camera[camera_id] = pending_by_camera.get(camera_id, 0) + 1
+
+            present: set[str] = set()
+            for prefix in {f"{frame_key_prefix(c, frame_time(k))}/" for k, c in camera_of.items()}:
+                try:
+                    present |= await asyncio.to_thread(store.list_keys, prefix)
+                except Exception:
+                    # Its candidates stay pending below; one bad prefix must
+                    # not abandon the rest of the cycle.
+                    log.exception("listing %s failed; its candidates stay pending", prefix)
+
+            confirmed: list[str] = []
+            for key, camera_id in camera_of.items():
+                if key not in present:
+                    try:
+                        data = await asyncio.to_thread(self._cache.path_for(key).read_bytes)
+                        await asyncio.to_thread(store.put, key, data, "image/jpeg")
+                    except Exception:
+                        log.warning("frame %s still missing from S3; kept for a later sweep", key)
+                        continue
+                confirmed.append(key)
+                pending_by_camera[camera_id] -= 1
+            for camera_id, pending in pending_by_camera.items():
+                FRAMES_PENDING_UPLOAD.labels(camera_id).set(pending)
+
+            removed = await asyncio.to_thread(self._cache.remove, confirmed)
+            log.info(
+                "cache sweep removed %d of %d expired frames (%d still unconfirmed)",
+                removed,
+                len(candidates),
+                sum(pending_by_camera.values()),
+            )
+        except Exception:
+            log.exception("cache sweep failed")
 
 
 app = typer.Typer(help="Phase 0 frame capture.", no_args_is_help=True)

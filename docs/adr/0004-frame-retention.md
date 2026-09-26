@@ -39,7 +39,8 @@ and a few real blockages provides it. Thresholds keep improving as the corpus gr
   engineering time than storage.
 - The local cache TTL applies *only* when an object store holds a durable copy; it is a read-cache
   eviction policy, never an archive retention policy. The sweeper refuses to run when no object
-  store is configured.
+  store is configured, and even then expires a frame only once S3 confirms its key, so a failed
+  upload is never lost to the TTL.
 - Phase 1 can begin roughly 2026-08-10.
 
 ## Rejected: keep only detections
